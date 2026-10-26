@@ -7,13 +7,14 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "node prisma/seed.js",
-    "build": "nest build && tsc-alias",
+    "build": "prisma generate && nest build && tsc-alias",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "type-check": "tsc --noEmit",
     "test": "vitest run --fileParallelism=false",
-    "start:dev": "nest start --watch"
+    "start:dev": "nest start --watch",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@fastify/multipart": "^8.3.0",
