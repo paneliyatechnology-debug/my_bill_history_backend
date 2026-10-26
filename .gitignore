@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Production build
+dist/
+build/
+
+# Environment variables
+.env
+.env*.local
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Turborepo
+.turbo/
+
+# OS and Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Vitest / Coverage
+coverage/
+.vitest/
+
+# Uploads / temp storage
+storage/uploads/*
+!storage/uploads/.gitkeep
+scratch/
+
+# Bill scans / uploaded files
+storage/bill-scans/*
+!storage/bill-scans/.gitkeep
