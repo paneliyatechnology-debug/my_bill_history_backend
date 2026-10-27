@@ -20,7 +20,7 @@ import { CreateVoucherDto } from "./dto/create-voucher.dto";
 import { ReverseVoucherDto } from "./dto/reverse-voucher.dto";
 import { CreatePaymentOutVoucherDto } from "./dto/create-payment-out-voucher.dto";
 
-@Controller("vouchers")
+@Controller(["vouchers", "payments"])
 export class VouchersController {
   constructor(private readonly vouchersService: VouchersService) {}
 
@@ -39,7 +39,7 @@ export class VouchersController {
     return await this.vouchersService.createVoucher(dto, tenant);
   }
 
-  @Post("receipt")
+  @Post(["receipt", "payment-in", "receipts"])
   @HttpCode(HttpStatus.CREATED)
   @Roles(
     UserRole.SUPER_ADMIN,
@@ -92,7 +92,7 @@ export class VouchersController {
     return await this.vouchersService.listVouchers(tenant, query);
   }
 
-  @Get("receipts")
+  @Get(["receipts", "payment-in", "payments-in"])
   async listReceipts(
     @Query() query: any,
     @CurrentTenant() tenant: TenantContext,
@@ -100,7 +100,7 @@ export class VouchersController {
     return await this.vouchersService.listReceipts(tenant, query);
   }
 
-  @Get("payments-out")
+  @Get(["payments-out", "payment-out"])
   async listPaymentsOut(
     @Query() query: any,
     @CurrentTenant() tenant: TenantContext,
@@ -108,7 +108,7 @@ export class VouchersController {
     return await this.vouchersService.listPaymentsOut(tenant, query);
   }
 
-  @Post("payment-out")
+  @Post(["payment-out", "payments-out"])
   @HttpCode(HttpStatus.CREATED)
   @Roles(
     UserRole.SUPER_ADMIN,
@@ -124,7 +124,7 @@ export class VouchersController {
     return await this.vouchersService.createPaymentOutVoucher(dto, tenant);
   }
 
-  @Get("payment-out/:id")
+  @Get(["payment-out/:id", "payments-out/:id"])
   async getPaymentOutById(
     @Param("id") id: string,
     @CurrentTenant() tenant: TenantContext,
@@ -132,7 +132,7 @@ export class VouchersController {
     return await this.vouchersService.getVoucherById(id, tenant);
   }
 
-  @Put("payment-out/:id")
+  @Put(["payment-out/:id", "payments-out/:id"])
   @Roles(
     UserRole.SUPER_ADMIN,
     UserRole.ORG_ADMIN,
@@ -148,7 +148,7 @@ export class VouchersController {
     return await this.vouchersService.updatePaymentOutVoucher(id, dto, tenant);
   }
 
-  @Delete("payment-out/:id")
+  @Delete(["payment-out/:id", "payments-out/:id"])
   @Roles(
     UserRole.SUPER_ADMIN,
     UserRole.ORG_ADMIN,

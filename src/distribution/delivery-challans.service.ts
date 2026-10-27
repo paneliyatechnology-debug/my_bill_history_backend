@@ -660,4 +660,21 @@ export class DeliveryChallansService {
       };
     });
   }
+
+  async getNextChallanNumber(ctx: TenantContext): Promise<{ nextNumber: string }> {
+    const fy = await this.prisma.financialYear.findFirst({
+      where: { companyId: ctx.companyId, isLocked: false },
+      orderBy: { startDate: "desc" },
+    });
+    const fyStart = fy ? new Date(fy.startDate) : new Date();
+    const fyEnd = fy ? new Date(fy.endDate) : new Date();
+    const fyCode = fy
+      ? `${fyStart.getFullYear().toString().slice(-2)}-${fyEnd.getFullYear().toString().slice(-2)}`
+      : "26-27";
+    const count = await this.prisma.deliveryChallan.count({
+      where: { companyId: ctx.companyId },
+    });
+    return { nextNumber: `DC/${fyCode}/${String(count + 1).padStart(4, "0")}` };
+  }
 }
+

@@ -18,7 +18,7 @@ import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import { TenantContext, UserRole } from "@billing/shared-types";
 
-@Controller("parties")
+@Controller(["parties", "masters/parties"])
 export class PartiesController {
   constructor(private readonly partiesService: PartiesService) {}
 

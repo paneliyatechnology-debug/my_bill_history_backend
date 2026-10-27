@@ -5,13 +5,17 @@ import {
   Patch,
   Body,
   Req,
+  Query,
+  Sse,
   HttpCode,
   HttpStatus,
   BadRequestException,
 } from "@nestjs/common";
+import { Observable } from "rxjs";
 import { FastifyRequest } from "fastify";
 import { Throttle } from "@nestjs/throttler";
 import { AuthService } from "./auth.service";
+import { SessionEventPayload } from "./session-events.service";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
 import { SwitchContextDto } from "./dto/switch-context.dto";
@@ -24,7 +28,7 @@ export class AuthController {
 
   @Public()
   @Throttle({
-    default: { limit: process.env.NODE_ENV === "test" ? 1000 : 5, ttl: 60000 },
+    default: { limit: process.env.NODE_ENV === "production" ? 10 : 1000, ttl: 60000 },
   })
   @Post("register")
   @HttpCode(HttpStatus.CREATED)
@@ -34,7 +38,7 @@ export class AuthController {
 
   @Public()
   @Throttle({
-    default: { limit: process.env.NODE_ENV === "test" ? 1000 : 5, ttl: 60000 },
+    default: { limit: process.env.NODE_ENV === "production" ? 10 : 1000, ttl: 60000 },
   })
   @Post("login")
   @HttpCode(HttpStatus.OK)
@@ -47,6 +51,24 @@ export class AuthController {
   @Get("me")
   async getMe(@CurrentUser("id") userId: string) {
     return this.authService.getMe(userId);
+  }
+
+  @Public()
+  @Sse("session-stream")
+  sessionStream(
+    @Query("token") token?: string,
+    @Query("tenantId") tenantId?: string,
+    @Query("organizationId") organizationId?: string,
+  ): Observable<{ data: SessionEventPayload }> {
+    return this.authService.getSessionStream(token, tenantId, organizationId);
+  }
+
+  @Get("live-status")
+  async getLiveStatus(@CurrentUser("id") userId: string) {
+    return {
+      status: "active",
+      timestamp: new Date().toISOString(),
+    };
   }
 
   @Post("switch-context")
@@ -66,7 +88,7 @@ export class AuthController {
 
   @Public()
   @Throttle({
-    default: { limit: process.env.NODE_ENV === "test" ? 1000 : 5, ttl: 60000 },
+    default: { limit: process.env.NODE_ENV === "production" ? 10 : 1000, ttl: 60000 },
   })
   @Post("otp/send")
   @HttpCode(HttpStatus.OK)
@@ -88,7 +110,7 @@ export class AuthController {
 
   @Public()
   @Throttle({
-    default: { limit: process.env.NODE_ENV === "test" ? 1000 : 5, ttl: 60000 },
+    default: { limit: process.env.NODE_ENV === "production" ? 10 : 1000, ttl: 60000 },
   })
   @Post("password/reset")
   @HttpCode(HttpStatus.OK)
@@ -103,7 +125,7 @@ export class AuthController {
   }
 
   @Throttle({
-    default: { limit: process.env.NODE_ENV === "test" ? 1000 : 5, ttl: 60000 },
+    default: { limit: process.env.NODE_ENV === "production" ? 10 : 1000, ttl: 60000 },
   })
   @Post("email/send-otp")
   @HttpCode(HttpStatus.OK)

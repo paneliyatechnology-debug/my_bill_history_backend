@@ -3,6 +3,7 @@ import {
   Get,
   Patch,
   Post,
+  Delete,
   Param,
   Body,
   Query,
@@ -58,8 +59,16 @@ export class SuperAdminController {
     @Body()
     dto: {
       subscriptionTier?: SubscriptionTier;
+      tier?: SubscriptionTier;
       subscriptionEnds?: string;
+      extendDays?: number;
       isActive?: boolean;
+      status?: string;
+      name?: string;
+      organizationName?: string;
+      legalName?: string;
+      primaryPhone?: string;
+      primaryEmail?: string;
     },
     @CurrentUser("id") superAdminUserId: string,
   ) {
@@ -132,5 +141,31 @@ export class SuperAdminController {
   ) {
     const cid = body?.companyId || body?.targetCompanyId || "";
     return this.superAdminService.exitImpersonation(cid, superAdminUserId, body?.sessionId);
+  }
+  @Delete("tenants/:id")
+  @HttpCode(HttpStatus.OK)
+  async deleteTenant(
+    @Param("id") id: string,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.deleteTenant(id, superAdminUserId);
+  }
+
+  @Post("tenants/bulk-delete")
+  @HttpCode(HttpStatus.OK)
+  async bulkDeleteTenants(
+    @Body() body: { tenantIds: string[] },
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.bulkDeleteTenants(body?.tenantIds || [], superAdminUserId);
+  }
+
+  @Post("tenants/bulk-status")
+  @HttpCode(HttpStatus.OK)
+  async bulkUpdateTenantStatus(
+    @Body() body: { tenantIds: string[]; isActive: boolean },
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.bulkUpdateTenantStatus(body?.tenantIds || [], body?.isActive, superAdminUserId);
   }
 }

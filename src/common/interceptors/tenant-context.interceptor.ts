@@ -69,7 +69,24 @@ export class TenantContextInterceptor implements NestInterceptor {
     if (currentUserId) {
       const dbUser = await this.prisma.user.findUnique({
         where: { id: currentUserId },
-        select: { id: true, role: true, isActive: true, updatedAt: true },
+        select: {
+          id: true,
+          role: true,
+          isActive: true,
+          updatedAt: true,
+          organization: {
+            select: {
+              id: true,
+              tenantId: true,
+              tenant: {
+                select: {
+                  id: true,
+                  isActive: true,
+                },
+              },
+            },
+          },
+        },
       });
 
       if (!dbUser || !dbUser.isActive) {
@@ -79,6 +96,22 @@ export class TenantContextInterceptor implements NestInterceptor {
           message:
             "Access denied: Account is suspended, deactivated, or revoked.",
           messageGujarati: "એકાઉન્ટ સ્થગિત અથવા નિષ્ક્રિય કરવામાં આવ્યું છે.",
+        });
+      }
+
+      // Check if tenant is suspended (SuperAdmin users bypass tenant suspension)
+      if (
+        dbUser.role !== UserRole.SUPER_ADMIN &&
+        dbUser.organization?.tenant &&
+        !dbUser.organization.tenant.isActive
+      ) {
+        throw new UnauthorizedException({
+          statusCode: 401,
+          error: "TENANT_SUSPENDED",
+          message:
+            "Access denied: Your organization or tenant has been suspended by the platform administrator.",
+          messageGujarati:
+            "તમારું ટેનન્ટ સુપરએડમિન દ્વારા સસ્પેન્ડ કરવામાં આવ્યું છે.",
         });
       }
 

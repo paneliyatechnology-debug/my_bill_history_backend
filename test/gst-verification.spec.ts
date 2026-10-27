@@ -202,32 +202,41 @@ describe("GstVerificationService (Backend Unit & Security)", () => {
 
   describe("Safe Fallback When Provider Unconfigured", () => {
     it("should not fabricate fake business names when provider key is missing", async () => {
-      mockConfig.get = vi.fn((key: string) => {
-        if (key === "GSTIN_PROVIDER") return "gstin_cloud";
-        if (key === "GSTIN_CLOUD_API_KEY") return undefined;
-        if (key === "GSTIN_CACHE_TTL_SECONDS") return "86400";
-        if (key === "NODE_ENV") return "production"; // not test registry
-        return undefined;
-      });
+      const origEnvKey = process.env.GSTIN_CLOUD_API_KEY;
+      const origApiKey = process.env.GSTIN_API_KEY;
+      delete process.env.GSTIN_CLOUD_API_KEY;
+      delete process.env.GSTIN_API_KEY;
+      try {
+        mockConfig.get = vi.fn((key: string) => {
+          if (key === "GSTIN_PROVIDER") return "gstin_cloud";
+          if (key === "GSTIN_CLOUD_API_KEY") return undefined;
+          if (key === "GSTIN_CACHE_TTL_SECONDS") return "86400";
+          if (key === "NODE_ENV") return "test";
+          return undefined;
+        });
 
-      const unconfiguredService = new GstVerificationService(
-        mockConfig as unknown as ConfigService,
-        mockPrisma,
-      );
+        const unconfiguredService = new GstVerificationService(
+          mockConfig as unknown as ConfigService,
+          mockPrisma,
+        );
 
-      // 24ABCCE1234F1Z8 has valid checksum 8, 4th PAN char 'C' = Company
-      const res = await unconfiguredService.verifyGstin(
-        sampleTenantCtx,
-        "24ABCCE1234F1Z8",
-      );
+        // 24ABCCE1234F1Z8 has valid checksum 8, 4th PAN char 'C' = Company
+        const res = await unconfiguredService.verifyGstin(
+          sampleTenantCtx,
+          "24ABCCE1234F1Z8",
+        );
 
-      expect(res.isValid).toBe(true);
-      expect(res.source).toBe("STATUTORY_DERIVATION");
-      expect(res.legalName).toBeNull();
-      expect(res.tradeName).toBeNull();
-      expect(res.pan).toBe("ABCCE1234F");
-      expect(res.constitutionOfBusiness).toBe("Company (Pvt Ltd / Ltd)");
-      expect(res.message).toContain("configure GSTIN_CLOUD_API_KEY");
+        expect(res.isValid).toBe(true);
+        expect(res.source).toBe("STATUTORY_DERIVATION");
+        expect(res.legalName).toBeNull();
+        expect(res.tradeName).toBeNull();
+        expect(res.pan).toBe("ABCCE1234F");
+        expect(res.constitutionOfBusiness).toBe("Company (Pvt Ltd / Ltd)");
+        expect(res.message).toContain("configure GSTIN_CLOUD_API_KEY");
+      } finally {
+        if (origEnvKey !== undefined) process.env.GSTIN_CLOUD_API_KEY = origEnvKey;
+        if (origApiKey !== undefined) process.env.GSTIN_API_KEY = origApiKey;
+      }
     });
   });
 });

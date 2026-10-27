@@ -17,7 +17,12 @@ import { InvoicesService } from "./invoices.service";
 import { CreateSalesReturnDto } from "./dto/create-sales-return.dto";
 import { QuerySalesReturnsDto } from "./dto/query-sales-returns.dto";
 
-@Controller("sales-returns")
+@Controller([
+  "sales-returns",
+  "sales/credit-notes",
+  "sales/returns",
+  "credit-notes",
+])
 export class SalesReturnsController {
   constructor(private readonly invoicesService: InvoicesService) {}
 

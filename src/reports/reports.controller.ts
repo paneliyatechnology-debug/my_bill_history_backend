@@ -40,7 +40,7 @@ export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   // 0. Live Financial Summary (To Collect, To Pay, Cash + Bank)
-  @Get("financial-summary")
+  @Get(["financial-summary", "summary"])
   @Roles(
     UserRole.SUPER_ADMIN,
     UserRole.ORG_ADMIN,
@@ -77,7 +77,7 @@ export class ReportsController {
   }
 
   // 1. Sales Register
-  @Get("sales-register")
+  @Get(["sales-register", "sales-overview"])
   async getSalesRegister(
     @Query() query: QuerySalesRegisterDto,
     @CurrentTenant() tenant: TenantContext,
@@ -101,7 +101,7 @@ export class ReportsController {
   }
 
   // 2. Purchase Register (Deferred notice)
-  @Get("purchase-register")
+  @Get(["purchase-register", "purchase-overview"])
   async getPurchaseRegister(
     @CurrentTenant() tenant: TenantContext,
     @Query("fromDate") fromDate?: string,

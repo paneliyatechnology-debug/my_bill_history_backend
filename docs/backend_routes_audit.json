@@ -1,0 +1,3386 @@
+[
+  {
+    "file": "src/auth/auth.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/auth/register",
+    "handler": "HttpCode",
+    "controllerPrefix": "auth",
+    "subRoute": "register"
+  },
+  {
+    "file": "src/auth/auth.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/auth/login",
+    "handler": "HttpCode",
+    "controllerPrefix": "auth",
+    "subRoute": "login"
+  },
+  {
+    "file": "src/auth/auth.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/auth/me",
+    "handler": "getMe",
+    "controllerPrefix": "auth",
+    "subRoute": "me"
+  },
+  {
+    "file": "src/auth/auth.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/auth/live-status",
+    "handler": "getLiveStatus",
+    "controllerPrefix": "auth",
+    "subRoute": "live-status"
+  },
+  {
+    "file": "src/auth/auth.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/auth/switch-context",
+    "handler": "HttpCode",
+    "controllerPrefix": "auth",
+    "subRoute": "switch-context"
+  },
+  {
+    "file": "src/auth/auth.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/auth/logout",
+    "handler": "HttpCode",
+    "controllerPrefix": "auth",
+    "subRoute": "logout"
+  },
+  {
+    "file": "src/auth/auth.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/auth/otp/send",
+    "handler": "HttpCode",
+    "controllerPrefix": "auth",
+    "subRoute": "otp/send"
+  },
+  {
+    "file": "src/auth/auth.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/auth/password/reset",
+    "handler": "HttpCode",
+    "controllerPrefix": "auth",
+    "subRoute": "password/reset"
+  },
+  {
+    "file": "src/auth/auth.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/auth/email/send-otp",
+    "handler": "HttpCode",
+    "controllerPrefix": "auth",
+    "subRoute": "email/send-otp"
+  },
+  {
+    "file": "src/auth/auth.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/auth/password/change",
+    "handler": "HttpCode",
+    "controllerPrefix": "auth",
+    "subRoute": "password/change"
+  },
+  {
+    "file": "src/auth/auth.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/auth/profile",
+    "handler": "HttpCode",
+    "controllerPrefix": "auth",
+    "subRoute": "profile"
+  },
+  {
+    "file": "src/banking/bank-accounts.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/bank-accounts",
+    "handler": "listBankAccounts",
+    "controllerPrefix": "bank-accounts",
+    "subRoute": ""
+  },
+  {
+    "file": "src/banking/bank-accounts.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/banking/accounts",
+    "handler": "listBankAccounts",
+    "controllerPrefix": "banking/accounts",
+    "subRoute": ""
+  },
+  {
+    "file": "src/banking/bank-accounts.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/bank-accounts/:id",
+    "handler": "getBankAccount",
+    "controllerPrefix": "bank-accounts",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/banking/bank-accounts.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/banking/accounts/:id",
+    "handler": "getBankAccount",
+    "controllerPrefix": "banking/accounts",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/banking/bank-accounts.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/bank-accounts",
+    "handler": "HttpCode",
+    "controllerPrefix": "bank-accounts",
+    "subRoute": ""
+  },
+  {
+    "file": "src/banking/bank-accounts.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/banking/accounts",
+    "handler": "HttpCode",
+    "controllerPrefix": "banking/accounts",
+    "subRoute": ""
+  },
+  {
+    "file": "src/banking/bank-accounts.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/bank-accounts/:id",
+    "handler": "Roles",
+    "controllerPrefix": "bank-accounts",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/banking/bank-accounts.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/banking/accounts/:id",
+    "handler": "Roles",
+    "controllerPrefix": "banking/accounts",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/banking/bank-accounts.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/bank-accounts/:id",
+    "handler": "Roles",
+    "controllerPrefix": "bank-accounts",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/banking/bank-accounts.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/banking/accounts/:id",
+    "handler": "Roles",
+    "controllerPrefix": "banking/accounts",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/batches/batches.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/batches",
+    "handler": "HttpCode",
+    "controllerPrefix": "batches",
+    "subRoute": ""
+  },
+  {
+    "file": "src/batches/batches.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/batches",
+    "handler": "findAll",
+    "controllerPrefix": "batches",
+    "subRoute": ""
+  },
+  {
+    "file": "src/batches/batches.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/batches/:id",
+    "handler": "findOne",
+    "controllerPrefix": "batches",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/categories/categories.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/categories",
+    "handler": "HttpCode",
+    "controllerPrefix": "categories",
+    "subRoute": ""
+  },
+  {
+    "file": "src/categories/categories.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/masters/categories",
+    "handler": "HttpCode",
+    "controllerPrefix": "masters/categories",
+    "subRoute": ""
+  },
+  {
+    "file": "src/categories/categories.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/categories",
+    "handler": "findAll",
+    "controllerPrefix": "categories",
+    "subRoute": ""
+  },
+  {
+    "file": "src/categories/categories.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/masters/categories",
+    "handler": "findAll",
+    "controllerPrefix": "masters/categories",
+    "subRoute": ""
+  },
+  {
+    "file": "src/categories/categories.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/categories/:id",
+    "handler": "findOne",
+    "controllerPrefix": "categories",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/categories/categories.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/masters/categories/:id",
+    "handler": "findOne",
+    "controllerPrefix": "masters/categories",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/categories/categories.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/categories/:id",
+    "handler": "update",
+    "controllerPrefix": "categories",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/categories/categories.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/masters/categories/:id",
+    "handler": "update",
+    "controllerPrefix": "masters/categories",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/categories/categories.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/categories/bulk-delete",
+    "handler": "HttpCode",
+    "controllerPrefix": "categories",
+    "subRoute": "bulk-delete"
+  },
+  {
+    "file": "src/categories/categories.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/masters/categories/bulk-delete",
+    "handler": "HttpCode",
+    "controllerPrefix": "masters/categories",
+    "subRoute": "bulk-delete"
+  },
+  {
+    "file": "src/categories/categories.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/categories/:id",
+    "handler": "delete",
+    "controllerPrefix": "categories",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/categories/categories.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/masters/categories/:id",
+    "handler": "delete",
+    "controllerPrefix": "masters/categories",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/distribution/delivery-challans.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/distribution/challans",
+    "handler": "HttpCode",
+    "controllerPrefix": "distribution/challans",
+    "subRoute": ""
+  },
+  {
+    "file": "src/distribution/delivery-challans.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/distribution/challans",
+    "handler": "findAll",
+    "controllerPrefix": "distribution/challans",
+    "subRoute": ""
+  },
+  {
+    "file": "src/distribution/delivery-challans.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/distribution/challans/:id",
+    "handler": "findOne",
+    "controllerPrefix": "distribution/challans",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/distribution/delivery-challans.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/distribution/challans/:id/issue",
+    "handler": "HttpCode",
+    "controllerPrefix": "distribution/challans",
+    "subRoute": ":id/issue"
+  },
+  {
+    "file": "src/distribution/delivery-challans.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/distribution/challans/:id/close",
+    "handler": "HttpCode",
+    "controllerPrefix": "distribution/challans",
+    "subRoute": ":id/close"
+  },
+  {
+    "file": "src/distribution/delivery-challans.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/distribution/challans/:id/cancel",
+    "handler": "HttpCode",
+    "controllerPrefix": "distribution/challans",
+    "subRoute": ":id/cancel"
+  },
+  {
+    "file": "src/distribution/delivery-challans.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/distribution/challans/:id/eway-bill",
+    "handler": "HttpCode",
+    "controllerPrefix": "distribution/challans",
+    "subRoute": ":id/eway-bill"
+  },
+  {
+    "file": "src/distribution/stock-transfers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/distribution/transfers",
+    "handler": "HttpCode",
+    "controllerPrefix": "distribution/transfers",
+    "subRoute": ""
+  },
+  {
+    "file": "src/distribution/stock-transfers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/distribution/transfers",
+    "handler": "findAll",
+    "controllerPrefix": "distribution/transfers",
+    "subRoute": ""
+  },
+  {
+    "file": "src/distribution/stock-transfers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/distribution/transfers/:id",
+    "handler": "findOne",
+    "controllerPrefix": "distribution/transfers",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/distribution/stock-transfers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/distribution/transfers/:id/reconciliation",
+    "handler": "getReconciliation",
+    "controllerPrefix": "distribution/transfers",
+    "subRoute": ":id/reconciliation"
+  },
+  {
+    "file": "src/distribution/stock-transfers.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/distribution/transfers/:id",
+    "handler": "Roles",
+    "controllerPrefix": "distribution/transfers",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/distribution/stock-transfers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/distribution/transfers/:id/dispatch",
+    "handler": "HttpCode",
+    "controllerPrefix": "distribution/transfers",
+    "subRoute": ":id/dispatch"
+  },
+  {
+    "file": "src/distribution/stock-transfers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/distribution/transfers/:id/receive",
+    "handler": "HttpCode",
+    "controllerPrefix": "distribution/transfers",
+    "subRoute": ":id/receive"
+  },
+  {
+    "file": "src/distribution/stock-transfers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/distribution/transfers/:id/cancel",
+    "handler": "HttpCode",
+    "controllerPrefix": "distribution/transfers",
+    "subRoute": ":id/cancel"
+  },
+  {
+    "file": "src/expenses/expenses.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/expenses",
+    "handler": "listExpenses",
+    "controllerPrefix": "expenses",
+    "subRoute": ""
+  },
+  {
+    "file": "src/expenses/expenses.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/expenses/:id",
+    "handler": "getExpense",
+    "controllerPrefix": "expenses",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/expenses/expenses.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/expenses",
+    "handler": "HttpCode",
+    "controllerPrefix": "expenses",
+    "subRoute": ""
+  },
+  {
+    "file": "src/expenses/expenses.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/expenses/:id",
+    "handler": "Roles",
+    "controllerPrefix": "expenses",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/expenses/expenses.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/expenses/:id",
+    "handler": "Roles",
+    "controllerPrefix": "expenses",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/verify-gstin",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "verify-gstin"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/debit-notes",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "debit-notes"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/advances",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "advances"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/advances/:id/adjustments",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "advances/:id/adjustments"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/gstr-2b/imports",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "gstr-2b/imports"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/gst/gstr-2b/reconciliations",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "gstr-2b/reconciliations"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/gst/gstr-2b/summary",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "gstr-2b/summary"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/gst/gstr-2b/export",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "gstr-2b/export"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/gstr-2b/reconciliations/:id/review",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "gstr-2b/reconciliations/:id/review"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/gst/gstr-2b/reconciliations/:id/history",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "gstr-2b/reconciliations/:id/history"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/gst/integration",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "integration"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/gst/documents",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "documents"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/gst/audit",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "audit"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/integration/sandbox-ping",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "integration/sandbox-ping"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/gst/integration",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "integration"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/einvoice/:invoiceId/generate",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "einvoice/:invoiceId/generate"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/gst/einvoice/:invoiceId",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "einvoice/:invoiceId"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/einvoice/:invoiceId/cancel",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "einvoice/:invoiceId/cancel"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/eway-bills/invoices/:invoiceId/generate",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "eway-bills/invoices/:invoiceId/generate"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/eway-bills/challans/:challanId/generate",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "eway-bills/challans/:challanId/generate"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/gst/eway-bills",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "eway-bills"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/eway-bills/link",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "eway-bills/link"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/gst/eway-bills/:ewbNumber/details",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "eway-bills/:ewbNumber/details"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/gst/eway-bills/:ewbNumber",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "eway-bills/:ewbNumber"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/eway-bills/:ewbNumber/cancel",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "eway-bills/:ewbNumber/cancel"
+  },
+  {
+    "file": "src/gst/gst.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/gst/eway-bills/:ewbNumber/vehicle",
+    "handler": "Roles",
+    "controllerPrefix": "gst",
+    "subRoute": "eway-bills/:ewbNumber/vehicle"
+  },
+  {
+    "file": "src/health/health.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/health",
+    "handler": "getHealth",
+    "controllerPrefix": "health",
+    "subRoute": ""
+  },
+  {
+    "file": "src/health/health.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/health/liveness",
+    "handler": "getLiveness",
+    "controllerPrefix": "health",
+    "subRoute": "liveness"
+  },
+  {
+    "file": "src/health/health.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/health/readiness",
+    "handler": "getReadiness",
+    "controllerPrefix": "health",
+    "subRoute": "readiness"
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/hsn",
+    "handler": "findAll",
+    "controllerPrefix": "hsn",
+    "subRoute": ""
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/masters/hsn",
+    "handler": "findAll",
+    "controllerPrefix": "masters/hsn",
+    "subRoute": ""
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/hsn/search",
+    "handler": "search",
+    "controllerPrefix": "hsn",
+    "subRoute": "search"
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/masters/hsn/search",
+    "handler": "search",
+    "controllerPrefix": "masters/hsn",
+    "subRoute": "search"
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/hsn/:id",
+    "handler": "findOne",
+    "controllerPrefix": "hsn",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/masters/hsn/:id",
+    "handler": "findOne",
+    "controllerPrefix": "masters/hsn",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/hsn",
+    "handler": "HttpCode",
+    "controllerPrefix": "hsn",
+    "subRoute": ""
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/masters/hsn",
+    "handler": "HttpCode",
+    "controllerPrefix": "masters/hsn",
+    "subRoute": ""
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/hsn/:id",
+    "handler": "update",
+    "controllerPrefix": "hsn",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/masters/hsn/:id",
+    "handler": "update",
+    "controllerPrefix": "masters/hsn",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/hsn/:id/status",
+    "handler": "toggleStatus",
+    "controllerPrefix": "hsn",
+    "subRoute": ":id/status"
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/masters/hsn/:id/status",
+    "handler": "toggleStatus",
+    "controllerPrefix": "masters/hsn",
+    "subRoute": ":id/status"
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/hsn/:id",
+    "handler": "delete",
+    "controllerPrefix": "hsn",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/hsn/hsn.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/masters/hsn/:id",
+    "handler": "delete",
+    "controllerPrefix": "masters/hsn",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/imports/imports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/imports/modules",
+    "handler": "getModules",
+    "controllerPrefix": "imports",
+    "subRoute": "modules"
+  },
+  {
+    "file": "src/imports/imports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/imports/:module/schema",
+    "handler": "getModuleSchema",
+    "controllerPrefix": "imports",
+    "subRoute": ":module/schema"
+  },
+  {
+    "file": "src/imports/imports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/imports/:module/template",
+    "handler": "downloadTemplate",
+    "controllerPrefix": "imports",
+    "subRoute": ":module/template"
+  },
+  {
+    "file": "src/imports/imports.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/imports/parse",
+    "handler": "HttpCode",
+    "controllerPrefix": "imports",
+    "subRoute": "parse"
+  },
+  {
+    "file": "src/imports/imports.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/imports/validate",
+    "handler": "HttpCode",
+    "controllerPrefix": "imports",
+    "subRoute": "validate"
+  },
+  {
+    "file": "src/imports/imports.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/imports/execute",
+    "handler": "HttpCode",
+    "controllerPrefix": "imports",
+    "subRoute": "execute"
+  },
+  {
+    "file": "src/imports/imports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/imports/jobs",
+    "handler": "Roles",
+    "controllerPrefix": "imports",
+    "subRoute": "jobs"
+  },
+  {
+    "file": "src/imports/imports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/imports/jobs/:jobId",
+    "handler": "Roles",
+    "controllerPrefix": "imports",
+    "subRoute": "jobs/:jobId"
+  },
+  {
+    "file": "src/imports/imports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/imports/jobs/:jobId/errors",
+    "handler": "Roles",
+    "controllerPrefix": "imports",
+    "subRoute": "jobs/:jobId/errors"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/invoices",
+    "handler": "HttpCode",
+    "controllerPrefix": "invoices",
+    "subRoute": ""
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/invoices/sales",
+    "handler": "HttpCode",
+    "controllerPrefix": "invoices",
+    "subRoute": "sales"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales",
+    "subRoute": ""
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales/sales",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales",
+    "subRoute": "sales"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales-invoices",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": ""
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales-invoices/sales",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "sales"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/invoices/sales/:id/issue",
+    "handler": "HttpCode",
+    "controllerPrefix": "invoices",
+    "subRoute": "sales/:id/issue"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales/sales/:id/issue",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales",
+    "subRoute": "sales/:id/issue"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales-invoices/sales/:id/issue",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "sales/:id/issue"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/invoices/sales/:id/payments",
+    "handler": "HttpCode",
+    "controllerPrefix": "invoices",
+    "subRoute": "sales/:id/payments"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales/sales/:id/payments",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales",
+    "subRoute": "sales/:id/payments"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales-invoices/sales/:id/payments",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "sales/:id/payments"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/invoices/sales/:id/allocations",
+    "handler": "getInvoiceAllocations",
+    "controllerPrefix": "invoices",
+    "subRoute": "sales/:id/allocations"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales/sales/:id/allocations",
+    "handler": "getInvoiceAllocations",
+    "controllerPrefix": "sales",
+    "subRoute": "sales/:id/allocations"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales-invoices/sales/:id/allocations",
+    "handler": "getInvoiceAllocations",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "sales/:id/allocations"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/invoices/stock/transactions",
+    "handler": "getStockMovements",
+    "controllerPrefix": "invoices",
+    "subRoute": "stock/transactions"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales/stock/transactions",
+    "handler": "getStockMovements",
+    "controllerPrefix": "sales",
+    "subRoute": "stock/transactions"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales-invoices/stock/transactions",
+    "handler": "getStockMovements",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "stock/transactions"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/invoices/items/:id/stock-movements",
+    "handler": "getItemStockMovements",
+    "controllerPrefix": "invoices",
+    "subRoute": "items/:id/stock-movements"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales/items/:id/stock-movements",
+    "handler": "getItemStockMovements",
+    "controllerPrefix": "sales",
+    "subRoute": "items/:id/stock-movements"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales-invoices/items/:id/stock-movements",
+    "handler": "getItemStockMovements",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "items/:id/stock-movements"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/invoices/pos-checkout",
+    "handler": "HttpCode",
+    "controllerPrefix": "invoices",
+    "subRoute": "pos-checkout"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales/pos-checkout",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales",
+    "subRoute": "pos-checkout"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales-invoices/pos-checkout",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "pos-checkout"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/invoices/pos-sync",
+    "handler": "HttpCode",
+    "controllerPrefix": "invoices",
+    "subRoute": "pos-sync"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales/pos-sync",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales",
+    "subRoute": "pos-sync"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales-invoices/pos-sync",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "pos-sync"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/invoices/sales/:id/cancel",
+    "handler": "HttpCode",
+    "controllerPrefix": "invoices",
+    "subRoute": "sales/:id/cancel"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales/sales/:id/cancel",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales",
+    "subRoute": "sales/:id/cancel"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales-invoices/sales/:id/cancel",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "sales/:id/cancel"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/invoices",
+    "handler": "listSalesInvoices",
+    "controllerPrefix": "invoices",
+    "subRoute": ""
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/invoices/sales",
+    "handler": "listSalesInvoices",
+    "controllerPrefix": "invoices",
+    "subRoute": "sales"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales",
+    "handler": "listSalesInvoices",
+    "controllerPrefix": "sales",
+    "subRoute": ""
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales/sales",
+    "handler": "listSalesInvoices",
+    "controllerPrefix": "sales",
+    "subRoute": "sales"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales-invoices",
+    "handler": "listSalesInvoices",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": ""
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales-invoices/sales",
+    "handler": "listSalesInvoices",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "sales"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/invoices/sales/:id",
+    "handler": "getSalesInvoice",
+    "controllerPrefix": "invoices",
+    "subRoute": "sales/:id"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales/sales/:id",
+    "handler": "getSalesInvoice",
+    "controllerPrefix": "sales",
+    "subRoute": "sales/:id"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales-invoices/sales/:id",
+    "handler": "getSalesInvoice",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "sales/:id"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/invoices/sales/:id",
+    "handler": "Roles",
+    "controllerPrefix": "invoices",
+    "subRoute": "sales/:id"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/sales/sales/:id",
+    "handler": "Roles",
+    "controllerPrefix": "sales",
+    "subRoute": "sales/:id"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/sales-invoices/sales/:id",
+    "handler": "Roles",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "sales/:id"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/invoices/sales/:id/returns",
+    "handler": "HttpCode",
+    "controllerPrefix": "invoices",
+    "subRoute": "sales/:id/returns"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales/sales/:id/returns",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales",
+    "subRoute": "sales/:id/returns"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales-invoices/sales/:id/returns",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "sales/:id/returns"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/invoices/sales/:id/returns",
+    "handler": "Roles",
+    "controllerPrefix": "invoices",
+    "subRoute": "sales/:id/returns"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales/sales/:id/returns",
+    "handler": "Roles",
+    "controllerPrefix": "sales",
+    "subRoute": "sales/:id/returns"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales-invoices/sales/:id/returns",
+    "handler": "Roles",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "sales/:id/returns"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/invoices/sales/:id",
+    "handler": "Roles",
+    "controllerPrefix": "invoices",
+    "subRoute": "sales/:id"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/sales/sales/:id",
+    "handler": "Roles",
+    "controllerPrefix": "sales",
+    "subRoute": "sales/:id"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/sales-invoices/sales/:id",
+    "handler": "Roles",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "sales/:id"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/invoices/sales/bulk-delete",
+    "handler": "HttpCode",
+    "controllerPrefix": "invoices",
+    "subRoute": "sales/bulk-delete"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales/sales/bulk-delete",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales",
+    "subRoute": "sales/bulk-delete"
+  },
+  {
+    "file": "src/invoices/invoices.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales-invoices/sales/bulk-delete",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales-invoices",
+    "subRoute": "sales/bulk-delete"
+  },
+  {
+    "file": "src/invoices/sales-returns.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales-returns",
+    "handler": "Roles",
+    "controllerPrefix": "sales-returns",
+    "subRoute": ""
+  },
+  {
+    "file": "src/invoices/sales-returns.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/credit-notes",
+    "handler": "Roles",
+    "controllerPrefix": "credit-notes",
+    "subRoute": ""
+  },
+  {
+    "file": "src/invoices/sales-returns.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/sales-returns/:id",
+    "handler": "Roles",
+    "controllerPrefix": "sales-returns",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/invoices/sales-returns.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/credit-notes/:id",
+    "handler": "Roles",
+    "controllerPrefix": "credit-notes",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/invoices/sales-returns.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/sales-returns",
+    "handler": "HttpCode",
+    "controllerPrefix": "sales-returns",
+    "subRoute": ""
+  },
+  {
+    "file": "src/invoices/sales-returns.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/credit-notes",
+    "handler": "HttpCode",
+    "controllerPrefix": "credit-notes",
+    "subRoute": ""
+  },
+  {
+    "file": "src/invoices/sales-returns.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/sales-returns/:id",
+    "handler": "Roles",
+    "controllerPrefix": "sales-returns",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/invoices/sales-returns.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/credit-notes/:id",
+    "handler": "Roles",
+    "controllerPrefix": "credit-notes",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/items",
+    "handler": "HttpCode",
+    "controllerPrefix": "items",
+    "subRoute": ""
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/masters/items",
+    "handler": "HttpCode",
+    "controllerPrefix": "masters/items",
+    "subRoute": ""
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/inventory/items",
+    "handler": "HttpCode",
+    "controllerPrefix": "inventory/items",
+    "subRoute": ""
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/items/lookup",
+    "handler": "lookup",
+    "controllerPrefix": "items",
+    "subRoute": "lookup"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/masters/items/lookup",
+    "handler": "lookup",
+    "controllerPrefix": "masters/items",
+    "subRoute": "lookup"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/inventory/items/lookup",
+    "handler": "lookup",
+    "controllerPrefix": "inventory/items",
+    "subRoute": "lookup"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/items",
+    "handler": "findAll",
+    "controllerPrefix": "items",
+    "subRoute": ""
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/masters/items",
+    "handler": "findAll",
+    "controllerPrefix": "masters/items",
+    "subRoute": ""
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/inventory/items",
+    "handler": "findAll",
+    "controllerPrefix": "inventory/items",
+    "subRoute": ""
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/items/:id",
+    "handler": "findOne",
+    "controllerPrefix": "items",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/masters/items/:id",
+    "handler": "findOne",
+    "controllerPrefix": "masters/items",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/inventory/items/:id",
+    "handler": "findOne",
+    "controllerPrefix": "inventory/items",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/items/:id",
+    "handler": "update",
+    "controllerPrefix": "items",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/masters/items/:id",
+    "handler": "update",
+    "controllerPrefix": "masters/items",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/inventory/items/:id",
+    "handler": "update",
+    "controllerPrefix": "inventory/items",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/items/:id/adjust-stock",
+    "handler": "adjustStock",
+    "controllerPrefix": "items",
+    "subRoute": ":id/adjust-stock"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/masters/items/:id/adjust-stock",
+    "handler": "adjustStock",
+    "controllerPrefix": "masters/items",
+    "subRoute": ":id/adjust-stock"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/inventory/items/:id/adjust-stock",
+    "handler": "adjustStock",
+    "controllerPrefix": "inventory/items",
+    "subRoute": ":id/adjust-stock"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/items/:id/archive",
+    "handler": "archive",
+    "controllerPrefix": "items",
+    "subRoute": ":id/archive"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/masters/items/:id/archive",
+    "handler": "archive",
+    "controllerPrefix": "masters/items",
+    "subRoute": ":id/archive"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/inventory/items/:id/archive",
+    "handler": "archive",
+    "controllerPrefix": "inventory/items",
+    "subRoute": ":id/archive"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/items/bulk-delete",
+    "handler": "bulkDelete",
+    "controllerPrefix": "items",
+    "subRoute": "bulk-delete"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/masters/items/bulk-delete",
+    "handler": "bulkDelete",
+    "controllerPrefix": "masters/items",
+    "subRoute": "bulk-delete"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/inventory/items/bulk-delete",
+    "handler": "bulkDelete",
+    "controllerPrefix": "inventory/items",
+    "subRoute": "bulk-delete"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/items/:id",
+    "handler": "delete",
+    "controllerPrefix": "items",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/masters/items/:id",
+    "handler": "delete",
+    "controllerPrefix": "masters/items",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/items/items.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/inventory/items/:id",
+    "handler": "delete",
+    "controllerPrefix": "inventory/items",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/ledger-groups/seed",
+    "handler": "HttpCode",
+    "controllerPrefix": "",
+    "subRoute": "ledger-groups/seed"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/ledger-groups",
+    "handler": "listGroups",
+    "controllerPrefix": "",
+    "subRoute": "ledger-groups"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/groups",
+    "handler": "listGroups",
+    "controllerPrefix": "",
+    "subRoute": "groups"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/ledger-groups",
+    "handler": "HttpCode",
+    "controllerPrefix": "",
+    "subRoute": "ledger-groups"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/groups",
+    "handler": "HttpCode",
+    "controllerPrefix": "",
+    "subRoute": "groups"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/ledgers",
+    "handler": "listAccounts",
+    "controllerPrefix": "",
+    "subRoute": "ledgers"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/ledgers/accounts",
+    "handler": "listAccounts",
+    "controllerPrefix": "",
+    "subRoute": "ledgers/accounts"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/accounts",
+    "handler": "listAccounts",
+    "controllerPrefix": "",
+    "subRoute": "accounts"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/ledgers",
+    "handler": "HttpCode",
+    "controllerPrefix": "",
+    "subRoute": "ledgers"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/accounts",
+    "handler": "HttpCode",
+    "controllerPrefix": "",
+    "subRoute": "accounts"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/ledgers/:id",
+    "handler": "getAccount",
+    "controllerPrefix": "",
+    "subRoute": "ledgers/:id"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/accounts/:id",
+    "handler": "getAccount",
+    "controllerPrefix": "",
+    "subRoute": "accounts/:id"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/ledgers/:id",
+    "handler": "Roles",
+    "controllerPrefix": "",
+    "subRoute": "ledgers/:id"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/accounts/:id",
+    "handler": "Roles",
+    "controllerPrefix": "",
+    "subRoute": "accounts/:id"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/ledgers/:id",
+    "handler": "Roles",
+    "controllerPrefix": "",
+    "subRoute": "ledgers/:id"
+  },
+  {
+    "file": "src/ledgers/ledgers.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/accounts/:id",
+    "handler": "Roles",
+    "controllerPrefix": "",
+    "subRoute": "accounts/:id"
+  },
+  {
+    "file": "src/mail/mail.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/mail/send",
+    "handler": "HttpCode",
+    "controllerPrefix": "mail",
+    "subRoute": "send"
+  },
+  {
+    "file": "src/mail/mail.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/mail/support",
+    "handler": "HttpCode",
+    "controllerPrefix": "mail",
+    "subRoute": "support"
+  },
+  {
+    "file": "src/manufacturing/bom.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/manufacturing/boms",
+    "handler": "HttpCode",
+    "controllerPrefix": "manufacturing/boms",
+    "subRoute": ""
+  },
+  {
+    "file": "src/manufacturing/bom.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/manufacturing/boms",
+    "handler": "findAll",
+    "controllerPrefix": "manufacturing/boms",
+    "subRoute": ""
+  },
+  {
+    "file": "src/manufacturing/bom.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/manufacturing/boms/:id",
+    "handler": "findOne",
+    "controllerPrefix": "manufacturing/boms",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/manufacturing/bom.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/manufacturing/boms/:id",
+    "handler": "Roles",
+    "controllerPrefix": "manufacturing/boms",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/manufacturing/bom.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/manufacturing/boms/:id",
+    "handler": "Roles",
+    "controllerPrefix": "manufacturing/boms",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/manufacturing/production-orders.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/manufacturing/orders",
+    "handler": "HttpCode",
+    "controllerPrefix": "manufacturing/orders",
+    "subRoute": ""
+  },
+  {
+    "file": "src/manufacturing/production-orders.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/manufacturing/orders",
+    "handler": "findAll",
+    "controllerPrefix": "manufacturing/orders",
+    "subRoute": ""
+  },
+  {
+    "file": "src/manufacturing/production-orders.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/manufacturing/orders/:id",
+    "handler": "findOne",
+    "controllerPrefix": "manufacturing/orders",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/manufacturing/production-orders.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/manufacturing/orders/:id/start",
+    "handler": "HttpCode",
+    "controllerPrefix": "manufacturing/orders",
+    "subRoute": ":id/start"
+  },
+  {
+    "file": "src/manufacturing/production-orders.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/manufacturing/orders/:id/complete",
+    "handler": "HttpCode",
+    "controllerPrefix": "manufacturing/orders",
+    "subRoute": ":id/complete"
+  },
+  {
+    "file": "src/manufacturing/production-orders.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/manufacturing/orders/:id/cancel",
+    "handler": "HttpCode",
+    "controllerPrefix": "manufacturing/orders",
+    "subRoute": ":id/cancel"
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/parties",
+    "handler": "HttpCode",
+    "controllerPrefix": "parties",
+    "subRoute": ""
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/masters/parties",
+    "handler": "HttpCode",
+    "controllerPrefix": "masters/parties",
+    "subRoute": ""
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/parties",
+    "handler": "findAll",
+    "controllerPrefix": "parties",
+    "subRoute": ""
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/masters/parties",
+    "handler": "findAll",
+    "controllerPrefix": "masters/parties",
+    "subRoute": ""
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/parties/lookup/gstin/:gstin",
+    "handler": "lookupGstin",
+    "controllerPrefix": "parties",
+    "subRoute": "lookup/gstin/:gstin"
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/masters/parties/lookup/gstin/:gstin",
+    "handler": "lookupGstin",
+    "controllerPrefix": "masters/parties",
+    "subRoute": "lookup/gstin/:gstin"
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/parties/:id",
+    "handler": "findOne",
+    "controllerPrefix": "parties",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/masters/parties/:id",
+    "handler": "findOne",
+    "controllerPrefix": "masters/parties",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/parties/:id",
+    "handler": "update",
+    "controllerPrefix": "parties",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/masters/parties/:id",
+    "handler": "update",
+    "controllerPrefix": "masters/parties",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/parties/:id/archive",
+    "handler": "archive",
+    "controllerPrefix": "parties",
+    "subRoute": ":id/archive"
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/masters/parties/:id/archive",
+    "handler": "archive",
+    "controllerPrefix": "masters/parties",
+    "subRoute": ":id/archive"
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/parties/bulk-delete",
+    "handler": "HttpCode",
+    "controllerPrefix": "parties",
+    "subRoute": "bulk-delete"
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/masters/parties/bulk-delete",
+    "handler": "HttpCode",
+    "controllerPrefix": "masters/parties",
+    "subRoute": "bulk-delete"
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/parties/:id",
+    "handler": "delete",
+    "controllerPrefix": "parties",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/parties/parties.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/masters/parties/:id",
+    "handler": "delete",
+    "controllerPrefix": "masters/parties",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/purchases/purchase-returns.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/purchase-returns",
+    "handler": "Roles",
+    "controllerPrefix": "purchase-returns",
+    "subRoute": ""
+  },
+  {
+    "file": "src/purchases/purchase-returns.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/debit-notes",
+    "handler": "Roles",
+    "controllerPrefix": "debit-notes",
+    "subRoute": ""
+  },
+  {
+    "file": "src/purchases/purchase-returns.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/purchase-returns/:id",
+    "handler": "Roles",
+    "controllerPrefix": "purchase-returns",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/purchases/purchase-returns.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/debit-notes/:id",
+    "handler": "Roles",
+    "controllerPrefix": "debit-notes",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/purchases/purchase-returns.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchase-returns",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchase-returns",
+    "subRoute": ""
+  },
+  {
+    "file": "src/purchases/purchase-returns.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/debit-notes",
+    "handler": "HttpCode",
+    "controllerPrefix": "debit-notes",
+    "subRoute": ""
+  },
+  {
+    "file": "src/purchases/purchase-returns.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/purchase-returns/:id",
+    "handler": "Roles",
+    "controllerPrefix": "purchase-returns",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/purchases/purchase-returns.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/debit-notes/:id",
+    "handler": "Roles",
+    "controllerPrefix": "debit-notes",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/purchases/purchase-returns.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/purchase-returns/:id",
+    "handler": "Roles",
+    "controllerPrefix": "purchase-returns",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/purchases/purchase-returns.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/debit-notes/:id",
+    "handler": "Roles",
+    "controllerPrefix": "debit-notes",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchases",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchases",
+    "subRoute": ""
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchase-invoices",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchase-invoices",
+    "subRoute": ""
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchases/payments",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchases",
+    "subRoute": "payments"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchase-invoices/payments",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchase-invoices",
+    "subRoute": "payments"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/purchases",
+    "handler": "Roles",
+    "controllerPrefix": "purchases",
+    "subRoute": ""
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/purchase-invoices",
+    "handler": "Roles",
+    "controllerPrefix": "purchase-invoices",
+    "subRoute": ""
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/purchases/:id",
+    "handler": "Roles",
+    "controllerPrefix": "purchases",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/purchase-invoices/:id",
+    "handler": "Roles",
+    "controllerPrefix": "purchase-invoices",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/purchases/:purchaseId/payments",
+    "handler": "Roles",
+    "controllerPrefix": "purchases",
+    "subRoute": ":purchaseId/payments"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/purchase-invoices/:purchaseId/payments",
+    "handler": "Roles",
+    "controllerPrefix": "purchase-invoices",
+    "subRoute": ":purchaseId/payments"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchases/:purchaseId/payments",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchases",
+    "subRoute": ":purchaseId/payments"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchase-invoices/:purchaseId/payments",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchase-invoices",
+    "subRoute": ":purchaseId/payments"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchases/:purchaseId/returns",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchases",
+    "subRoute": ":purchaseId/returns"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchase-invoices/:purchaseId/returns",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchase-invoices",
+    "subRoute": ":purchaseId/returns"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/purchases/:purchaseId/returns",
+    "handler": "Roles",
+    "controllerPrefix": "purchases",
+    "subRoute": ":purchaseId/returns"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/purchase-invoices/:purchaseId/returns",
+    "handler": "Roles",
+    "controllerPrefix": "purchase-invoices",
+    "subRoute": ":purchaseId/returns"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/purchases/:id",
+    "handler": "Roles",
+    "controllerPrefix": "purchases",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/purchase-invoices/:id",
+    "handler": "Roles",
+    "controllerPrefix": "purchase-invoices",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchases/bulk-delete",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchases",
+    "subRoute": "bulk-delete"
+  },
+  {
+    "file": "src/purchases/purchases.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchase-invoices/bulk-delete",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchase-invoices",
+    "subRoute": "bulk-delete"
+  },
+  {
+    "file": "src/purchases/scanner/purchase-scans.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchases/scans/upload",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchases/scans",
+    "subRoute": "upload"
+  },
+  {
+    "file": "src/purchases/scanner/purchase-scans.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchases/scans/:id/retry",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchases/scans",
+    "subRoute": ":id/retry"
+  },
+  {
+    "file": "src/purchases/scanner/purchase-scans.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/purchases/scans",
+    "handler": "Roles",
+    "controllerPrefix": "purchases/scans",
+    "subRoute": ""
+  },
+  {
+    "file": "src/purchases/scanner/purchase-scans.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/purchases/scans/:id",
+    "handler": "Roles",
+    "controllerPrefix": "purchases/scans",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/purchases/scanner/purchase-scans.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/purchases/scans/:id/file",
+    "handler": "Roles",
+    "controllerPrefix": "purchases/scans",
+    "subRoute": ":id/file"
+  },
+  {
+    "file": "src/purchases/scanner/purchase-scans.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/purchases/scans/:id",
+    "handler": "Roles",
+    "controllerPrefix": "purchases/scans",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/purchases/scanner/purchase-scans.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/purchases/scans/:id/confirm",
+    "handler": "HttpCode",
+    "controllerPrefix": "purchases/scans",
+    "subRoute": ":id/confirm"
+  },
+  {
+    "file": "src/purchases/scanner/purchase-scans.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/purchases/scans/:id",
+    "handler": "Roles",
+    "controllerPrefix": "purchases/scans",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/reconciliation/inventory-reconciliation.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reconciliation/stock-gl",
+    "handler": "Roles",
+    "controllerPrefix": "reconciliation",
+    "subRoute": "stock-gl"
+  },
+  {
+    "file": "src/reconciliation/inventory-reconciliation.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reconciliation/in-transit",
+    "handler": "Roles",
+    "controllerPrefix": "reconciliation",
+    "subRoute": "in-transit"
+  },
+  {
+    "file": "src/reconciliation/inventory-reconciliation.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reconciliation/manufacturing-cost",
+    "handler": "Roles",
+    "controllerPrefix": "reconciliation",
+    "subRoute": "manufacturing-cost"
+  },
+  {
+    "file": "src/reconciliation/inventory-reconciliation.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/reconciliation/post-manufacturing-journal",
+    "handler": "HttpCode",
+    "controllerPrefix": "reconciliation",
+    "subRoute": "post-manufacturing-journal"
+  },
+  {
+    "file": "src/reconciliation/inventory-reconciliation.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/reconciliation/post-transit-loss-journal",
+    "handler": "HttpCode",
+    "controllerPrefix": "reconciliation",
+    "subRoute": "post-transit-loss-journal"
+  },
+  {
+    "file": "src/reconciliation/inventory-reconciliation.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/reconciliation/vouchers/:id/reverse",
+    "handler": "HttpCode",
+    "controllerPrefix": "reconciliation",
+    "subRoute": "vouchers/:id/reverse"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/financial-summary",
+    "handler": "Roles",
+    "controllerPrefix": "reports",
+    "subRoute": "financial-summary"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/dashboard-summary",
+    "handler": "Roles",
+    "controllerPrefix": "reports",
+    "subRoute": "dashboard-summary"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/sales-register",
+    "handler": "getSalesRegister",
+    "controllerPrefix": "reports",
+    "subRoute": "sales-register"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/sales-register/export",
+    "handler": "exportSalesRegister",
+    "controllerPrefix": "reports",
+    "subRoute": "sales-register/export"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/purchase-register",
+    "handler": "getPurchaseRegister",
+    "controllerPrefix": "reports",
+    "subRoute": "purchase-register"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/gst-purchase-hsn",
+    "handler": "getGstPurchaseHsn",
+    "controllerPrefix": "reports",
+    "subRoute": "gst-purchase-hsn"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/gst-sales-hsn",
+    "handler": "getGstSalesHsn",
+    "controllerPrefix": "reports",
+    "subRoute": "gst-sales-hsn"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/receipt-payment-register",
+    "handler": "getReceiptPaymentRegister",
+    "controllerPrefix": "reports",
+    "subRoute": "receipt-payment-register"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/outstanding-balances",
+    "handler": "getOutstandingBalances",
+    "controllerPrefix": "reports",
+    "subRoute": "outstanding-balances"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/party-aging",
+    "handler": "getPartyAging",
+    "controllerPrefix": "reports",
+    "subRoute": "party-aging"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/party-ledger",
+    "handler": "getPartyLedger",
+    "controllerPrefix": "reports",
+    "subRoute": "party-ledger"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/general-ledger",
+    "handler": "getGeneralLedger",
+    "controllerPrefix": "reports",
+    "subRoute": "general-ledger"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/trial-balance",
+    "handler": "getTrialBalance",
+    "controllerPrefix": "reports",
+    "subRoute": "trial-balance"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/profit-and-loss",
+    "handler": "getProfitAndLoss",
+    "controllerPrefix": "reports",
+    "subRoute": "profit-and-loss"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/balance-sheet",
+    "handler": "getBalanceSheet",
+    "controllerPrefix": "reports",
+    "subRoute": "balance-sheet"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/daybook",
+    "handler": "getDaybook",
+    "controllerPrefix": "reports",
+    "subRoute": "daybook"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/stock-summary",
+    "handler": "getStockSummary",
+    "controllerPrefix": "reports",
+    "subRoute": "stock-summary"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/stock-movement",
+    "handler": "getStockMovement",
+    "controllerPrefix": "reports",
+    "subRoute": "stock-movement"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/gstr-1",
+    "handler": "getGstr1Report",
+    "controllerPrefix": "reports",
+    "subRoute": "gstr-1"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/gst-summary",
+    "handler": "getGstSummary",
+    "controllerPrefix": "reports",
+    "subRoute": "gst-summary"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/cash-flow",
+    "handler": "getCashFlow",
+    "controllerPrefix": "reports",
+    "subRoute": "cash-flow"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/gstr-3b",
+    "handler": "getGstr3b",
+    "controllerPrefix": "reports",
+    "subRoute": "gstr-3b"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/bill-wise-profit",
+    "handler": "getBillWiseProfit",
+    "controllerPrefix": "reports",
+    "subRoute": "bill-wise-profit"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/item-sales-report",
+    "handler": "getItemSalesReport",
+    "controllerPrefix": "reports",
+    "subRoute": "item-sales-report"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/party-sales-report",
+    "handler": "getPartySalesReport",
+    "controllerPrefix": "reports",
+    "subRoute": "party-sales-report"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/sales-returns",
+    "handler": "getSalesReturns",
+    "controllerPrefix": "reports",
+    "subRoute": "sales-returns"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/item-purchase-report",
+    "handler": "getItemPurchaseReport",
+    "controllerPrefix": "reports",
+    "subRoute": "item-purchase-report"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/party-purchase-report",
+    "handler": "getPartyPurchaseReport",
+    "controllerPrefix": "reports",
+    "subRoute": "party-purchase-report"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/purchase-returns",
+    "handler": "getPurchaseReturns",
+    "controllerPrefix": "reports",
+    "subRoute": "purchase-returns"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/quotations-report",
+    "handler": "getQuotations",
+    "controllerPrefix": "reports",
+    "subRoute": "quotations-report"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/delivery-challans-report",
+    "handler": "getDeliveryChallans",
+    "controllerPrefix": "reports",
+    "subRoute": "delivery-challans-report"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/batch-expiry-report",
+    "handler": "getItemBatchReport",
+    "controllerPrefix": "reports",
+    "subRoute": "batch-expiry-report"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/low-stock-alert",
+    "handler": "getLowStockAlert",
+    "controllerPrefix": "reports",
+    "subRoute": "low-stock-alert"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/expense-category-report",
+    "handler": "getExpenseCategoryReport",
+    "controllerPrefix": "reports",
+    "subRoute": "expense-category-report"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/audit-trail",
+    "handler": "getAuditTrail",
+    "controllerPrefix": "reports",
+    "subRoute": "audit-trail"
+  },
+  {
+    "file": "src/reports/reports.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/reports/hsn-sales-summary",
+    "handler": "getHsnWiseSalesReport",
+    "controllerPrefix": "reports",
+    "subRoute": "hsn-sales-summary"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/super-admin/stats",
+    "handler": "getStats",
+    "controllerPrefix": "super-admin",
+    "subRoute": "stats"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/super-admin/tenants",
+    "handler": "getTenants",
+    "controllerPrefix": "super-admin",
+    "subRoute": "tenants"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/super-admin/tenants/:id",
+    "handler": "getTenantById",
+    "controllerPrefix": "super-admin",
+    "subRoute": "tenants/:id"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/super-admin/tenants",
+    "handler": "HttpCode",
+    "controllerPrefix": "super-admin",
+    "subRoute": "tenants"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/super-admin/tenants/:id",
+    "handler": "updateTenant",
+    "controllerPrefix": "super-admin",
+    "subRoute": "tenants/:id"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/super-admin/users",
+    "handler": "getUsers",
+    "controllerPrefix": "super-admin",
+    "subRoute": "users"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/super-admin/users/:id",
+    "handler": "updateUser",
+    "controllerPrefix": "super-admin",
+    "subRoute": "users/:id"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/super-admin/audit-logs",
+    "handler": "getAuditLogs",
+    "controllerPrefix": "super-admin",
+    "subRoute": "audit-logs"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/super-admin/invoices",
+    "handler": "getInvoices",
+    "controllerPrefix": "super-admin",
+    "subRoute": "invoices"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/super-admin/diagnostics",
+    "handler": "getDiagnostics",
+    "controllerPrefix": "super-admin",
+    "subRoute": "diagnostics"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/super-admin/impersonate",
+    "handler": "HttpCode",
+    "controllerPrefix": "super-admin",
+    "subRoute": "impersonate"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/super-admin/impersonate/exit",
+    "handler": "HttpCode",
+    "controllerPrefix": "super-admin",
+    "subRoute": "impersonate/exit"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/super-admin/tenants/:id",
+    "handler": "HttpCode",
+    "controllerPrefix": "super-admin",
+    "subRoute": "tenants/:id"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/super-admin/tenants/bulk-delete",
+    "handler": "HttpCode",
+    "controllerPrefix": "super-admin",
+    "subRoute": "tenants/bulk-delete"
+  },
+  {
+    "file": "src/super-admin/super-admin.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/super-admin/tenants/bulk-status",
+    "handler": "HttpCode",
+    "controllerPrefix": "super-admin",
+    "subRoute": "tenants/bulk-status"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/tenants/company",
+    "handler": "getCurrentCompany",
+    "controllerPrefix": "tenants",
+    "subRoute": "company"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/tenants/company",
+    "handler": "Roles",
+    "controllerPrefix": "tenants",
+    "subRoute": "company"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/tenants/companies",
+    "handler": "getCompanies",
+    "controllerPrefix": "tenants",
+    "subRoute": "companies"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/tenants/companies",
+    "handler": "Roles",
+    "controllerPrefix": "tenants",
+    "subRoute": "companies"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/tenants/companies/:id",
+    "handler": "getCompanyById",
+    "controllerPrefix": "tenants",
+    "subRoute": "companies/:id"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/tenants/companies/:id",
+    "handler": "Roles",
+    "controllerPrefix": "tenants",
+    "subRoute": "companies/:id"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/tenants/branches",
+    "handler": "getBranches",
+    "controllerPrefix": "tenants",
+    "subRoute": "branches"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/tenants/branches",
+    "handler": "Roles",
+    "controllerPrefix": "tenants",
+    "subRoute": "branches"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/tenants/financial-years",
+    "handler": "getFinancialYears",
+    "controllerPrefix": "tenants",
+    "subRoute": "financial-years"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/tenants/warehouses",
+    "handler": "getWarehouses",
+    "controllerPrefix": "tenants",
+    "subRoute": "warehouses"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/tenants/warehouses",
+    "handler": "Roles",
+    "controllerPrefix": "tenants",
+    "subRoute": "warehouses"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/tenants/warehouses/:id",
+    "handler": "Roles",
+    "controllerPrefix": "tenants",
+    "subRoute": "warehouses/:id"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/tenants/warehouses/:id",
+    "handler": "Roles",
+    "controllerPrefix": "tenants",
+    "subRoute": "warehouses/:id"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/tenants/users",
+    "handler": "getOrganizationUsers",
+    "controllerPrefix": "tenants",
+    "subRoute": "users"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/tenants/users",
+    "handler": "Roles",
+    "controllerPrefix": "tenants",
+    "subRoute": "users"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/tenants/users/:id",
+    "handler": "Roles",
+    "controllerPrefix": "tenants",
+    "subRoute": "users/:id"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/tenants/users/:id",
+    "handler": "Roles",
+    "controllerPrefix": "tenants",
+    "subRoute": "users/:id"
+  },
+  {
+    "file": "src/tenants/tenants.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/tenants/activities",
+    "handler": "getOrganizationActivities",
+    "controllerPrefix": "tenants",
+    "subRoute": "activities"
+  },
+  {
+    "file": "src/tenants/warehouses.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/warehouses",
+    "handler": "getWarehouses",
+    "controllerPrefix": "warehouses",
+    "subRoute": ""
+  },
+  {
+    "file": "src/tenants/warehouses.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/tenants/warehouses",
+    "handler": "getWarehouses",
+    "controllerPrefix": "tenants/warehouses",
+    "subRoute": ""
+  },
+  {
+    "file": "src/tenants/warehouses.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/warehouses",
+    "handler": "Roles",
+    "controllerPrefix": "warehouses",
+    "subRoute": ""
+  },
+  {
+    "file": "src/tenants/warehouses.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/tenants/warehouses",
+    "handler": "Roles",
+    "controllerPrefix": "tenants/warehouses",
+    "subRoute": ""
+  },
+  {
+    "file": "src/tenants/warehouses.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/warehouses/:id",
+    "handler": "Roles",
+    "controllerPrefix": "warehouses",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/tenants/warehouses.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/tenants/warehouses/:id",
+    "handler": "Roles",
+    "controllerPrefix": "tenants/warehouses",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/tenants/warehouses.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/warehouses/:id",
+    "handler": "Roles",
+    "controllerPrefix": "warehouses",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/tenants/warehouses.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/tenants/warehouses/:id",
+    "handler": "Roles",
+    "controllerPrefix": "tenants/warehouses",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/units/units.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/units",
+    "handler": "HttpCode",
+    "controllerPrefix": "units",
+    "subRoute": ""
+  },
+  {
+    "file": "src/units/units.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/masters/units",
+    "handler": "HttpCode",
+    "controllerPrefix": "masters/units",
+    "subRoute": ""
+  },
+  {
+    "file": "src/units/units.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/units",
+    "handler": "findAll",
+    "controllerPrefix": "units",
+    "subRoute": ""
+  },
+  {
+    "file": "src/units/units.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/masters/units",
+    "handler": "findAll",
+    "controllerPrefix": "masters/units",
+    "subRoute": ""
+  },
+  {
+    "file": "src/units/units.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/units/:id",
+    "handler": "findOne",
+    "controllerPrefix": "units",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/units/units.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/masters/units/:id",
+    "handler": "findOne",
+    "controllerPrefix": "masters/units",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/units/units.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/units/:id",
+    "handler": "update",
+    "controllerPrefix": "units",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/units/units.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/masters/units/:id",
+    "handler": "update",
+    "controllerPrefix": "masters/units",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/units/units.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/units/bulk-delete",
+    "handler": "HttpCode",
+    "controllerPrefix": "units",
+    "subRoute": "bulk-delete"
+  },
+  {
+    "file": "src/units/units.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/masters/units/bulk-delete",
+    "handler": "HttpCode",
+    "controllerPrefix": "masters/units",
+    "subRoute": "bulk-delete"
+  },
+  {
+    "file": "src/units/units.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/units/:id",
+    "handler": "delete",
+    "controllerPrefix": "units",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/units/units.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/masters/units/:id",
+    "handler": "delete",
+    "controllerPrefix": "masters/units",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/vouchers",
+    "handler": "HttpCode",
+    "controllerPrefix": "vouchers",
+    "subRoute": ""
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/payments",
+    "handler": "HttpCode",
+    "controllerPrefix": "payments",
+    "subRoute": ""
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/vouchers/receipt",
+    "handler": "HttpCode",
+    "controllerPrefix": "vouchers",
+    "subRoute": "receipt"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/vouchers/payment-in",
+    "handler": "HttpCode",
+    "controllerPrefix": "vouchers",
+    "subRoute": "payment-in"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/vouchers/receipts",
+    "handler": "HttpCode",
+    "controllerPrefix": "vouchers",
+    "subRoute": "receipts"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/payments/receipt",
+    "handler": "HttpCode",
+    "controllerPrefix": "payments",
+    "subRoute": "receipt"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/payments/payment-in",
+    "handler": "HttpCode",
+    "controllerPrefix": "payments",
+    "subRoute": "payment-in"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/payments/receipts",
+    "handler": "HttpCode",
+    "controllerPrefix": "payments",
+    "subRoute": "receipts"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/vouchers/expense",
+    "handler": "HttpCode",
+    "controllerPrefix": "vouchers",
+    "subRoute": "expense"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/payments/expense",
+    "handler": "HttpCode",
+    "controllerPrefix": "payments",
+    "subRoute": "expense"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/vouchers/expense/:id",
+    "handler": "Roles",
+    "controllerPrefix": "vouchers",
+    "subRoute": "expense/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/payments/expense/:id",
+    "handler": "Roles",
+    "controllerPrefix": "payments",
+    "subRoute": "expense/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/vouchers",
+    "handler": "listVouchers",
+    "controllerPrefix": "vouchers",
+    "subRoute": ""
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/payments",
+    "handler": "listVouchers",
+    "controllerPrefix": "payments",
+    "subRoute": ""
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/vouchers/receipts",
+    "handler": "listReceipts",
+    "controllerPrefix": "vouchers",
+    "subRoute": "receipts"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/vouchers/payment-in",
+    "handler": "listReceipts",
+    "controllerPrefix": "vouchers",
+    "subRoute": "payment-in"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/vouchers/payments-in",
+    "handler": "listReceipts",
+    "controllerPrefix": "vouchers",
+    "subRoute": "payments-in"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/payments/receipts",
+    "handler": "listReceipts",
+    "controllerPrefix": "payments",
+    "subRoute": "receipts"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/payments/payment-in",
+    "handler": "listReceipts",
+    "controllerPrefix": "payments",
+    "subRoute": "payment-in"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/payments/payments-in",
+    "handler": "listReceipts",
+    "controllerPrefix": "payments",
+    "subRoute": "payments-in"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/vouchers/payments-out",
+    "handler": "listPaymentsOut",
+    "controllerPrefix": "vouchers",
+    "subRoute": "payments-out"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/vouchers/payment-out",
+    "handler": "listPaymentsOut",
+    "controllerPrefix": "vouchers",
+    "subRoute": "payment-out"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/payments/payments-out",
+    "handler": "listPaymentsOut",
+    "controllerPrefix": "payments",
+    "subRoute": "payments-out"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/payments/payment-out",
+    "handler": "listPaymentsOut",
+    "controllerPrefix": "payments",
+    "subRoute": "payment-out"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/vouchers/payment-out",
+    "handler": "HttpCode",
+    "controllerPrefix": "vouchers",
+    "subRoute": "payment-out"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/vouchers/payments-out",
+    "handler": "HttpCode",
+    "controllerPrefix": "vouchers",
+    "subRoute": "payments-out"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/payments/payment-out",
+    "handler": "HttpCode",
+    "controllerPrefix": "payments",
+    "subRoute": "payment-out"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/payments/payments-out",
+    "handler": "HttpCode",
+    "controllerPrefix": "payments",
+    "subRoute": "payments-out"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/vouchers/payment-out/:id",
+    "handler": "getPaymentOutById",
+    "controllerPrefix": "vouchers",
+    "subRoute": "payment-out/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/vouchers/payments-out/:id",
+    "handler": "getPaymentOutById",
+    "controllerPrefix": "vouchers",
+    "subRoute": "payments-out/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/payments/payment-out/:id",
+    "handler": "getPaymentOutById",
+    "controllerPrefix": "payments",
+    "subRoute": "payment-out/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/payments/payments-out/:id",
+    "handler": "getPaymentOutById",
+    "controllerPrefix": "payments",
+    "subRoute": "payments-out/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/vouchers/payment-out/:id",
+    "handler": "Roles",
+    "controllerPrefix": "vouchers",
+    "subRoute": "payment-out/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/vouchers/payments-out/:id",
+    "handler": "Roles",
+    "controllerPrefix": "vouchers",
+    "subRoute": "payments-out/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/payments/payment-out/:id",
+    "handler": "Roles",
+    "controllerPrefix": "payments",
+    "subRoute": "payment-out/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "PUT",
+    "path": "/api/v1/payments/payments-out/:id",
+    "handler": "Roles",
+    "controllerPrefix": "payments",
+    "subRoute": "payments-out/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/vouchers/payment-out/:id",
+    "handler": "Roles",
+    "controllerPrefix": "vouchers",
+    "subRoute": "payment-out/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/vouchers/payments-out/:id",
+    "handler": "Roles",
+    "controllerPrefix": "vouchers",
+    "subRoute": "payments-out/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/payments/payment-out/:id",
+    "handler": "Roles",
+    "controllerPrefix": "payments",
+    "subRoute": "payment-out/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/payments/payments-out/:id",
+    "handler": "Roles",
+    "controllerPrefix": "payments",
+    "subRoute": "payments-out/:id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/vouchers/:id",
+    "handler": "getVoucher",
+    "controllerPrefix": "vouchers",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "GET",
+    "path": "/api/v1/payments/:id",
+    "handler": "getVoucher",
+    "controllerPrefix": "payments",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/vouchers/:id/reverse",
+    "handler": "HttpCode",
+    "controllerPrefix": "vouchers",
+    "subRoute": ":id/reverse"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "POST",
+    "path": "/api/v1/payments/:id/reverse",
+    "handler": "HttpCode",
+    "controllerPrefix": "payments",
+    "subRoute": ":id/reverse"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/vouchers/:id",
+    "handler": "updateVoucher",
+    "controllerPrefix": "vouchers",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "PATCH",
+    "path": "/api/v1/payments/:id",
+    "handler": "updateVoucher",
+    "controllerPrefix": "payments",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/vouchers/:id",
+    "handler": "deleteVoucher",
+    "controllerPrefix": "vouchers",
+    "subRoute": ":id"
+  },
+  {
+    "file": "src/vouchers/vouchers.controller.ts",
+    "httpMethod": "DELETE",
+    "path": "/api/v1/payments/:id",
+    "handler": "deleteVoucher",
+    "controllerPrefix": "payments",
+    "subRoute": ":id"
+  }
+]

@@ -16,7 +16,7 @@ import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import { TenantContext, UserRole } from "@billing/shared-types";
 
-@Controller("distribution/challans")
+@Controller(["distribution/challans", "sales/challans"])
 export class DeliveryChallansController {
   constructor(private readonly service: DeliveryChallansService) {}
 
@@ -39,6 +39,11 @@ export class DeliveryChallansController {
   @Get()
   async findAll(@CurrentTenant() ctx: TenantContext) {
     return this.service.findAllChallans(ctx);
+  }
+
+  @Get("next-number")
+  async getNextNumber(@CurrentTenant() ctx: TenantContext) {
+    return this.service.getNextChallanNumber(ctx);
   }
 
   @Get(":id")

@@ -25,14 +25,14 @@ import { RecordInvoicePaymentDto } from "./dto/record-payment.dto";
 import { QueryStockTransactionsDto } from "./dto/query-stock.dto";
 import { CreateSalesReturnDto } from "./dto/create-sales-return.dto";
 
-@Controller("invoices")
+@Controller(["invoices", "sales", "sales-invoices", "inventory"])
 export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}
 
   @Throttle({
     default: { limit: process.env.NODE_ENV === "test" ? 1000 : 30, ttl: 60000 },
   })
-  @Post(["", "sales"])
+  @Post(["", "sales", "invoices"])
   @HttpCode(HttpStatus.CREATED)
   @Roles(
     UserRole.SUPER_ADMIN,
@@ -55,7 +55,7 @@ export class InvoicesController {
     );
   }
 
-  @Post("sales/:id/issue")
+  @Post(["sales/:id/issue", "invoices/:id/issue", ":id/issue"])
   @HttpCode(HttpStatus.OK)
   @Roles(
     UserRole.SUPER_ADMIN,
@@ -80,7 +80,7 @@ export class InvoicesController {
     );
   }
 
-  @Post("sales/:id/payments")
+  @Post(["sales/:id/payments", "invoices/:id/payments", ":id/payments"])
   @HttpCode(HttpStatus.OK)
   @Roles(
     UserRole.SUPER_ADMIN,
@@ -104,7 +104,7 @@ export class InvoicesController {
     );
   }
 
-  @Get("sales/:id/allocations")
+  @Get(["sales/:id/allocations", "invoices/:id/allocations", ":id/allocations"])
   async getInvoiceAllocations(
     @Param("id") id: string,
     @CurrentTenant() tenant: TenantContext,
@@ -112,7 +112,7 @@ export class InvoicesController {
     return await this.invoicesService.getInvoiceAllocations(id, tenant);
   }
 
-  @Get("stock/transactions")
+  @Get(["stock/transactions", "stock-movements"])
   async getStockMovements(
     @Query() query: QueryStockTransactionsDto,
     @CurrentTenant() tenant: TenantContext,
@@ -128,10 +128,18 @@ export class InvoicesController {
     return await this.invoicesService.getItemStockMovements(id, tenant);
   }
 
+  @Get(["next-number", "sales/next-number", "invoices/next-number"])
+  async getNextInvoiceNumber(
+    @Query("category") category: string,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.invoicesService.getNextInvoiceNumber(category, tenant);
+  }
+
   @Throttle({
     default: { limit: process.env.NODE_ENV === "test" ? 1000 : 30, ttl: 60000 },
   })
-  @Post("pos-checkout")
+  @Post(["pos-checkout", "sales/pos-checkout"])
   @HttpCode(HttpStatus.CREATED)
   @Roles(
     UserRole.SUPER_ADMIN,
@@ -150,7 +158,7 @@ export class InvoicesController {
     return await this.invoicesService.posCheckout(dto, tenant, idempotencyKey);
   }
 
-  @Post("pos-sync")
+  @Post(["pos-sync", "sales/pos-sync"])
   @HttpCode(HttpStatus.OK)
   @Roles(
     UserRole.SUPER_ADMIN,
@@ -168,7 +176,7 @@ export class InvoicesController {
     return await this.invoicesService.posSync(dto, tenant);
   }
 
-  @Post("sales/:id/cancel")
+  @Post(["sales/:id/cancel", "invoices/:id/cancel", ":id/cancel"])
   @HttpCode(HttpStatus.OK)
   @Roles(
     UserRole.SUPER_ADMIN,
@@ -190,7 +198,7 @@ export class InvoicesController {
     );
   }
 
-  @Get(["", "sales"])
+  @Get(["", "sales", "invoices"])
   async listSalesInvoices(
     @Query() query: QueryInvoicesDto,
     @CurrentTenant() tenant: TenantContext,
@@ -198,7 +206,7 @@ export class InvoicesController {
     return await this.invoicesService.listSalesInvoices(query, tenant);
   }
 
-  @Get("sales/:id")
+  @Get(["sales/:id", "invoices/:id", ":id"])
   async getSalesInvoice(
     @Param("id") id: string,
     @CurrentTenant() tenant: TenantContext,
@@ -206,7 +214,7 @@ export class InvoicesController {
     return await this.invoicesService.getSalesInvoiceById(id, tenant);
   }
 
-  @Put("sales/:id")
+  @Put(["sales/:id", "invoices/:id", ":id"])
   @Roles(
     UserRole.SUPER_ADMIN,
     UserRole.ORG_ADMIN,
@@ -224,7 +232,7 @@ export class InvoicesController {
     return await this.invoicesService.updateSalesInvoice(id, dto, tenant);
   }
 
-  @Post("sales/:id/returns")
+  @Post(["sales/:id/returns", "invoices/:id/returns", ":id/returns"])
   @HttpCode(HttpStatus.CREATED)
   @Roles(
     UserRole.SUPER_ADMIN,
@@ -241,7 +249,7 @@ export class InvoicesController {
     return await this.invoicesService.createSalesReturn(id, dto, tenant);
   }
 
-  @Get("sales/:id/returns")
+  @Get(["sales/:id/returns", "invoices/:id/returns", ":id/returns"])
   @Roles(
     UserRole.SUPER_ADMIN,
     UserRole.ORG_ADMIN,
@@ -257,7 +265,7 @@ export class InvoicesController {
     return await this.invoicesService.getSalesReturnsForInvoice(id, tenant);
   }
 
-  @Delete("sales/:id")
+  @Delete(["sales/:id", "invoices/:id", ":id"])
   @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.COMPANY_ADMIN)
   async deleteSalesInvoice(
     @Param("id") id: string,
@@ -266,7 +274,7 @@ export class InvoicesController {
     return await this.invoicesService.deleteSalesInvoice(id, tenant);
   }
 
-  @Post("sales/bulk-delete")
+  @Post(["sales/bulk-delete", "invoices/bulk-delete", "bulk-delete"])
   @HttpCode(HttpStatus.OK)
   @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.COMPANY_ADMIN)
   async bulkDeleteSalesInvoices(

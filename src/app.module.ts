@@ -30,6 +30,9 @@ import { ReconciliationModule } from "./reconciliation/reconciliation.module";
 import { GstModule } from "./gst/gst.module";
 import { SuperAdminModule } from "./super-admin/super-admin.module";
 import { ImportsModule } from "./imports/imports.module";
+import { ExpensesModule } from "./expenses/expenses.module";
+import { BankingModule } from "./banking/banking.module";
+import { DashboardModule } from "./dashboard/dashboard.module";
 
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 
@@ -63,6 +66,9 @@ import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
     HsnModule,
     LedgersModule,
     VouchersModule,
+    ExpensesModule,
+    BankingModule,
+    DashboardModule,
     InvoicesModule,
     PurchasesModule,
     ReportsModule,

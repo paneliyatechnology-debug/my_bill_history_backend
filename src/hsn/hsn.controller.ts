@@ -19,7 +19,7 @@ import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import { TenantContext, UserRole } from "@billing/shared-types";
 
-@Controller("hsn")
+@Controller(["hsn", "masters/hsn"])
 export class HsnController {
   constructor(private readonly hsnService: HsnService) {}
 

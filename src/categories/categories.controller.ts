@@ -15,7 +15,7 @@ import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import { TenantContext, UserRole } from "@billing/shared-types";
 
-@Controller("categories")
+@Controller(["categories", "masters/categories"])
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 

@@ -1,0 +1,2378 @@
+[
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/accounting/chart-of-accounts/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledger-groups"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/accounting/chart-of-accounts/page.tsx",
+    "method": "POST",
+    "endpoint": "/ledger-groups/seed"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/accounting/chart-of-accounts/page.tsx",
+    "method": "POST",
+    "endpoint": "/ledger-groups"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/accounting/ledgers/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/accounting/ledgers/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledger-groups"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/accounting/ledgers/page.tsx",
+    "method": "POST",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/accounting/vouchers/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/accounting/vouchers/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/accounting/vouchers/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/accounting/vouchers/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers/${reversalTarget.id}/reverse"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/ai-collections/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/cash-bank/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/cash-bank/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledger-groups"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/cash-bank/page.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/company"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/cash-bank/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/general-ledger"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/cash-bank/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/cash-bank/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/cash-bank/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/cash-bank/page.tsx",
+    "method": "POST",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/[id]/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers/${id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/[id]/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers/${voucher.id}/reverse"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers/${activeEditId}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledger-groups"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/create/page.tsx",
+    "method": "PUT",
+    "endpoint": "/vouchers/expense/${editingVoucherId}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers/expense"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers/expense"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/expenses/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers/${reversalTarget.id}/reverse"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/ledgers/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/ledgers/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledger-groups"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/ledgers/page.tsx",
+    "method": "POST",
+    "endpoint": "/ledger-groups/seed"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/ledgers/page.tsx",
+    "method": "POST",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/ledgers/page.tsx",
+    "method": "PATCH",
+    "endpoint": "/ledgers/${editingLedger.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/ledgers/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/ledgers/${ledger.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/ledgers/page.tsx",
+    "method": "PATCH",
+    "endpoint": "/ledgers/${ledger.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/vouchers/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/vouchers/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/vouchers/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/vouchers/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/vouchers/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/vouchers/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers/${reversalTarget.id}/reverse"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/vouchers/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers/expense"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/finance/vouchers/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/einvoice/page.tsx",
+    "method": "GET",
+    "endpoint": "/gst/documents"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/einvoice/page.tsx",
+    "method": "GET",
+    "endpoint": "/gst/integration"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/einvoice/page.tsx",
+    "method": "POST",
+    "endpoint": "/gst/einvoice/${selected.id}/generate"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/eway/page.tsx",
+    "method": "GET",
+    "endpoint": "/gst/documents"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/eway/page.tsx",
+    "method": "POST",
+    "endpoint": "/gst/eway-bills/invoices/${selected.id}/generate"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/eway/page.tsx",
+    "method": "GET",
+    "endpoint": "/gst/eway-bills/${selected.eWayBill.ewbNumber}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/gstr-1/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/gstr-1"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/gstr-1/page.tsx",
+    "method": "GET",
+    "endpoint": "/gst/documents"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/gstr-2b/page.tsx",
+    "method": "GET",
+    "endpoint": "/gst/gstr-2b/reconciliations"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/gstr-2b/page.tsx",
+    "method": "POST",
+    "endpoint": "/gst/gstr-2b/imports"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/gstr-2b/page.tsx",
+    "method": "POST",
+    "endpoint": "/gst/gstr-2b/reconciliations/${selected.id}/review"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/gstr-3b/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/gstr-3b"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/gstr-1"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/gstr-3b"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/page.tsx",
+    "method": "GET",
+    "endpoint": "/gst/gstr-2b/summary"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/page.tsx",
+    "method": "GET",
+    "endpoint": "/gst/audit"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/page.tsx",
+    "method": "GET",
+    "endpoint": "/gst/documents"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/page.tsx",
+    "method": "GET",
+    "endpoint": "/gst/integration"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/purchases/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/purchase-register"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/purchases/page.tsx",
+    "method": "GET",
+    "endpoint": "/gst/gstr-2b/reconciliations"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/settings/page.tsx",
+    "method": "GET",
+    "endpoint": "/gst/integration"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/settings/page.tsx",
+    "method": "PUT",
+    "endpoint": "/gst/integration"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/gst/settings/page.tsx",
+    "method": "POST",
+    "endpoint": "/gst/integration/sandbox-ping"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/movements/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/stock/transactions"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/reconciliation/page.tsx",
+    "method": "GET",
+    "endpoint": "/warehouses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/reconciliation/page.tsx",
+    "method": "GET",
+    "endpoint": "/reconciliation/stock-gl"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/reconciliation/page.tsx",
+    "method": "GET",
+    "endpoint": "/reconciliation/in-transit"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/reconciliation/page.tsx",
+    "method": "GET",
+    "endpoint": "/reconciliation/manufacturing-cost"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/stock/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/stock-summary"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/transfers/page.tsx",
+    "method": "GET",
+    "endpoint": "/distribution/transfers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/transfers/page.tsx",
+    "method": "GET",
+    "endpoint": "/warehouses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/transfers/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/transfers/page.tsx",
+    "method": "POST",
+    "endpoint": "/distribution/transfers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/transfers/page.tsx",
+    "method": "POST",
+    "endpoint": "/distribution/transfers/${selectedTransfer.id}/dispatch"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/transfers/page.tsx",
+    "method": "POST",
+    "endpoint": "/distribution/transfers/${selectedTransfer.id}/receive"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/transfers/page.tsx",
+    "method": "POST",
+    "endpoint": "/distribution/transfers/${selectedTransfer.id}/cancel"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/inventory/transfers/page.tsx",
+    "method": "GET",
+    "endpoint": "/distribution/transfers/${tr.id}/reconciliation"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/login/page.tsx",
+    "method": "POST",
+    "endpoint": "/auth/login"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/login/page.tsx",
+    "method": "POST",
+    "endpoint": "/auth/otp/send"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/login/page.tsx",
+    "method": "POST",
+    "endpoint": "/auth/register"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/login/page.tsx",
+    "method": "POST",
+    "endpoint": "/auth/otp/send"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/login/page.tsx",
+    "method": "POST",
+    "endpoint": "/auth/password/reset"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/manufacturing/bom/page.tsx",
+    "method": "GET",
+    "endpoint": "/manufacturing/boms"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/manufacturing/bom/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/manufacturing/bom/page.tsx",
+    "method": "POST",
+    "endpoint": "/manufacturing/boms"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/manufacturing/bom/page.tsx",
+    "method": "PUT",
+    "endpoint": "/manufacturing/boms/${selectedBom.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/manufacturing/bom/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/manufacturing/boms/${id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/manufacturing/orders/page.tsx",
+    "method": "GET",
+    "endpoint": "/manufacturing/orders"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/manufacturing/orders/page.tsx",
+    "method": "GET",
+    "endpoint": "/manufacturing/boms"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/manufacturing/orders/page.tsx",
+    "method": "GET",
+    "endpoint": "/warehouses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/manufacturing/orders/page.tsx",
+    "method": "POST",
+    "endpoint": "/manufacturing/orders"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/manufacturing/orders/page.tsx",
+    "method": "POST",
+    "endpoint": "/manufacturing/orders/${selectedOrder.id}/start"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/manufacturing/orders/page.tsx",
+    "method": "POST",
+    "endpoint": "/manufacturing/orders/${selectedOrder.id}/complete"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/manufacturing/orders/page.tsx",
+    "method": "POST",
+    "endpoint": "/manufacturing/orders/${selectedOrder.id}/cancel"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/batches/page.tsx",
+    "method": "GET",
+    "endpoint": "/batches"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/batches/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/batches/page.tsx",
+    "method": "POST",
+    "endpoint": "/batches"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/categories/page.tsx",
+    "method": "GET",
+    "endpoint": "/categories"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/categories/page.tsx",
+    "method": "POST",
+    "endpoint": "/categories"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/categories/page.tsx",
+    "method": "PUT",
+    "endpoint": "/categories/${editingCategory.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/categories/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/categories/${categoryToDelete.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/categories/page.tsx",
+    "method": "POST",
+    "endpoint": "/categories/bulk-delete"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/hsn/page.tsx",
+    "method": "GET",
+    "endpoint": "/hsn?${params.toString()}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/hsn/page.tsx",
+    "method": "POST",
+    "endpoint": "/hsn"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/hsn/page.tsx",
+    "method": "PUT",
+    "endpoint": "/hsn/${editingItem.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/hsn/page.tsx",
+    "method": "PATCH",
+    "endpoint": "/hsn/${item.id}/status"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/hsn/page.tsx",
+    "method": "GET",
+    "endpoint": "/hsn/${item.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/hsn/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/hsn/${deletingItem.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/items/components/adjust-stock-modal.tsx",
+    "method": "POST",
+    "endpoint": "/items/${item.id}/adjust-stock"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/items/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/items/page.tsx",
+    "method": "GET",
+    "endpoint": "/units"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/items/page.tsx",
+    "method": "GET",
+    "endpoint": "/categories"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/items/page.tsx",
+    "method": "GET",
+    "endpoint": "/warehouses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/items/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/items/page.tsx",
+    "method": "POST",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/items/page.tsx",
+    "method": "PUT",
+    "endpoint": "/items/${editingItem.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/items/page.tsx",
+    "method": "POST",
+    "endpoint": "/categories"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/items/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/items/${itemToDelete.id}?force=${shouldForce ? "
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/items/page.tsx",
+    "method": "POST",
+    "endpoint": "/items/bulk-delete"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/parties/page.tsx",
+    "method": "POST",
+    "endpoint": "/gst/verify-gstin"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/parties/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties/lookup/gstin/${clean}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/parties/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/parties/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/sales"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/parties/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/parties/page.tsx",
+    "method": "POST",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/parties/page.tsx",
+    "method": "PUT",
+    "endpoint": "/parties/${editingParty.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/parties/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/parties/${partyToDelete.id}${singleForceDelete ? "
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/parties/page.tsx",
+    "method": "POST",
+    "endpoint": "/parties/bulk-delete"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/units/page.tsx",
+    "method": "GET",
+    "endpoint": "/units"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/units/page.tsx",
+    "method": "POST",
+    "endpoint": "/units"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/units/page.tsx",
+    "method": "PUT",
+    "endpoint": "/units/${editingUnit.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/units/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/units/${unitToDelete.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/units/page.tsx",
+    "method": "POST",
+    "endpoint": "/units/bulk-delete"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/warehouses/page.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/warehouses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/warehouses/page.tsx",
+    "method": "POST",
+    "endpoint": "/tenants/warehouses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/warehouses/page.tsx",
+    "method": "PUT",
+    "endpoint": "/tenants/warehouses/${editingWh.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/masters/warehouses/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/tenants/warehouses/${whToDelete.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/financial-summary"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/page.tsx",
+    "method": "GET",
+    "endpoint": "/expenses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/page.tsx",
+    "method": "GET",
+    "endpoint": "/bank-accounts"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/page.tsx",
+    "method": "GET",
+    "endpoint": "/warehouses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/[id]/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases/${id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/[id]/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases/${id}/payments"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/[id]/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/[id]/page.tsx",
+    "method": "POST",
+    "endpoint": "/purchases/${invoice.id}/payments"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/components/bill-scanner-modal.tsx",
+    "method": "POST",
+    "endpoint": "/purchases/scans/${failedScanId}/retry"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/components/bill-scanner-modal.tsx",
+    "method": "GET",
+    "endpoint": "/purchases/scans/${failedScanId}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/components/bill-scanner-modal.tsx",
+    "method": "POST",
+    "endpoint": "/purchases/scans/upload?async=true"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/components/bill-scanner-modal.tsx",
+    "method": "GET",
+    "endpoint": "/purchases/scans/${response.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/components/bill-scanner-modal.tsx",
+    "method": "PATCH",
+    "endpoint": "/purchases/scans/${scanRecord.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/components/bill-scanner-modal.tsx",
+    "method": "POST",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/components/bill-scanner-modal.tsx",
+    "method": "POST",
+    "endpoint": "/purchases/scans/${scanRecord.id}/confirm"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/warehouses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/units"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/masters/units"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/company"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/units"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/units"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties/${resolvedPartyId}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/purchases/scans/upload?async=true"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases/scans/${response.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/purchases"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/purchases/${savedInvoiceId}/payments"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/page.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/warehouses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases/${inv.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/purchases/${purchaseToDelete.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/page.tsx",
+    "method": "POST",
+    "endpoint": "/purchases/${payBill.id}/payments"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/[id]/edit/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers/payment-out/${voucherId}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/[id]/edit/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/[id]/edit/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers/accounts"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/[id]/edit/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/[id]/edit/page.tsx",
+    "method": "PUT",
+    "endpoint": "/vouchers/payment-out/${voucherId}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/[id]/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers/payment-out/${id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/[id]/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/vouchers/payment-out/${payment.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers/accounts"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers/payments-out"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers/payment-out"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers/payments-out"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/payment-out/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/vouchers/payment-out/${cancelTarget.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/returns/[id]/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/purchase-returns/${returnId}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/returns/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/returns/create/page.tsx",
+    "method": "PUT",
+    "endpoint": "/parties/${selectedParty.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/returns/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/returns/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/returns/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases/${inv.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/returns/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/purchases"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/returns/create/page.tsx",
+    "method": "PUT",
+    "endpoint": "/purchase-returns/${editId}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/returns/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/purchase-returns"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/returns/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchase-returns"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/purchases/returns/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/purchase-returns/${id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/sales-register"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/bill-wise-profit"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/item-sales-report"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/party-sales-report"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/sales-returns"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/quotations-report"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/delivery-challans-report"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/purchase-register"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/item-purchase-report"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/party-purchase-report"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/purchase-returns"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/receipt-payment-register"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/outstanding-balances"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/party-ledger"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/party-aging"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/trial-balance"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/profit-and-loss"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/balance-sheet"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/cash-flow"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/daybook"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/stock-summary"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/stock-movement"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/batch-expiry-report"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/low-stock-alert"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/expense-category-report"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/audit-trail"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/gstr-1"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/gstr-3b"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/gst-purchase-hsn"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/gst-sales-hsn"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/hsn-sales-summary"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "GET",
+    "endpoint": "/reports/sales-register"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/reports/page.tsx",
+    "method": "POST",
+    "endpoint": "/mail/send"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/credit-note/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/credit-note/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/credit-note/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/sales-returns"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/credit-note/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/sales-returns/${idToFetch}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/credit-note/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/sales"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/credit-note/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/credit-note/create/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/sales-returns/${editId}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/credit-note/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/sales-returns"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/credit-note/view/[id]/page.tsx",
+    "method": "GET",
+    "endpoint": "/sales-returns/${id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/delivery-challan/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/delivery-challan/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/delivery-challan/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/warehouses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/delivery-challan/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/warehouses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/delivery-challan/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/distribution/challans/next-number"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/delivery-challan/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/distribution/challans"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/delivery-challan/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/delivery-challan/page.tsx",
+    "method": "GET",
+    "endpoint": "/distribution/challans"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/delivery-challan/page.tsx",
+    "method": "POST",
+    "endpoint": "/distribution/challans/${ch.id}/close"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/delivery-challan/page.tsx",
+    "method": "POST",
+    "endpoint": "/distribution/challans/${selectedChallan.id}/cancel"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/delivery-challan/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/distribution/challans/${challanToDelete.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/eway-bills/page.tsx",
+    "method": "GET",
+    "endpoint": "/gst/eway-bills"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/eway-bills/page.tsx",
+    "method": "GET",
+    "endpoint": "/sales/invoices"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/eway-bills/page.tsx",
+    "method": "GET",
+    "endpoint": "/distribution/challans"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/eway-bills/page.tsx",
+    "method": "POST",
+    "endpoint": "/gst/eway-bills/link"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/eway-bills/page.tsx",
+    "method": "POST",
+    "endpoint": "/gst/eway-bills/${vehicleUpdateTarget.ewbNumber}/vehicle"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/eway-bills/page.tsx",
+    "method": "POST",
+    "endpoint": "/gst/eway-bills/${cancelTarget.ewbNumber}/cancel"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/[id]/edit/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/sales/${id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/[id]/edit/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/[id]/edit/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/[id]/edit/page.tsx",
+    "method": "PUT",
+    "endpoint": "/invoices/sales/${id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/[id]/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/sales/${id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/[id]/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/sales/${id}/allocations"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/[id]/page.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/company"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/[id]/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales/${invoice.id}/issue"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/[id]/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales/${invoice.id}/payments"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/[id]/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales/${invoice.id}/cancel"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/[id]/page.tsx",
+    "method": "POST",
+    "endpoint": "/gst/eway-bills/invoices/${invoice.id}/generate"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/[id]/page.tsx",
+    "method": "POST",
+    "endpoint": "/gst/eway-bills/link"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/units"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases/scans"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/units"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/units"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/purchases/scans/upload?async=true"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/purchases/scans/${response.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales${isDraft ? "
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales/${res.id}/payments"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/sales"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/sales/${inv.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales/${paymentInvoice.id}/payments"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales/${cancelInvoice.id}/cancel"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/invoices/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales/bulk-delete"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/payment-in/[id]/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers/${id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/payment-in/[id]/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers/${receipt.id}/reverse"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/payment-in/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/payment-in/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/ledgers"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/payment-in/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers/receipts"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/payment-in/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/sales"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/payment-in/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/payment-in/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers/receipt"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/payment-in/page.tsx",
+    "method": "GET",
+    "endpoint": "/vouchers/receipts"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/payment-in/page.tsx",
+    "method": "POST",
+    "endpoint": "/vouchers/${reverseTarget.id}/reverse"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/pos/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/pos/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/pos/page.tsx",
+    "method": "GET",
+    "endpoint": "/categories"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/pos/page.tsx",
+    "method": "GET",
+    "endpoint": "/units"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/pos/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/pos/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/pos-checkout"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/pos/page.tsx",
+    "method": "POST",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/proforma/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/proforma/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/proforma/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/warehouses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/proforma/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/warehouses"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/proforma/create/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/sales/next-number"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/proforma/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales?isDraft=true"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/proforma/create/page.tsx",
+    "method": "POST",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/proforma/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/sales"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/proforma/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales/${inv.id}/convert-to-tax-invoice"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/proforma/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales/${selectedInvoice.id}/cancel"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/proforma/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/invoices/sales/${invoiceToDelete.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/quotations/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/quotations/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/items"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/quotations/new/page.tsx",
+    "method": "GET",
+    "endpoint": "/units"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/quotations/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/quotations/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales/${res.id}/issue"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/quotations/new/page.tsx",
+    "method": "POST",
+    "endpoint": "/parties"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/quotations/page.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/sales"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/quotations/page.tsx",
+    "method": "POST",
+    "endpoint": "/invoices/sales/${convertingTarget.id}/issue"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/quotations/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/invoices/sales/${deletingTarget.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/returns/page.tsx",
+    "method": "GET",
+    "endpoint": "/sales-returns"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/app/sales/returns/page.tsx",
+    "method": "DELETE",
+    "endpoint": "/sales-returns/${deleteTarget.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/dashboard/financial-summary-cards.tsx",
+    "method": "GET",
+    "endpoint": "/reports/dashboard-summary"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/gst/ewb-slip-modal.tsx",
+    "method": "POST",
+    "endpoint": "/gst/eway-bills/${ewbNumber}/vehicle"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/gst/ewb-slip-modal.tsx",
+    "method": "GET",
+    "endpoint": "/gst/eway-bills/${ewbNumber}/details"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/gst/ewb-slip-modal.tsx",
+    "method": "POST",
+    "endpoint": "/gst/eway-bills/${ewbNumber}/cancel"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/gst/ewb-slip-modal.tsx",
+    "method": "GET",
+    "endpoint": "/gst/eway-bills/${ewbNumber}/details"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/landing/live-gst-invoice-card.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/sales"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/landing/live-gst-invoice-card.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/companies"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/landing/live-gst-invoice-card.tsx",
+    "method": "GET",
+    "endpoint": "/invoices/sales/${first.id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/layout/app-shell.tsx",
+    "method": "POST",
+    "endpoint": "/super-admin/impersonate/exit"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/manage-users-view.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/users"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/manage-users-view.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/activities"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/manage-users-view.tsx",
+    "method": "POST",
+    "endpoint": "/tenants/users"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/manage-users-view.tsx",
+    "method": "POST",
+    "endpoint": "/tenants/users"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/manage-users-view.tsx",
+    "method": "PATCH",
+    "endpoint": "/tenants/users/${id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/manage-users-view.tsx",
+    "method": "PATCH",
+    "endpoint": "/tenants/users/${id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/manage-users-view.tsx",
+    "method": "DELETE",
+    "endpoint": "/tenants/users/${id}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/settings-views.tsx",
+    "method": "POST",
+    "endpoint": "/auth/email/send-otp"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/settings-views.tsx",
+    "method": "PATCH",
+    "endpoint": "/auth/profile"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/settings-views.tsx",
+    "method": "POST",
+    "endpoint": "/auth/password/change"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/settings-views.tsx",
+    "method": "POST",
+    "endpoint": "/mail/support"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/settings-views.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/company"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/settings-views.tsx",
+    "method": "PATCH",
+    "endpoint": "/tenants/company"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/settings/settings-views.tsx",
+    "method": "POST",
+    "endpoint": "/mail/support"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/components/ui/hsn-selector.tsx",
+    "method": "GET",
+    "endpoint": "/hsn/search?q=${encodeURIComponent(searchTerm)}&limit=15${typeParam}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/context/auth-context.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/companies"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/context/auth-context.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/branches"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/context/auth-context.tsx",
+    "method": "GET",
+    "endpoint": "/tenants/financial-years"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/context/auth-context.tsx",
+    "method": "GET",
+    "endpoint": "/auth/live-status"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/context/auth-context.tsx",
+    "method": "POST",
+    "endpoint": "/auth/switch-context"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/context/auth-context.tsx",
+    "method": "POST",
+    "endpoint": "/tenants/companies"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/lib/import-api.ts",
+    "method": "GET",
+    "endpoint": "/imports/modules"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/lib/import-api.ts",
+    "method": "GET",
+    "endpoint": "/imports/${moduleName}/schema"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/lib/import-api.ts",
+    "method": "POST",
+    "endpoint": "/imports/parse"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/lib/import-api.ts",
+    "method": "POST",
+    "endpoint": "/imports/validate"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/lib/import-api.ts",
+    "method": "POST",
+    "endpoint": "/imports/execute"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/lib/import-api.ts",
+    "method": "GET",
+    "endpoint": "/imports/jobs"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/lib/import-api.ts",
+    "method": "GET",
+    "endpoint": "/imports/jobs/${jobId}"
+  },
+  {
+    "client": "Billing_frontend",
+    "file": "src/lib/send-app-email.ts",
+    "method": "POST",
+    "endpoint": "/mail/send"
+  },
+  {
+    "client": "billing_superadmin",
+    "file": "src/lib/api-client.ts",
+    "method": "CALL",
+    "endpoint": "${API_BASE}${fullPath.startsWith("
+  },
+  {
+    "client": "billing_superadmin",
+    "file": "src/lib/export/export-font-loader.ts",
+    "method": "CALL",
+    "endpoint": "/fonts/FreeSerif.ttf"
+  },
+  {
+    "client": "billing_superadmin",
+    "file": "src/lib/import-api.ts",
+    "method": "CALL",
+    "endpoint": "${apiClient.getBaseUrl()}/imports/${moduleName}/template?format=${format}"
+  },
+  {
+    "client": "billing_superadmin",
+    "file": "src/lib/import-api.ts",
+    "method": "CALL",
+    "endpoint": "${apiClient.getBaseUrl()}/imports/jobs/${jobId}/errors?format=${format}"
+  }
+]

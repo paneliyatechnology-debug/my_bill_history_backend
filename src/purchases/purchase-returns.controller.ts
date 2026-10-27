@@ -18,7 +18,12 @@ import { PurchasesService } from "./purchases.service";
 import { CreatePurchaseReturnDto } from "./dto/create-purchase-return.dto";
 import { QueryPurchaseReturnsDto } from "./dto/query-purchase-returns.dto";
 
-@Controller("purchase-returns")
+@Controller([
+  "purchase-returns",
+  "purchases/debit-notes",
+  "purchases/returns",
+  "debit-notes",
+])
 export class PurchaseReturnsController {
   constructor(private readonly purchasesService: PurchasesService) {}
 

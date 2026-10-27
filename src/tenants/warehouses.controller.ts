@@ -12,7 +12,7 @@ import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import { TenantContext, UserRole } from "@billing/shared-types";
 
-@Controller("warehouses")
+@Controller(["warehouses", "masters/warehouses", "inventory/warehouses"])
 export class WarehousesController {
   constructor(private readonly tenantsService: TenantsService) {}
 

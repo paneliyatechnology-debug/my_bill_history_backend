@@ -16,7 +16,7 @@ import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import { TenantContext, UserRole } from "@billing/shared-types";
 
-@Controller("reconciliation")
+@Controller(["reconciliation", "inventory/reconciliation"])
 export class InventoryReconciliationController {
   constructor(
     private readonly reconService: InventoryReconciliationService,

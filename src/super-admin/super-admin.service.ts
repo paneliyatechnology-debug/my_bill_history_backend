@@ -12,6 +12,8 @@ import * as bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { SupportSessionRegistry } from "./support-session.registry";
 
+import { SessionEventsService } from "../auth/session-events.service";
+
 @Injectable()
 export class SuperAdminService {
   constructor(
@@ -19,6 +21,7 @@ export class SuperAdminService {
     private readonly audit: AuditService,
     private readonly jwtService: JwtService,
     private readonly sessionRegistry: SupportSessionRegistry,
+    private readonly sessionEvents: SessionEventsService,
   ) {}
 
   /**
@@ -499,6 +502,11 @@ export class SuperAdminService {
       extendDays?: number;
       isActive?: boolean;
       status?: string;
+      name?: string;
+      organizationName?: string;
+      legalName?: string;
+      primaryPhone?: string;
+      primaryEmail?: string;
     },
     superAdminUserId: string,
   ) {
@@ -532,6 +540,31 @@ export class SuperAdminService {
         updateData.isActive = false;
       }
 
+      // Check and update primaryPhone
+      if (dto.primaryPhone && dto.primaryPhone.trim() && dto.primaryPhone.trim() !== existing.primaryPhone) {
+        const phoneExists = await tx.tenant.findUnique({
+          where: { primaryPhone: dto.primaryPhone.trim() },
+        });
+        if (phoneExists && phoneExists.id !== tenantId) {
+          throw new BadRequestException(`Phone number '${dto.primaryPhone}' is already registered with another tenant.`);
+        }
+        updateData.primaryPhone = dto.primaryPhone.trim();
+      }
+
+      // Check and update primaryEmail
+      if (dto.primaryEmail !== undefined && dto.primaryEmail !== null) {
+        const cleanEmail = dto.primaryEmail.trim() || null;
+        if (cleanEmail && cleanEmail !== existing.primaryEmail) {
+          const emailExists = await tx.tenant.findUnique({
+            where: { primaryEmail: cleanEmail },
+          });
+          if (emailExists && emailExists.id !== tenantId) {
+            throw new BadRequestException(`Email '${cleanEmail}' is already registered with another tenant.`);
+          }
+        }
+        updateData.primaryEmail = cleanEmail;
+      }
+
       const updated = await tx.tenant.update({
         where: { id: tenantId },
         data: updateData,
@@ -542,10 +575,58 @@ export class SuperAdminService {
         include: { companies: true },
       });
 
+      // Update organization name or legalName if provided
+      const orgName = dto.organizationName || dto.name;
+      if (firstOrg && (orgName || dto.legalName !== undefined)) {
+        const orgUpdateData: any = {};
+        if (orgName && orgName.trim()) {
+          orgUpdateData.name = orgName.trim();
+        }
+        if (dto.legalName !== undefined) {
+          orgUpdateData.legalName = dto.legalName ? dto.legalName.trim() : null;
+        }
+        if (Object.keys(orgUpdateData).length > 0) {
+          await tx.organization.update({
+            where: { id: firstOrg.id },
+            data: orgUpdateData,
+          });
+        }
+
+        // Also update primary company tradeName/legalName if first company exists
+        if (firstOrg.companies && firstOrg.companies[0]) {
+          const compUpdateData: any = {};
+          if (orgName && orgName.trim()) {
+            compUpdateData.tradeName = orgName.trim();
+          }
+          if (dto.legalName && dto.legalName.trim()) {
+            compUpdateData.legalName = dto.legalName.trim();
+          }
+          if (dto.primaryPhone && dto.primaryPhone.trim()) {
+            compUpdateData.phone = dto.primaryPhone.trim();
+          }
+          if (dto.primaryEmail !== undefined) {
+            compUpdateData.email = dto.primaryEmail ? dto.primaryEmail.trim() : null;
+          }
+          if (Object.keys(compUpdateData).length > 0) {
+            await tx.company.update({
+              where: { id: firstOrg.companies[0].id },
+              data: compUpdateData,
+            });
+          }
+        }
+      }
+
       if (updated.isActive === false && firstOrg) {
+        await tx.user.updateMany({
+          where: { organizationId: firstOrg.id },
+          data: { updatedAt: new Date() },
+        });
         for (const comp of firstOrg.companies) {
           await this.sessionRegistry.revokeAllForCompany(comp.id);
         }
+        this.sessionEvents.emitTenantSuspended(tenantId);
+      } else if (updated.isActive === true) {
+        this.sessionEvents.emitTenantActivated(tenantId);
       }
 
       if (firstOrg && firstOrg.companies[0]) {
@@ -1017,6 +1098,196 @@ export class SuperAdminService {
           environment: process.env.NODE_ENV || "development",
           timestamp: new Date().toISOString(),
         },
+      };
+    });
+  }
+
+  /**
+   * Bulk update status (Active / Suspended) for multiple tenants
+   */
+  async bulkUpdateTenantStatus(
+    tenantIds: string[],
+    isActive: boolean,
+    superAdminUserId: string,
+  ) {
+    if (!tenantIds || !tenantIds.length) {
+      throw new BadRequestException("At least one tenant ID must be provided.");
+    }
+
+    return this.prisma.executeBypassRls(async (tx) => {
+      const updateResult = await tx.tenant.updateMany({
+        where: { id: { in: tenantIds } },
+        data: { isActive },
+      });
+
+      if (!isActive) {
+        const orgs = await tx.organization.findMany({
+          where: { tenantId: { in: tenantIds } },
+          include: { companies: true },
+        });
+        const orgIds = orgs.map((o) => o.id);
+        await tx.user.updateMany({
+          where: { organizationId: { in: orgIds } },
+          data: { updatedAt: new Date() },
+        });
+        for (const org of orgs) {
+          for (const comp of org.companies) {
+            await this.sessionRegistry.revokeAllForCompany(comp.id).catch(() => {});
+          }
+        }
+        for (const tId of tenantIds) {
+          this.sessionEvents.emitTenantSuspended(tId);
+        }
+      } else {
+        for (const tId of tenantIds) {
+          this.sessionEvents.emitTenantActivated(tId);
+        }
+      }
+
+      return {
+        success: true,
+        updatedCount: updateResult.count,
+        isActive,
+      };
+    });
+  }
+
+  /**
+   * Delete a single tenant and cascade cleanup all associated data
+   */
+  async deleteTenant(id: string, superAdminUserId: string) {
+    return this.bulkDeleteTenants([id], superAdminUserId);
+  }
+
+  /**
+   * Bulk delete tenants with dependency-aware cascading deletion
+   */
+  async bulkDeleteTenants(tenantIds: string[], superAdminUserId: string) {
+    if (!tenantIds || !tenantIds.length) {
+      throw new BadRequestException("At least one tenant ID must be provided.");
+    }
+
+    return this.prisma.executeBypassRls(async (tx) => {
+      // 0. Safeguard: Never delete the Master SuperAdmin account or tenant
+      const hasSuperAdmin = await tx.user.findFirst({
+        where: {
+          role: UserRole.SUPER_ADMIN,
+          organization: { tenantId: { in: tenantIds } },
+        },
+      });
+      if (hasSuperAdmin) {
+        throw new ForbiddenException(
+          "Cannot delete the Master Platform SuperAdmin organization or tenant.",
+        );
+      }
+
+      // 1. Gather all organizations and companies for these tenants
+      const orgs = await tx.organization.findMany({
+        where: { tenantId: { in: tenantIds } },
+        select: { id: true },
+      });
+      const orgIds = orgs.map((o) => o.id);
+
+      const companies = await tx.company.findMany({
+        where: { organizationId: { in: orgIds } },
+        select: { id: true },
+      });
+      const companyIds = companies.map((c) => c.id);
+
+      // Revoke in-memory sessions
+      for (const cid of companyIds) {
+        await this.sessionRegistry.revokeAllForCompany(cid, superAdminUserId).catch(() => {});
+      }
+
+      // Execute complete dependency cleanup in strict reverse-foreign-key order
+      if (orgIds.length > 0) {
+        await tx.$executeRaw`DELETE FROM audit_logs WHERE organization_id = ANY(${orgIds}::uuid[]) OR company_id = ANY(${companyIds}::uuid[]) OR user_id IN (SELECT id FROM users WHERE organization_id = ANY(${orgIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM support_sessions WHERE target_organization_id = ANY(${orgIds}::uuid[]) OR actor_id IN (SELECT id FROM users WHERE organization_id = ANY(${orgIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM import_jobs WHERE organization_id = ANY(${orgIds}::uuid[]) OR user_id IN (SELECT id FROM users WHERE organization_id = ANY(${orgIds}::uuid[]))`;
+      }
+
+      if (companyIds.length > 0) {
+        // 1. Logs & configs
+        await tx.$executeRaw`DELETE FROM gst_api_audit_logs WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM gst_integration_configs WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM gstr2b_adjustments WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM gstr2b_reconciliations WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM gstr2b_lines WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM gstr2b_imports WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM purchase_bill_scans WHERE company_id = ANY(${companyIds}::uuid[])`;
+
+        // 2. Downstream payment allocations (references sales_invoices, purchase_invoices, vouchers)
+        await tx.$executeRaw`DELETE FROM payment_allocations WHERE invoice_id IN (SELECT id FROM sales_invoices WHERE company_id = ANY(${companyIds}::uuid[])) OR purchase_invoice_id IN (SELECT id FROM purchase_invoices WHERE company_id = ANY(${companyIds}::uuid[])) OR voucher_id IN (SELECT id FROM vouchers WHERE company_id = ANY(${companyIds}::uuid[]))`;
+
+        // 3. Returns and debit notes (references sales_invoices, sales_invoice_items, purchase_invoices, purchase_invoice_items)
+        await tx.$executeRaw`DELETE FROM sales_return_items WHERE return_id IN (SELECT id FROM sales_returns WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM sales_returns WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM outward_debit_note_items WHERE note_id IN (SELECT id FROM outward_debit_notes WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM outward_debit_notes WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM purchase_return_items WHERE return_id IN (SELECT id FROM purchase_returns WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM purchase_returns WHERE company_id = ANY(${companyIds}::uuid[])`;
+
+        // 4. Advances & e-Way / e-Invoice
+        await tx.$executeRaw`DELETE FROM advance_adjustments WHERE advance_id IN (SELECT id FROM advance_receipts WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM advance_receipts WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM einvoice_records WHERE invoice_id IN (SELECT id FROM sales_invoices WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM eway_bill_records WHERE invoice_id IN (SELECT id FROM sales_invoices WHERE company_id = ANY(${companyIds}::uuid[])) OR delivery_challan_id IN (SELECT id FROM delivery_challans WHERE company_id = ANY(${companyIds}::uuid[]))`;
+
+        // 5. Invoices & items
+        await tx.$executeRaw`DELETE FROM sales_invoice_items WHERE invoice_id IN (SELECT id FROM sales_invoices WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM sales_invoices WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM purchase_invoice_items WHERE invoice_id IN (SELECT id FROM purchase_invoices WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM purchase_invoices WHERE company_id = ANY(${companyIds}::uuid[])`;
+
+        // 6. Delivery challans & Stock transfers
+        await tx.$executeRaw`DELETE FROM delivery_challan_items WHERE challan_id IN (SELECT id FROM delivery_challans WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM delivery_challans WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM stock_transfer_items WHERE transfer_id IN (SELECT id FROM stock_transfers WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM stock_transfers WHERE company_id = ANY(${companyIds}::uuid[])`;
+
+        // 7. Manufacturing (production & BOM)
+        await tx.$executeRaw`DELETE FROM production_batches WHERE production_order_id IN (SELECT id FROM production_orders WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM production_orders WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM bom_items WHERE bom_id IN (SELECT id FROM bills_of_material WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM bills_of_material WHERE company_id = ANY(${companyIds}::uuid[])`;
+
+        // 8. Financial Vouchers & Journal entries
+        await tx.$executeRaw`DELETE FROM journal_entries WHERE voucher_id IN (SELECT id FROM vouchers WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM vouchers WHERE company_id = ANY(${companyIds}::uuid[])`;
+
+        // 9. Inventory items & batches
+        await tx.$executeRaw`DELETE FROM stock_transactions WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM item_batches WHERE item_id IN (SELECT id FROM items WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM items WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM units_of_measure WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM item_categories WHERE company_id = ANY(${companyIds}::uuid[])`;
+
+        // 10. Master records (parties, accounts, warehouses, branches)
+        await tx.$executeRaw`DELETE FROM pos_sessions WHERE branch_id IN (SELECT id FROM branches WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM ledger_accounts WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM ledger_groups WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM parties WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM warehouses WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM invoice_sequences WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM financial_years WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM user_branch_assignments WHERE branch_id IN (SELECT id FROM branches WHERE company_id = ANY(${companyIds}::uuid[]))`;
+        await tx.$executeRaw`DELETE FROM branches WHERE company_id = ANY(${companyIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM companies WHERE id = ANY(${companyIds}::uuid[])`;
+      }
+
+      if (orgIds.length > 0) {
+        await tx.$executeRaw`DELETE FROM users WHERE organization_id = ANY(${orgIds}::uuid[])`;
+        await tx.$executeRaw`DELETE FROM organizations WHERE id = ANY(${orgIds}::uuid[])`;
+      }
+
+      const deleteResult = await tx.tenant.deleteMany({
+        where: { id: { in: tenantIds } },
+      });
+
+      return {
+        success: true,
+        deletedCount: deleteResult.count,
+        tenantIds,
       };
     });
   }

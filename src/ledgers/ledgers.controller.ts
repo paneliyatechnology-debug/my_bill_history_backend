@@ -22,19 +22,19 @@ import { UpdateLedgerAccountDto } from "./dto/update-ledger-account.dto";
 export class LedgersController {
   constructor(private readonly ledgersService: LedgersService) {}
 
-  @Post("ledger-groups/seed")
+  @Post(["ledger-groups/seed", "accounting/groups/seed"])
   @HttpCode(HttpStatus.CREATED)
   @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.COMPANY_ADMIN)
   async seedCOA(@CurrentTenant() tenant: TenantContext) {
     return await this.ledgersService.seedStandardChartOfAccounts(tenant);
   }
 
-  @Get("ledger-groups")
+  @Get(["ledger-groups", "groups", "accounting/groups"])
   async listGroups(@CurrentTenant() tenant: TenantContext) {
     return await this.ledgersService.listGroups(tenant);
   }
 
-  @Post("ledger-groups")
+  @Post(["ledger-groups", "groups", "accounting/groups"])
   @HttpCode(HttpStatus.CREATED)
   @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.COMPANY_ADMIN)
   async createGroup(
@@ -44,7 +44,7 @@ export class LedgersController {
     return await this.ledgersService.createGroup(dto, tenant);
   }
 
-  @Get("ledgers")
+  @Get(["ledgers", "ledgers/accounts", "accounts", "accounting/ledgers", "accounting/accounts"])
   async listAccounts(
     @Query() query: any,
     @CurrentTenant() tenant: TenantContext,
@@ -52,7 +52,7 @@ export class LedgersController {
     return await this.ledgersService.listAccounts(tenant, query);
   }
 
-  @Post("ledgers")
+  @Post(["ledgers", "accounts", "accounting/ledgers", "accounting/accounts"])
   @HttpCode(HttpStatus.CREATED)
   @Roles(
     UserRole.SUPER_ADMIN,
@@ -67,7 +67,7 @@ export class LedgersController {
     return await this.ledgersService.createAccount(dto, tenant);
   }
 
-  @Get("ledgers/:id")
+  @Get(["ledgers/:id", "accounts/:id", "accounting/ledgers/:id"])
   async getAccount(
     @Param("id") id: string,
     @CurrentTenant() tenant: TenantContext,
@@ -75,7 +75,7 @@ export class LedgersController {
     return await this.ledgersService.getAccountById(id, tenant);
   }
 
-  @Patch("ledgers/:id")
+  @Patch(["ledgers/:id", "accounts/:id", "accounting/ledgers/:id"])
   @Roles(
     UserRole.SUPER_ADMIN,
     UserRole.ORG_ADMIN,
@@ -90,7 +90,7 @@ export class LedgersController {
     return await this.ledgersService.updateAccount(id, dto, tenant);
   }
 
-  @Delete("ledgers/:id")
+  @Delete(["ledgers/:id", "accounts/:id", "accounting/ledgers/:id"])
   @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.COMPANY_ADMIN)
   async deactivateAccount(
     @Param("id") id: string,

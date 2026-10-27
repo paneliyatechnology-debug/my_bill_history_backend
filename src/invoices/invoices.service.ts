@@ -3781,4 +3781,41 @@ export class InvoicesService {
       messageGujarati: `${deletedCount} વેચાણ બિલો સફળતાપૂર્વક કાઢી નાખવામાં આવ્યા છે.`,
     };
   }
+
+  async getNextInvoiceNumber(
+    category: string | undefined,
+    tenant: TenantContext,
+  ): Promise<{ nextNumber: string }> {
+    const cat = category || InvoiceCategory.TAX_INVOICE;
+    const fy = await this.prisma.financialYear.findFirst({
+      where: { companyId: tenant.companyId, isLocked: false },
+      orderBy: { startDate: "desc" },
+    });
+    const fyStart = fy ? new Date(fy.startDate) : new Date();
+    const fyEnd = fy ? new Date(fy.endDate) : new Date();
+    const fyCode = fy
+      ? `${fyStart.getFullYear().toString().slice(-2)}-${fyEnd.getFullYear().toString().slice(-2)}`
+      : "26-27";
+    const prefix =
+      cat === InvoiceCategory.PROFORMA_INVOICE
+        ? `QTN/${fyCode}/`
+        : cat === InvoiceCategory.DELIVERY_CHALLAN
+          ? `DC/${fyCode}/`
+          : `INV/${fyCode}/`;
+    const seq = fy
+      ? await this.prisma.invoiceSequence.findFirst({
+          where: {
+            companyId: tenant.companyId,
+            financialYearId: fy.id,
+            category: cat as any,
+            prefix,
+          },
+        })
+      : null;
+    const nextNum = seq ? seq.currentNumber + 1 : 1;
+    return {
+      nextNumber: `${prefix}${String(nextNum).padStart(seq?.padding || 4, "0")}`,
+    };
+  }
 }
+

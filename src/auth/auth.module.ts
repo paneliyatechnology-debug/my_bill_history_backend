@@ -5,6 +5,8 @@ import { AuthService } from "./auth.service";
 import { AuthController } from "./auth.controller";
 import { EmailOtpService } from "./email-otp.service";
 
+import { SessionEventsService } from "./session-events.service";
+
 @Module({
   imports: [
     JwtModule.registerAsync({
@@ -30,7 +32,7 @@ import { EmailOtpService } from "./email-otp.service";
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, EmailOtpService],
-  exports: [AuthService, JwtModule],
+  providers: [AuthService, EmailOtpService, SessionEventsService],
+  exports: [AuthService, JwtModule, SessionEventsService],
 })
 export class AuthModule {}

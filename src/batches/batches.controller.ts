@@ -14,7 +14,7 @@ import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import { TenantContext, UserRole } from "@billing/shared-types";
 
-@Controller("batches")
+@Controller(["batches", "inventory/batches"])
 export class BatchesController {
   constructor(private readonly batchesService: BatchesService) {}
 

@@ -27,6 +27,8 @@ import { SwitchContextDto } from "./dto/switch-context.dto";
 import { EmailOtpService } from "./email-otp.service";
 import { isDeliverableEmail, normalizeEmail } from "../mail/email.util";
 
+import { SessionEventsService, SessionEventPayload } from "./session-events.service";
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -36,7 +38,25 @@ export class AuthService {
     private readonly audit: AuditService,
     private readonly sessionRegistry: SupportSessionRegistry,
     private readonly emailOtp: EmailOtpService,
+    private readonly sessionEvents: SessionEventsService,
   ) {}
+
+  getSessionStream(token?: string, tenantId?: string, organizationId?: string) {
+    let resolvedTenantId = tenantId;
+    let resolvedOrgId = organizationId;
+
+    if (token) {
+      try {
+        const payload = this.jwtService.decode(token) as any;
+        if (payload?.organizationId) resolvedOrgId = payload.organizationId;
+        if (payload?.tenantId) resolvedTenantId = payload.tenantId;
+      } catch {
+        // Safe fallback
+      }
+    }
+
+    return this.sessionEvents.subscribeForTenant(resolvedTenantId, resolvedOrgId);
+  }
 
   /**
    * Atomic registration creating Tenant, Organization, Company, Main Branch, FY and Owner User
@@ -262,6 +282,24 @@ export class AuthService {
         message: "Invalid phone/email or password credentials.",
         messageGujarati: "ખોટો ફોન નંબર/ઈમેલ અથવા પાસવર્ડ.",
       });
+    }
+
+    // Verify tenant is active
+    if (user.role !== UserRole.SUPER_ADMIN && user.organization) {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: user.organization.tenantId },
+        select: { id: true, isActive: true },
+      });
+      if (tenant && !tenant.isActive) {
+        throw new UnauthorizedException({
+          statusCode: 401,
+          error: "TENANT_SUSPENDED",
+          message:
+            "Access denied: Your organization or tenant has been suspended by the platform administrator.",
+          messageGujarati:
+            "તમારું ટેનન્ટ સુપરએડમિન દ્વારા સસ્પેન્ડ કરવામાં આવ્યું છે.",
+        });
+      }
     }
 
     // Resolve default company for this user
