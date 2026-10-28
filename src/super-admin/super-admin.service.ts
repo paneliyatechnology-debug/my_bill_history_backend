@@ -900,19 +900,17 @@ export class SuperAdminService {
           skip,
           take: limit,
           orderBy: { createdAt: "desc" },
-          select: {
-            id: true,
-            invoiceNumber: true,
-            invoiceDate: true,
-            grandTotal: true,
-            balanceAmount: true,
-            status: true,
+          include: {
             party: {
               select: {
                 id: true,
                 name: true,
+                nameGujarati: true,
                 phone: true,
+                email: true,
                 gstin: true,
+                stateCode: true,
+                billingAddress: true,
               },
             },
             company: {
@@ -920,6 +918,32 @@ export class SuperAdminService {
                 id: true,
                 tradeName: true,
                 legalName: true,
+                gstin: true,
+                phone: true,
+                email: true,
+                stateCode: true,
+                addressLine1: true,
+                addressLine2: true,
+                city: true,
+                pincode: true,
+                bankName: true,
+                bankAccountNo: true,
+                bankIfsc: true,
+                bankBranch: true,
+                upiVpa: true,
+              },
+            },
+            items: {
+              include: {
+                item: {
+                  select: {
+                    id: true,
+                    name: true,
+                    nameGujarati: true,
+                    sku: true,
+                    primaryUom: { select: { name: true, symbol: true, uqcCode: true } },
+                  },
+                },
               },
             },
           },

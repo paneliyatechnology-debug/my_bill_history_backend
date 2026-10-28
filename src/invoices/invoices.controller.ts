@@ -10,7 +10,9 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Res,
 } from "@nestjs/common";
+import { FastifyReply } from "fastify";
 import { Throttle } from "@nestjs/throttler";
 import { TenantContext, UserRole } from "@billing/shared-types";
 import { Roles } from "../common/decorators/roles.decorator";
@@ -24,10 +26,14 @@ import { QueryInvoicesDto } from "./dto/query-invoices.dto";
 import { RecordInvoicePaymentDto } from "./dto/record-payment.dto";
 import { QueryStockTransactionsDto } from "./dto/query-stock.dto";
 import { CreateSalesReturnDto } from "./dto/create-sales-return.dto";
+import { InvoicePrintService } from "../invoice-print/invoice-print.service";
 
 @Controller(["invoices", "sales", "sales-invoices", "inventory"])
 export class InvoicesController {
-  constructor(private readonly invoicesService: InvoicesService) {}
+  constructor(
+    private readonly invoicesService: InvoicesService,
+    private readonly invoicePrintService: InvoicePrintService,
+  ) {}
 
   @Throttle({
     default: { limit: process.env.NODE_ENV === "test" ? 1000 : 30, ttl: 60000 },
@@ -204,6 +210,23 @@ export class InvoicesController {
     @CurrentTenant() tenant: TenantContext,
   ) {
     return await this.invoicesService.listSalesInvoices(query, tenant);
+  }
+
+  @Get(["sales/:id/print", "invoices/:id/print", ":id/print"])
+  async printSalesInvoice(
+    @Param("id") id: string,
+    @Query("copy") copy: string,
+    @Query("share") share: string,
+    @CurrentTenant() tenant: TenantContext,
+    @Res() reply: FastifyReply,
+  ) {
+    const html = await this.invoicePrintService.printInvoiceHtml(
+      tenant,
+      id,
+      copy,
+      share === "true" || share === "1",
+    );
+    return reply.type("text/html; charset=utf-8").send(html);
   }
 
   @Get(["sales/:id", "invoices/:id", ":id"])

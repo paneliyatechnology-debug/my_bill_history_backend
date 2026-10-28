@@ -122,6 +122,13 @@ model Company {
   signatoryName            String?                  @map("signatory_name") @db.VarChar(150)
   signatoryDesignation     String?                  @default("Authorised Signatory") @map("signatory_designation") @db.VarChar(100)
   signatureUrl             String?                  @map("signature_url") @db.Text
+  logoUrl                  String?                  @map("logo_url") @db.Text
+  enableTds                Boolean                  @default(false) @map("enable_tds")
+  enableTcs                Boolean                  @default(false) @map("enable_tcs")
+  businessTypes            Json                     @default("[]") @map("business_types")
+  industryType             String?                  @map("industry_type") @db.VarChar(80)
+  registrationType         String?                  @map("registration_type") @db.VarChar(80)
+  extraDetails             Json                     @default("{}") @map("extra_details")
   
   // Configurable Business Policies
   allowNegativeStock       Boolean                  @default(false) @map("allow_negative_stock")
@@ -163,10 +170,75 @@ model Company {
   gstr2bAdjustments        Gstr2bAdjustment[]
   gstApiAuditLogs          GstApiAuditLog[]
   importJobs               ImportJob[]
+  invoicePrintSettings     CompanyInvoicePrintSettings?
 
   @@unique([gstin, organizationId])
   @@index([organizationId])
   @@map("companies")
+}
+
+model CompanyInvoicePrintSettings {
+  id                      String   @id @default(uuid()) @db.Uuid
+  organizationId          String   @map("organization_id") @db.Uuid
+  companyId               String   @unique @map("company_id") @db.Uuid
+  themeId                 String   @default("advanced_gst_tally") @map("theme_id") @db.VarChar(40)
+  accentColor             String   @default("#111111") @map("accent_color") @db.VarChar(16)
+  paperSize               String   @default("A4") @map("paper_size") @db.VarChar(20)
+  printCopies             Json     @default("[\"ORIGINAL_FOR_RECIPIENT\"]") @map("print_copies")
+  logoUrl                 String?  @map("logo_url") @db.Text
+  watermarkUrl            String?  @map("watermark_url") @db.Text
+  slogan                  String?  @db.VarChar(200)
+  footerText              String?  @map("footer_text") @db.VarChar(500)
+  documentTitles          Json?    @map("document_titles")
+  showPartyBalance        Boolean  @default(false) @map("show_party_balance")
+  enableFreeItemQuantity  Boolean  @default(false) @map("enable_free_item_quantity")
+  showItemDescription     Boolean  @default(true) @map("show_item_description")
+  showAlternateUnit       Boolean  @default(true) @map("show_alternate_unit")
+  showPhoneNumber         Boolean  @default(true) @map("show_phone_number")
+  showGstin               Boolean  @default(true) @map("show_gstin")
+  showPan                 Boolean  @default(true) @map("show_pan")
+  showEmail               Boolean  @default(true) @map("show_email")
+  showHsn                 Boolean  @default(true) @map("show_hsn")
+  showDiscount            Boolean  @default(true) @map("show_discount")
+  showTaxBreakup          Boolean  @default(true) @map("show_tax_breakup")
+  showBankDetails         Boolean  @default(true) @map("show_bank_details")
+  showUpiQr               Boolean  @default(true) @map("show_upi_qr")
+  showSignature           Boolean  @default(true) @map("show_signature")
+  showAmountInWords       Boolean  @default(true) @map("show_amount_in_words")
+  showReceivedAmount      Boolean  @default(true) @map("show_received_amount")
+  showTerms               Boolean  @default(true) @map("show_terms")
+  showNotes               Boolean  @default(true) @map("show_notes")
+  showDueDate             Boolean  @default(true) @map("show_due_date")
+  showPlaceOfSupply       Boolean  @default(true) @map("show_place_of_supply")
+  showShippingAddress     Boolean  @default(true) @map("show_shipping_address")
+  showSavedAmount         Boolean  @default(false) @map("show_saved_amount")
+  showEmojis              Boolean  @default(false) @map("show_emojis")
+  printHistory            Boolean  @default(false) @map("print_history")
+  autoApplyLuxuryForSharing Boolean @default(false) @map("auto_apply_luxury_for_sharing")
+  showPoNumber            Boolean  @default(false) @map("show_po_number")
+  showEwayBillNumber      Boolean  @default(false) @map("show_eway_bill_number")
+  showVehicleNumber       Boolean  @default(false) @map("show_vehicle_number")
+  showTaxColumn           Boolean  @default(true) @map("show_tax_column")
+  showBatch               Boolean  @default(false) @map("show_batch")
+  showExpiry              Boolean  @default(false) @map("show_expiry")
+  showSku                 Boolean  @default(false) @map("show_sku")
+  invoiceCustomFields     Json?    @map("invoice_custom_fields")
+  partyCustomFields       Json?    @map("party_custom_fields")
+  itemColumnOrder         Json?    @map("item_column_order")
+  headerLayout            Int      @default(1) @map("header_layout")
+  fontSize                String   @default("13") @map("font_size") @db.VarChar(8)
+  marginTop               Int      @default(8) @map("margin_top")
+  marginRight             Int      @default(8) @map("margin_right")
+  marginBottom            Int      @default(8) @map("margin_bottom")
+  marginLeft              Int      @default(8) @map("margin_left")
+  stretchItemTable        Boolean  @default(true) @map("stretch_item_table")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  company                 Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, companyId])
+  @@map("company_invoice_print_settings")
 }
 
 model Branch {

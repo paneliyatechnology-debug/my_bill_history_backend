@@ -42,3 +42,5 @@ scratch/
 # Bill scans / uploaded files
 storage/bill-scans/*
 !storage/bill-scans/.gitkeep
+storage/company-assets/*
+!storage/company-assets/.gitkeep

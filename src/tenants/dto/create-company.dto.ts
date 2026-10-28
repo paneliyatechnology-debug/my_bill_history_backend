@@ -26,6 +26,14 @@ export interface CreateCompanyDto {
   signatoryName?: string;
   signatoryDesignation?: string;
   signatureUrl?: string;
+  logoUrl?: string;
+  enableTds?: boolean;
+  enableTcs?: boolean;
+  businessTypes?: string[];
+  industryType?: string;
+  registrationType?: string;
+  extraDetails?: Record<string, string>;
+  gstRegistered?: boolean;
   allowNegativeStock?: boolean;
   branchName?: string;
   branchCode?: string;

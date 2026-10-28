@@ -33,6 +33,7 @@ import { ImportsModule } from "./imports/imports.module";
 import { ExpensesModule } from "./expenses/expenses.module";
 import { BankingModule } from "./banking/banking.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
+import { InvoicePrintModule } from "./invoice-print/invoice-print.module";
 
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 
@@ -70,6 +71,7 @@ import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
     BankingModule,
     DashboardModule,
     InvoicesModule,
+    InvoicePrintModule,
     PurchasesModule,
     ReportsModule,
     ManufacturingModule,
