@@ -1,7 +1,18 @@
 const { PrismaClient } = require("@prisma/client");
 const path = require("path");
-const bcrypt = require("bcryptjs");
-const { STANDARD_SME_GROUPS, STANDARD_SME_ACCOUNTS } = require(path.resolve(__dirname, "../dist/accounting-core/index.js"));
+let bcrypt;
+try {
+  bcrypt = require("bcryptjs");
+} catch {
+  bcrypt = require(path.resolve(__dirname, "../node_modules/bcryptjs"));
+}
+let accountingCore;
+try {
+  accountingCore = require(path.resolve(__dirname, "../dist/accounting-core/index.js"));
+} catch {
+  accountingCore = require(path.resolve(__dirname, "../../accounting-core/dist/index.js"));
+}
+const { STANDARD_SME_GROUPS, STANDARD_SME_ACCOUNTS } = accountingCore;
 
 const prisma = new PrismaClient();
 

@@ -52,5 +52,8 @@
     "typescript": "^5.6.3",
     "unplugin-swc": "^2.0.0",
     "vitest": "^2.1.2"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   }
 }
