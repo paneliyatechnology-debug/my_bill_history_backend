@@ -745,32 +745,34 @@ export class TenantsService {
     if (!ctx.organizationId) {
       return [];
     }
-    const users = await this.prisma.user.findMany({
-      where: { organizationId: ctx.organizationId },
-      select: {
-        id: true,
-        fullName: true,
-        email: true,
-        phone: true,
-        role: true,
-        preferredLang: true,
-        isActive: true,
-        createdAt: true,
-        branchAssignments: {
-          select: {
-            branch: {
-              select: {
-                id: true,
-                name: true,
-                code: true,
+    const users = await this.prisma.executeInTenantContext(ctx, async (tx) => {
+      return tx.user.findMany({
+        where: { organizationId: ctx.organizationId },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          phone: true,
+          role: true,
+          preferredLang: true,
+          isActive: true,
+          createdAt: true,
+          branchAssignments: {
+            select: {
+              branch: {
+                select: {
+                  id: true,
+                  name: true,
+                  code: true,
+                },
               },
+              role: true,
+              isDefault: true,
             },
-            role: true,
-            isDefault: true,
           },
         },
-      },
-      orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "asc" },
+      });
     });
 
     return users.map((u) => {

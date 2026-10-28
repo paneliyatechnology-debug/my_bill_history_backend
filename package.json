@@ -16,6 +16,9 @@
     "start:dev": "nest start --watch",
     "postinstall": "prisma generate"
   },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
   "dependencies": {
     "@fastify/multipart": "^8.3.0",
     "@google/genai": "^2.30.0",

@@ -438,22 +438,22 @@ export class AuthService {
    * Returns current user identity, organization and accessible companies/branches
    */
   async getMe(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        organization: true,
-        branchAssignments: {
-          include: { branch: true },
+    return this.prisma.executeBypassRls(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        include: {
+          organization: true,
+          branchAssignments: {
+            include: { branch: true },
+          },
         },
-      },
-    });
+      });
 
-    if (!user) {
-      throw new NotFoundException("User profile not found.");
-    }
+      if (!user) {
+        throw new NotFoundException("User profile not found.");
+      }
 
-    const companies = await this.prisma.executeBypassRls(async (tx) => {
-      return tx.company.findMany({
+      const companies = await tx.company.findMany({
         where: { organizationId: user.organizationId },
         select: {
           id: true,
@@ -469,31 +469,33 @@ export class AuthService {
           },
         },
       });
-    });
 
-    return {
-      role: user.role,
-      user: {
-        id: user.id,
-        fullName: user.fullName,
-        email: user.email,
-        phone: user.phone,
+      return {
         role: user.role,
-        preferredLang: user.preferredLang,
-        organization: {
-          id: user.organization.id,
-          name: user.organization.name,
+        user: {
+          id: user.id,
+          fullName: user.fullName,
+          email: user.email,
+          phone: user.phone,
+          role: user.role,
+          preferredLang: user.preferredLang,
+          organization: {
+            id: user.organization?.id,
+            name: user.organization?.name,
+          },
         },
-      },
-      companies,
-      assignedBranches: user.branchAssignments.map((a) => ({
-        branchId: a.branch.id,
-        branchName: a.branch.name,
-        branchCode: a.branch.code,
-        role: a.role,
-        isDefault: a.isDefault,
-      })),
-    };
+        companies,
+        assignedBranches: (user.branchAssignments || [])
+          .filter((a) => a.branch)
+          .map((a) => ({
+            branchId: a.branch.id,
+            branchName: a.branch.name,
+            branchCode: a.branch.code,
+            role: a.role,
+            isDefault: a.isDefault,
+          })),
+      };
+    });
   }
 
   /**
