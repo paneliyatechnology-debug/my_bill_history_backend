@@ -302,70 +302,82 @@ export class AuthService {
       }
     }
 
-    // Resolve default company for this user
-    const company = await this.prisma.company.findFirst({
-      where: { organizationId: user.organizationId },
-      orderBy: { createdAt: "asc" },
-    });
-
-    if (!company) {
-      throw new NotFoundException(
-        "No active company found for user organization.",
-      );
-    }
-
-    // Resolve branch: if branchCode provided, verify access; otherwise use assigned/main branch
-    let branchId = "";
-    let branchName = "";
-
-    if (dto.branchCode) {
-      const branch = await this.prisma.branch.findFirst({
-        where: { companyId: company.id, code: dto.branchCode },
-      });
-      if (!branch) {
-        throw new NotFoundException(
-          `Branch with code '${dto.branchCode}' not found.`,
-        );
-      }
-
-      // Check assignment if user is branch-constrained
-      if (
-        [UserRole.CASHIER, UserRole.BRANCH_MANAGER, UserRole.SALESMAN].includes(
-          user.role as UserRole,
-        )
-      ) {
-        const assignment = await this.prisma.userBranchAssignment.findUnique({
-          where: { userId_branchId: { userId: user.id, branchId: branch.id } },
+    // Resolve default company, branch, and financial year for this user
+    const { company, branchId, branchName, fy } =
+      await this.prisma.executeBypassRls(async (tx) => {
+        const comp = await tx.company.findFirst({
+          where: { organizationId: user.organizationId },
+          orderBy: { createdAt: "asc" },
         });
-        if (!assignment) {
-          throw new ForbiddenException(
-            `User is not assigned to branch '${dto.branchCode}'.`,
+
+        if (!comp) {
+          throw new NotFoundException(
+            "No active company found for user organization.",
           );
         }
-      }
-      branchId = branch.id;
-      branchName = branch.name;
-    } else {
-      const assignment = await this.prisma.userBranchAssignment.findFirst({
-        where: { userId: user.id, isDefault: true },
-        include: { branch: true },
-      });
-      if (assignment) {
-        branchId = assignment.branch.id;
-        branchName = assignment.branch.name;
-      } else {
-        const mainBranch = await this.prisma.branch.findFirst({
-          where: { companyId: company.id, isMainBranch: true },
-        });
-        branchId = mainBranch?.id || "";
-        branchName = mainBranch?.name || "";
-      }
-    }
 
-    // Active financial year
-    const fy = await this.prisma.financialYear.findFirst({
-      where: { companyId: company.id, isCurrent: true },
-    });
+        let bId = "";
+        let bName = "";
+
+        if (dto.branchCode) {
+          const branch = await tx.branch.findFirst({
+            where: { companyId: comp.id, code: dto.branchCode },
+          });
+          if (!branch) {
+            throw new NotFoundException(
+              `Branch with code '${dto.branchCode}' not found.`,
+            );
+          }
+
+          // Check assignment if user is branch-constrained
+          if (
+            [
+              UserRole.CASHIER,
+              UserRole.BRANCH_MANAGER,
+              UserRole.SALESMAN,
+            ].includes(user.role as UserRole)
+          ) {
+            const assignment = await tx.userBranchAssignment.findUnique({
+              where: {
+                userId_branchId: { userId: user.id, branchId: branch.id },
+              },
+            });
+            if (!assignment) {
+              throw new ForbiddenException(
+                `User is not assigned to branch '${dto.branchCode}'.`,
+              );
+            }
+          }
+          bId = branch.id;
+          bName = branch.name;
+        } else {
+          const assignment = await tx.userBranchAssignment.findFirst({
+            where: { userId: user.id, isDefault: true },
+            include: { branch: true },
+          });
+          if (assignment) {
+            bId = assignment.branch.id;
+            bName = assignment.branch.name;
+          } else {
+            const mainBranch = await tx.branch.findFirst({
+              where: { companyId: comp.id, isMainBranch: true },
+            });
+            bId = mainBranch?.id || "";
+            bName = mainBranch?.name || "";
+          }
+        }
+
+        const activeFy = await tx.financialYear.findFirst({
+          where: { companyId: comp.id, isCurrent: true },
+        });
+
+        return {
+          company: comp,
+          branchId: bId,
+          branchName: bName,
+          fy: activeFy,
+        };
+      });
 
     // Record login audit log
     await this.audit.record({
@@ -440,21 +452,23 @@ export class AuthService {
       throw new NotFoundException("User profile not found.");
     }
 
-    const companies = await this.prisma.company.findMany({
-      where: { organizationId: user.organizationId },
-      select: {
-        id: true,
-        legalName: true,
-        tradeName: true,
-        gstin: true,
-        stateCode: true,
-        branches: {
-          select: { id: true, name: true, code: true, isMainBranch: true },
+    const companies = await this.prisma.executeBypassRls(async (tx) => {
+      return tx.company.findMany({
+        where: { organizationId: user.organizationId },
+        select: {
+          id: true,
+          legalName: true,
+          tradeName: true,
+          gstin: true,
+          stateCode: true,
+          branches: {
+            select: { id: true, name: true, code: true, isMainBranch: true },
+          },
+          financialYears: {
+            select: { id: true, name: true, isCurrent: true, isLocked: true },
+          },
         },
-        financialYears: {
-          select: { id: true, name: true, isCurrent: true, isLocked: true },
-        },
-      },
+      });
     });
 
     return {
@@ -496,73 +510,82 @@ export class AuthService {
     }
 
     // Verify company belongs to user's org
-    const company = await this.prisma.company.findFirst({
-      where: { id: dto.companyId, organizationId: user.organizationId },
-    });
-    if (!company) {
-      throw new ForbiddenException(
-        "Requested company does not belong to your organization.",
-      );
-    }
-
-    // If branch provided, verify access
-    let branch: any = null;
-    if (dto.branchId) {
-      branch = await this.prisma.branch.findFirst({
-        where: { id: dto.branchId, companyId: company.id },
-      });
-      if (!branch) {
-        throw new NotFoundException("Branch not found in selected company.");
-      }
-
-      if (
-        [UserRole.CASHIER, UserRole.BRANCH_MANAGER, UserRole.SALESMAN].includes(
-          user.role as UserRole,
-        )
-      ) {
-        const assignment = await this.prisma.userBranchAssignment.findUnique({
-          where: {
-            userId_branchId: { userId: user.id, branchId: dto.branchId },
-          },
+    const { company, branch, fy } = await this.prisma.executeBypassRls(
+      async (tx) => {
+        const comp = await tx.company.findFirst({
+          where: { id: dto.companyId, organizationId: user.organizationId },
         });
-        if (!assignment) {
+        if (!comp) {
           throw new ForbiddenException(
-            "User is not authorized for this branch.",
+            "Requested company does not belong to your organization.",
           );
         }
-      }
-    } else {
-      // If user has branch-constrained role, find their assigned branch in this company
-      if (
-        [UserRole.CASHIER, UserRole.BRANCH_MANAGER, UserRole.SALESMAN].includes(
-          user.role as UserRole,
-        )
-      ) {
-        const assignment = await this.prisma.userBranchAssignment.findFirst({
-          where: {
-            userId: user.id,
-            branch: { companyId: company.id },
-          },
-          include: { branch: true },
-        });
-        if (!assignment) {
-          throw new ForbiddenException(
-            "User has no assigned branch in this company.",
-          );
-        }
-        branch = assignment.branch;
-      } else {
-        // Resolve default main branch for company
-        branch = await this.prisma.branch.findFirst({
-          where: { companyId: company.id },
-          orderBy: [{ isMainBranch: "desc" }, { createdAt: "asc" }],
-        });
-      }
-    }
 
-    const fy = await this.prisma.financialYear.findFirst({
-      where: { companyId: company.id, isCurrent: true },
-    });
+        let br: any = null;
+        if (dto.branchId) {
+          br = await tx.branch.findFirst({
+            where: { id: dto.branchId, companyId: comp.id },
+          });
+          if (!br) {
+            throw new NotFoundException("Branch not found in selected company.");
+          }
+
+          if (
+            [
+              UserRole.CASHIER,
+              UserRole.BRANCH_MANAGER,
+              UserRole.SALESMAN,
+            ].includes(user.role as UserRole)
+          ) {
+            const assignment = await tx.userBranchAssignment.findUnique({
+              where: {
+                userId_branchId: { userId: user.id, branchId: dto.branchId },
+              },
+            });
+            if (!assignment) {
+              throw new ForbiddenException(
+                "User is not authorized for this branch.",
+              );
+            }
+          }
+        } else {
+          // If user has branch-constrained role, find their assigned branch in this company
+          if (
+            [
+              UserRole.CASHIER,
+              UserRole.BRANCH_MANAGER,
+              UserRole.SALESMAN,
+            ].includes(user.role as UserRole)
+          ) {
+            const assignment = await tx.userBranchAssignment.findFirst({
+              where: {
+                userId: user.id,
+                branch: { companyId: comp.id },
+              },
+              include: { branch: true },
+            });
+            if (!assignment) {
+              throw new ForbiddenException(
+                "User has no assigned branch in this company.",
+              );
+            }
+            br = assignment.branch;
+          } else {
+            // Resolve default main branch for company
+            br = await tx.branch.findFirst({
+              where: { companyId: comp.id },
+              orderBy: [{ isMainBranch: "desc" }, { createdAt: "asc" }],
+            });
+          }
+        }
+
+        const activeFy = await tx.financialYear.findFirst({
+          where: { companyId: comp.id, isCurrent: true },
+        });
+
+        return { company: comp, branch: br, fy: activeFy };
+      },
+    );
 
     // Record audit log for security compliance
     await this.audit.record({
@@ -643,10 +666,12 @@ export class AuthService {
       data: { passwordHash },
     });
 
-    const company = await this.prisma.company.findFirst({
-      where: { organizationId: user.organizationId },
-      orderBy: { createdAt: "asc" },
-      select: { id: true },
+    const company = await this.prisma.executeBypassRls(async (tx) => {
+      return tx.company.findFirst({
+        where: { organizationId: user.organizationId },
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      });
     });
     if (company) {
       await this.audit.record({

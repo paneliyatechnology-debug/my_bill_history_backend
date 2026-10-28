@@ -55,6 +55,7 @@ CREATE POLICY tenant_isolation_hsn_masters ON hsn_masters
     )
     WITH CHECK (
         current_setting('app.bypass_rls', true) = 'on'
+        OR (company_id IS NULL AND is_system = true)
         OR (
             company_id IS NOT NULL
             AND organization_id = NULLIF(current_setting('app.current_organization_id', true), '')::uuid

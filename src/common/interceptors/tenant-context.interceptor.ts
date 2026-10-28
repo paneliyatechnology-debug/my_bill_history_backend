@@ -280,152 +280,154 @@ export class TenantContextInterceptor implements NestInterceptor {
 
     const verifiedOrgId = user.organizationId;
 
-    // 2. Zero Trust: Company Check (Derived from authenticated user membership)
-    let verifiedCompanyId: string;
-    const UUID_REGEX =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (rawCompanyHeader !== undefined) {
-      const trimmedCompanyId = rawCompanyHeader.trim();
-      if (!trimmedCompanyId) {
-        throw new BadRequestException("Company context is required.");
-      }
-      if (!UUID_REGEX.test(trimmedCompanyId)) {
-        throw new BadRequestException(
-          "Invalid company context identifier. Must be a valid UUID.",
-        );
-      }
-      const company = await this.prisma.company.findFirst({
-        where: { id: trimmedCompanyId, organizationId: verifiedOrgId },
-        select: { id: true },
-      });
-
-      if (!company) {
-        throw new ForbiddenException({
-          statusCode: 403,
-          error: "FORBIDDEN_COMPANY_ACCESS",
-          message: "Requested company does not belong to your organization.",
-          messageGujarati: "વિનંતી કરેલ કંપની તમારી સંસ્થા સાથે જોડાયેલ નથી.",
-        });
-      }
-      verifiedCompanyId = company.id;
-    } else {
-      const defaultCompany = await this.prisma.company.findFirst({
-        where: { organizationId: verifiedOrgId },
-        orderBy: { createdAt: "asc" },
-        select: { id: true },
-      });
-
-      if (!defaultCompany) {
-        throw new ForbiddenException({
-          statusCode: 403,
-          error: "NO_COMPANY_FOUND",
-          message: "No registered company found under your organization.",
-          messageGujarati: "તમારી સંસ્થા હેઠળ કોઈ રજિસ્ટર્ડ કંપની મળી નથી.",
-        });
-      }
-      verifiedCompanyId = defaultCompany.id;
-    }
-
-    // 3. Zero Trust: Branch Authorization Check
-    let verifiedBranchId: string | undefined;
-    if (rawBranchHeader) {
-      const branch = await this.prisma.branch.findFirst({
-        where: { id: rawBranchHeader, companyId: verifiedCompanyId },
-        select: { id: true },
-      });
-
-      if (!branch) {
-        throw new ForbiddenException({
-          statusCode: 403,
-          error: "INVALID_BRANCH",
-          message: "Requested branch does not exist within the active company.",
-          messageGujarati: "વિનંતી કરેલ શાખા સક્રિય કંપનીમાં અસ્તિત્વમાં નથી.",
-        });
-      }
-
-      const effectiveUserId = user.id || user.userId || user.sub;
-
-      // If user has branch-constrained role (CASHIER, BRANCH_MANAGER, SALESMAN), verify assignment
-      const branchConstrainedRoles = [
-        UserRole.CASHIER,
-        UserRole.BRANCH_MANAGER,
-        UserRole.SALESMAN,
-      ];
-      if (branchConstrainedRoles.includes(user.role as UserRole)) {
-        const assignment = await this.prisma.userBranchAssignment.findUnique({
-          where: {
-            userId_branchId: {
-              userId: effectiveUserId,
-              branchId: rawBranchHeader,
-            },
-          },
-        });
-
-        if (!assignment) {
-          throw new ForbiddenException({
-            statusCode: 403,
-            error: "FORBIDDEN_BRANCH_ACCESS",
-            message: `User is not assigned or authorized to operate branch '${rawBranchHeader}'.`,
-            messageGujarati: "વપરાશકર્તા આ શાખા માટે અધિકૃત નથી.",
+    const tenantContext: TenantContext =
+      await this.prisma.executeBypassRls(async (tx) => {
+        // 2. Zero Trust: Company Check (Derived from authenticated user membership)
+        let verifiedCompanyId: string;
+        const UUID_REGEX =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (rawCompanyHeader !== undefined) {
+          const trimmedCompanyId = rawCompanyHeader.trim();
+          if (!trimmedCompanyId) {
+            throw new BadRequestException("Company context is required.");
+          }
+          if (!UUID_REGEX.test(trimmedCompanyId)) {
+            throw new BadRequestException(
+              "Invalid company context identifier. Must be a valid UUID.",
+            );
+          }
+          const company = await tx.company.findFirst({
+            where: { id: trimmedCompanyId, organizationId: verifiedOrgId },
+            select: { id: true },
           });
+
+          if (!company) {
+            throw new ForbiddenException({
+              statusCode: 403,
+              error: "FORBIDDEN_COMPANY_ACCESS",
+              message: "Requested company does not belong to your organization.",
+              messageGujarati: "વિનંતી કરેલ કંપની તમારી સંસ્થા સાથે જોડાયેલ નથી.",
+            });
+          }
+          verifiedCompanyId = company.id;
+        } else {
+          const defaultCompany = await tx.company.findFirst({
+            where: { organizationId: verifiedOrgId },
+            orderBy: { createdAt: "asc" },
+            select: { id: true },
+          });
+
+          if (!defaultCompany) {
+            throw new ForbiddenException({
+              statusCode: 403,
+              error: "NO_COMPANY_FOUND",
+              message: "No registered company found under your organization.",
+              messageGujarati: "તમારી સંસ્થા હેઠળ કોઈ રજિસ્ટર્ડ કંપની મળી નથી.",
+            });
+          }
+          verifiedCompanyId = defaultCompany.id;
         }
-      }
-      verifiedBranchId = branch.id;
-    } else {
-      // Find user's default branch assignment or company's main branch
-      const effectiveUserId = user.id || user.userId || user.sub;
-      const userAssignment = await this.prisma.userBranchAssignment.findFirst({
-        where: { userId: effectiveUserId, isDefault: true },
-        select: { branchId: true },
+
+        // 3. Zero Trust: Branch Authorization Check
+        let verifiedBranchId: string | undefined;
+        if (rawBranchHeader) {
+          const branch = await tx.branch.findFirst({
+            where: { id: rawBranchHeader, companyId: verifiedCompanyId },
+            select: { id: true },
+          });
+
+          if (!branch) {
+            throw new ForbiddenException({
+              statusCode: 403,
+              error: "INVALID_BRANCH",
+              message: "Requested branch does not exist within the active company.",
+              messageGujarati: "વિનંતી કરેલ શાખા સક્રિય કંપનીમાં અસ્તિત્વમાં નથી.",
+            });
+          }
+
+          const effectiveUserId = user.id || user.userId || user.sub;
+
+          // If user has branch-constrained role (CASHIER, BRANCH_MANAGER, SALESMAN), verify assignment
+          const branchConstrainedRoles = [
+            UserRole.CASHIER,
+            UserRole.BRANCH_MANAGER,
+            UserRole.SALESMAN,
+          ];
+          if (branchConstrainedRoles.includes(user.role as UserRole)) {
+            const assignment = await tx.userBranchAssignment.findUnique({
+              where: {
+                userId_branchId: {
+                  userId: effectiveUserId,
+                  branchId: rawBranchHeader,
+                },
+              },
+            });
+
+            if (!assignment) {
+              throw new ForbiddenException({
+                statusCode: 403,
+                error: "FORBIDDEN_BRANCH_ACCESS",
+                message: `User is not assigned or authorized to operate branch '${rawBranchHeader}'.`,
+                messageGujarati: "વપરાશકર્તા આ શાખા માટે અધિકૃત નથી.",
+              });
+            }
+          }
+          verifiedBranchId = branch.id;
+        } else {
+          // Find user's default branch assignment or company's main branch
+          const effectiveUserId = user.id || user.userId || user.sub;
+          const userAssignment = await tx.userBranchAssignment.findFirst({
+            where: { userId: effectiveUserId, isDefault: true },
+            select: { branchId: true },
+          });
+
+          if (userAssignment) {
+            verifiedBranchId = userAssignment.branchId;
+          } else {
+            const mainBranch = await tx.branch.findFirst({
+              where: { companyId: verifiedCompanyId, isMainBranch: true },
+              select: { id: true },
+            });
+            verifiedBranchId = mainBranch?.id;
+          }
+        }
+
+        // 4. Zero Trust: Financial Year Check
+        let verifiedFyId: string | undefined;
+        if (rawFyHeader) {
+          const fy = await tx.financialYear.findFirst({
+            where: { id: rawFyHeader, companyId: verifiedCompanyId },
+            select: { id: true },
+          });
+
+          if (!fy) {
+            throw new ForbiddenException({
+              statusCode: 403,
+              error: "INVALID_FINANCIAL_YEAR",
+              message:
+                "Requested financial year does not belong to the active company.",
+              messageGujarati:
+                "વિનંતી કરેલ નાણાકીય વર્ષ સક્રિય કંપની સાથે જોડાયેલ નથી.",
+            });
+          }
+          verifiedFyId = fy.id;
+        } else {
+          const currentFy = await tx.financialYear.findFirst({
+            where: { companyId: verifiedCompanyId, isCurrent: true },
+            select: { id: true },
+          });
+          verifiedFyId = currentFy?.id;
+        }
+
+        return {
+          organizationId: verifiedOrgId,
+          companyId: verifiedCompanyId,
+          branchId: verifiedBranchId,
+          financialYearId: verifiedFyId,
+          userId: user.id || user.userId || user.sub,
+          isSystemBypass: false,
+        };
       });
-
-      if (userAssignment) {
-        verifiedBranchId = userAssignment.branchId;
-      } else {
-        const mainBranch = await this.prisma.branch.findFirst({
-          where: { companyId: verifiedCompanyId, isMainBranch: true },
-          select: { id: true },
-        });
-        verifiedBranchId = mainBranch?.id;
-      }
-    }
-
-    // 4. Zero Trust: Financial Year Check
-    let verifiedFyId: string | undefined;
-    if (rawFyHeader) {
-      const fy = await this.prisma.financialYear.findFirst({
-        where: { id: rawFyHeader, companyId: verifiedCompanyId },
-        select: { id: true },
-      });
-
-      if (!fy) {
-        throw new ForbiddenException({
-          statusCode: 403,
-          error: "INVALID_FINANCIAL_YEAR",
-          message:
-            "Requested financial year does not belong to the active company.",
-          messageGujarati:
-            "વિનંતી કરેલ નાણાકીય વર્ષ સક્રિય કંપની સાથે જોડાયેલ નથી.",
-        });
-      }
-      verifiedFyId = fy.id;
-    } else {
-      const currentFy = await this.prisma.financialYear.findFirst({
-        where: { companyId: verifiedCompanyId, isCurrent: true },
-        select: { id: true },
-      });
-      verifiedFyId = currentFy?.id;
-    }
-
-    // Bind fully validated and verified context to request
-    const tenantContext: TenantContext = {
-      organizationId: verifiedOrgId,
-      companyId: verifiedCompanyId,
-      branchId: verifiedBranchId,
-      financialYearId: verifiedFyId,
-      userId: user.id || user.userId || user.sub,
-      isSystemBypass: false,
-    };
 
     request[TENANT_CONTEXT_KEY] = tenantContext;
 

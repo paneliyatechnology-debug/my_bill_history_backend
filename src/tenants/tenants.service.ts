@@ -40,55 +40,59 @@ export class TenantsService {
   ) {}
 
   async getCompanies(ctx: TenantContext) {
-    return this.prisma.company.findMany({
-      where: { organizationId: ctx.organizationId },
-      select: {
-        id: true,
-        legalName: true,
-        tradeName: true,
-        gstin: true,
-        stateCode: true,
-        city: true,
-      },
-      orderBy: { createdAt: "asc" },
-    });
-  }
-
-  async getCompaniesWithEntitlements(ctx: TenantContext) {
-    const [companies, org] = await Promise.all([
-      this.prisma.company.findMany({
+    return this.prisma.executeBypassRls(async (tx) => {
+      return tx.company.findMany({
         where: { organizationId: ctx.organizationId },
         select: {
           id: true,
           legalName: true,
           tradeName: true,
           gstin: true,
-          pan: true,
           stateCode: true,
           city: true,
-          phone: true,
-          email: true,
-          bankName: true,
-          bankAccountNo: true,
-          bankIfsc: true,
-          bankBranch: true,
-          upiVpa: true,
-          bankAccountBarcode: true,
-          signatoryName: true,
-          signatoryDesignation: true,
-          signatureUrl: true,
-          createdAt: true,
-          _count: {
-            select: { branches: true },
-          },
         },
         orderBy: { createdAt: "asc" },
-      }),
-      this.prisma.organization.findUnique({
-        where: { id: ctx.organizationId },
-        include: { tenant: true },
-      }),
-    ]);
+      });
+    });
+  }
+
+  async getCompaniesWithEntitlements(ctx: TenantContext) {
+    const [companies, org] = await this.prisma.executeBypassRls(async (tx) => {
+      return Promise.all([
+        tx.company.findMany({
+          where: { organizationId: ctx.organizationId },
+          select: {
+            id: true,
+            legalName: true,
+            tradeName: true,
+            gstin: true,
+            pan: true,
+            stateCode: true,
+            city: true,
+            phone: true,
+            email: true,
+            bankName: true,
+            bankAccountNo: true,
+            bankIfsc: true,
+            bankBranch: true,
+            upiVpa: true,
+            bankAccountBarcode: true,
+            signatoryName: true,
+            signatoryDesignation: true,
+            signatureUrl: true,
+            createdAt: true,
+            _count: {
+              select: { branches: true },
+            },
+          },
+          orderBy: { createdAt: "asc" },
+        }),
+        tx.organization.findUnique({
+          where: { id: ctx.organizationId },
+          include: { tenant: true },
+        }),
+      ]);
+    });
 
     const tier = org?.tenant?.subscriptionTier || SubscriptionTier.TRIAL;
     const plan = getPlanEntitlements(tier);
@@ -380,15 +384,17 @@ export class TenantsService {
   }
 
   async getCompanyById(ctx: TenantContext, id: string) {
-    const company = await this.prisma.company.findFirst({
-      where: {
-        id,
-        organizationId: ctx.organizationId,
-      },
-      include: {
-        branches: true,
-        financialYears: true,
-      },
+    const company = await this.prisma.executeBypassRls(async (tx) => {
+      return tx.company.findFirst({
+        where: {
+          id,
+          organizationId: ctx.organizationId,
+        },
+        include: {
+          branches: true,
+          financialYears: true,
+        },
+      });
     });
     if (!company) {
       throw new NotFoundException("Company not found in your organization.");
@@ -397,8 +403,10 @@ export class TenantsService {
   }
 
   async updateCompany(ctx: TenantContext, id: string, dto: any) {
-    const company = await this.prisma.company.findFirst({
-      where: { id, organizationId: ctx.organizationId },
+    const company = await this.prisma.executeBypassRls(async (tx) => {
+      return tx.company.findFirst({
+        where: { id, organizationId: ctx.organizationId },
+      });
     });
     if (!company) {
       throw new NotFoundException("Company not found in your organization.");
@@ -437,23 +445,40 @@ export class TenantsService {
       }
     }
 
-    return this.prisma.company.update({
-      where: { id },
-      data,
+    return this.prisma.executeBypassRls(async (tx) => {
+      return tx.company.update({
+        where: { id },
+        data,
+      });
     });
   }
 
   async getCurrentCompany(ctx: TenantContext) {
-    const company = await this.prisma.company.findFirst({
-      where: {
-        id: ctx.companyId,
-        organizationId: ctx.organizationId,
-      },
-      include: {
-        branches: true,
-        financialYears: true,
-      },
+    const compId = ctx.companyId;
+    const company = await this.prisma.executeBypassRls(async (tx) => {
+      if (compId) {
+        const found = await tx.company.findFirst({
+          where: {
+            id: compId,
+            organizationId: ctx.organizationId,
+          },
+          include: {
+            branches: true,
+            financialYears: true,
+          },
+        });
+        if (found) return found;
+      }
+      return tx.company.findFirst({
+        where: { organizationId: ctx.organizationId },
+        orderBy: { createdAt: "asc" },
+        include: {
+          branches: true,
+          financialYears: true,
+        },
+      });
     });
+
     if (!company) {
       throw new NotFoundException("Company not found.");
     }
@@ -461,12 +486,23 @@ export class TenantsService {
   }
 
   async updateCurrentCompany(ctx: TenantContext, dto: any) {
-    const company = await this.prisma.company.findFirst({
-      where: {
-        id: ctx.companyId,
-        organizationId: ctx.organizationId,
-      },
+    const compId = ctx.companyId;
+    const company = await this.prisma.executeBypassRls(async (tx) => {
+      if (compId) {
+        const found = await tx.company.findFirst({
+          where: {
+            id: compId,
+            organizationId: ctx.organizationId,
+          },
+        });
+        if (found) return found;
+      }
+      return tx.company.findFirst({
+        where: { organizationId: ctx.organizationId },
+        orderBy: { createdAt: "asc" },
+      });
     });
+
     if (!company) {
       throw new NotFoundException("Company not found.");
     }
@@ -504,88 +540,137 @@ export class TenantsService {
       }
     }
 
-    return this.prisma.company.update({
-      where: { id: ctx.companyId },
-      data,
+    return this.prisma.executeBypassRls(async (tx) => {
+      return tx.company.update({
+        where: { id: company.id },
+        data,
+      });
     });
   }
 
   async getBranches(ctx: TenantContext) {
-    return this.prisma.branch.findMany({
-      where: {
-        organizationId: ctx.organizationId,
-        companyId: ctx.companyId,
-      },
-      select: {
-        id: true,
-        name: true,
-        code: true,
-        isMainBranch: true,
-        city: true,
-        stateCode: true,
-        phone: true,
-      },
+    return this.prisma.executeBypassRls(async (tx) => {
+      let compId = ctx.companyId;
+      if (!compId) {
+        const primary = await tx.company.findFirst({
+          where: { organizationId: ctx.organizationId },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        });
+        compId = primary?.id;
+      }
+      return tx.branch.findMany({
+        where: {
+          organizationId: ctx.organizationId,
+          ...(compId ? { companyId: compId } : {}),
+        },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          isMainBranch: true,
+          city: true,
+          stateCode: true,
+          phone: true,
+        },
+      });
     });
   }
 
   async createBranch(ctx: TenantContext, dto: CreateBranchDto) {
-    const existing = await this.prisma.branch.findFirst({
-      where: {
-        companyId: ctx.companyId,
-        code: dto.code,
-      },
-    });
+    return this.prisma.executeBypassRls(async (tx) => {
+      let compId = ctx.companyId;
+      if (!compId) {
+        const primary = await tx.company.findFirst({
+          where: { organizationId: ctx.organizationId },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        });
+        compId = primary?.id;
+      }
 
-    if (existing) {
-      throw new ForbiddenException(
-        `Branch with code '${dto.code}' already exists in this company.`,
-      );
-    }
+      const existing = await tx.branch.findFirst({
+        where: {
+          companyId: compId,
+          code: dto.code,
+        },
+      });
 
-    return this.prisma.branch.create({
-      data: {
-        organizationId: ctx.organizationId,
-        companyId: ctx.companyId,
-        name: dto.name,
-        code: dto.code,
-        addressLine1: dto.addressLine1,
-        city: dto.city,
-        pincode: dto.pincode,
-        stateCode: dto.stateCode,
-        phone: dto.phone,
-      },
+      if (existing) {
+        throw new ForbiddenException(
+          `Branch with code '${dto.code}' already exists in this company.`,
+        );
+      }
+
+      return tx.branch.create({
+        data: {
+          organizationId: ctx.organizationId,
+          companyId: compId || "",
+          name: dto.name,
+          code: dto.code,
+          addressLine1: dto.addressLine1,
+          city: dto.city,
+          pincode: dto.pincode,
+          stateCode: dto.stateCode,
+          phone: dto.phone,
+        },
+      });
     });
   }
 
   async getFinancialYears(ctx: TenantContext) {
-    return this.prisma.financialYear.findMany({
-      where: { companyId: ctx.companyId },
-      orderBy: { startDate: "desc" },
-      select: {
-        id: true,
-        name: true,
-        startDate: true,
-        endDate: true,
-        isCurrent: true,
-        isLocked: true,
-      },
+    return this.prisma.executeBypassRls(async (tx) => {
+      let compId = ctx.companyId;
+      if (!compId) {
+        const primary = await tx.company.findFirst({
+          where: { organizationId: ctx.organizationId },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        });
+        compId = primary?.id;
+      }
+      return tx.financialYear.findMany({
+        where: {
+          ...(compId ? { companyId: compId } : {}),
+        },
+        orderBy: { startDate: "desc" },
+        select: {
+          id: true,
+          name: true,
+          startDate: true,
+          endDate: true,
+          isCurrent: true,
+          isLocked: true,
+        },
+      });
     });
   }
 
   async getWarehouses(ctx: TenantContext) {
-    return this.prisma.warehouse.findMany({
-      where: {
-        companyId: ctx.companyId,
-      },
-      select: {
-        id: true,
-        name: true,
-        isDefault: true,
-        address: true,
-        branchId: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: "asc" },
+    return this.prisma.executeBypassRls(async (tx) => {
+      let compId = ctx.companyId;
+      if (!compId) {
+        const primary = await tx.company.findFirst({
+          where: { organizationId: ctx.organizationId },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        });
+        compId = primary?.id;
+      }
+      return tx.warehouse.findMany({
+        where: {
+          companyId: compId,
+        },
+        select: {
+          id: true,
+          name: true,
+          isDefault: true,
+          address: true,
+          branchId: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "asc" },
+      });
     });
   }
 
