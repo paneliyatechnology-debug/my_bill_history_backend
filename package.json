@@ -9,6 +9,7 @@
     "db:seed": "node prisma/seed.js",
     "build": "prisma generate && nest build && tsc-alias",
     "dev": "nest start --watch",
+    "server": "nest start --watch",
     "start": "node dist/main.js",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "type-check": "tsc --noEmit",
@@ -52,8 +53,5 @@
     "typescript": "^5.6.3",
     "unplugin-swc": "^2.0.0",
     "vitest": "^2.1.2"
-  },
-  "prisma": {
-    "seed": "node prisma/seed.js"
   }
 }

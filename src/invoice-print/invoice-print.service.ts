@@ -45,8 +45,22 @@ const BOOLEAN_KEYS: (keyof UpdateInvoicePrintSettingsDto)[] = [
   "showBatch",
   "showExpiry",
   "showSku",
+  "showTimeOnInvoice",
+  "showPricePerItem",
+  "showQuantity",
+  "showMfgDate",
+  "enableReceiverSignature",
   "stretchItemTable",
 ];
+
+const THEME_ALIASES: Record<string, string> = {
+  navaratri: "navratri",
+  logo: "your_logo",
+  ganesh: "ganesh_chaturthi",
+  compact: "advanced_compact",
+  thermal_80: "stylish",
+  corporate: "modern",
+};
 
 @Injectable()
 export class InvoicePrintService {
@@ -74,12 +88,14 @@ export class InvoicePrintService {
     const data: any = {};
 
     if (dto.themeId !== undefined) {
-      if (!INVOICE_THEMES.some((t) => t.id === dto.themeId)) {
+      const themeId = THEME_ALIASES[dto.themeId] || dto.themeId;
+      if (!INVOICE_THEMES.some((t) => t.id === themeId)) {
         throw new BadRequestException("Unknown invoice theme.");
       }
-      data.themeId = dto.themeId;
-      const theme = INVOICE_THEMES.find((t) => t.id === dto.themeId);
+      data.themeId = themeId;
+      const theme = INVOICE_THEMES.find((t) => t.id === themeId);
       if (theme && !dto.paperSize) data.paperSize = theme.paper;
+      if (dto.themeId === "thermal_80") data.paperSize = "THERMAL_80";
     }
     if (dto.accentColor !== undefined) {
       if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(dto.accentColor)) {
@@ -106,6 +122,13 @@ export class InvoicePrintService {
       "slogan",
       "footerText",
       "fontSize",
+      "industryType",
+      "festiveTheme",
+      "fontFamily",
+      "tablePadding",
+      "borderStyle",
+      "selectedBankAccount",
+      "selectedPaymentQr",
     ] as const) {
       if (dto[key] !== undefined) data[key] = dto[key];
     }
@@ -113,6 +136,8 @@ export class InvoicePrintService {
     if (dto.invoiceCustomFields !== undefined) data.invoiceCustomFields = dto.invoiceCustomFields;
     if (dto.partyCustomFields !== undefined) data.partyCustomFields = dto.partyCustomFields;
     if (dto.itemColumnOrder !== undefined) data.itemColumnOrder = dto.itemColumnOrder;
+    if (dto.itemCustomColumns !== undefined) data.itemCustomColumns = dto.itemCustomColumns;
+    if (dto.termsAndConditions !== undefined) data.termsAndConditions = dto.termsAndConditions;
     if (dto.headerLayout !== undefined) {
       data.headerLayout = Math.min(3, Math.max(1, Number(dto.headerLayout) || 1));
     }
@@ -243,8 +268,11 @@ export class InvoicePrintService {
     return {
       category,
       invoiceNumber: "AABBCCDD/202",
-      invoiceDate: "2023-07-17",
+      invoiceDate: "2023-07-17T15:47:00.000Z",
       dueDate: "2023-02-16",
+      poNumber: "PO-1024",
+      ewayBillNumber: "351234567890",
+      vehicleNumber: "GJ01AB1234",
       placeOfSupply: company.stateCode || "24",
       notes: "Sample Note",
       termsAndConditions:

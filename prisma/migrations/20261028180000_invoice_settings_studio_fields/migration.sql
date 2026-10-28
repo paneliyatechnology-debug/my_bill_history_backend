@@ -1,0 +1,15 @@
+ALTER TABLE "company_invoice_print_settings"
+  ADD COLUMN IF NOT EXISTS "item_custom_columns" JSONB,
+  ADD COLUMN IF NOT EXISTS "show_time_on_invoice" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "show_price_per_item" BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS "show_quantity" BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS "show_mfg_date" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "enable_receiver_signature" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "invoice_industry_type" VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS "festive_theme" VARCHAR(40),
+  ADD COLUMN IF NOT EXISTS "font_family" VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS "table_padding" VARCHAR(20) NOT NULL DEFAULT 'normal',
+  ADD COLUMN IF NOT EXISTS "border_style" VARCHAR(20) NOT NULL DEFAULT 'solid',
+  ADD COLUMN IF NOT EXISTS "selected_bank_account" VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS "selected_payment_qr" VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS "default_terms_and_conditions" JSONB;

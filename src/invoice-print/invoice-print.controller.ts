@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Put, Query, Res } from "@nestjs/common";
+import { Body, Controller, Get, Post, Put, Query, Res } from "@nestjs/common";
 import { FastifyReply } from "fastify";
 import { TenantContext, UserRole } from "@billing/shared-types";
 import { Roles } from "../common/decorators/roles.decorator";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { InvoicePrintService } from "./invoice-print.service";
+import { AiInvoiceStylerService, AiStyleRequest } from "./ai-invoice-styler.service";
 import { UpdateInvoicePrintSettingsDto } from "./dto/update-invoice-settings.dto";
 
 @Controller("invoice-settings")
@@ -18,7 +19,10 @@ import { UpdateInvoicePrintSettingsDto } from "./dto/update-invoice-settings.dto
   UserRole.SALESMAN,
 )
 export class InvoicePrintSettingsController {
-  constructor(private readonly printService: InvoicePrintService) {}
+  constructor(
+    private readonly printService: InvoicePrintService,
+    private readonly aiStyler: AiInvoiceStylerService,
+  ) {}
 
   @Get("themes")
   getCatalog() {
@@ -42,6 +46,23 @@ export class InvoicePrintSettingsController {
     @Body() dto: UpdateInvoicePrintSettingsDto,
   ) {
     return this.printService.saveSettings(tenant, dto);
+  }
+
+  @Post("ai-style")
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+    UserRole.BRANCH_MANAGER,
+    UserRole.CASHIER,
+    UserRole.SALESMAN,
+  )
+  async aiStyle(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() body: AiStyleRequest,
+  ) {
+    return this.aiStyler.styleInvoice(body);
   }
 
   @Get("preview")
