@@ -324,6 +324,13 @@ export class PartiesService {
       const party = await tx.party.findFirst({
         where: { id, companyId: ctx.companyId },
         include: {
+          salesInvoices: {
+            where: { status: { not: "CANCELLED" } },
+            select: { grandTotal: true, paidAmount: true, status: true },
+          },
+          purchaseInvoices: {
+            select: { grandTotal: true, paidAmount: true },
+          },
           notes: {
             orderBy: { createdAt: "desc" },
           },
@@ -341,17 +348,46 @@ export class PartiesService {
         });
       }
 
-      const mappedNotes = (party.notes || []).map((n: any) => ({
+      let balance = 0;
+      if (party.type === "CUSTOMER") {
+        balance = (party.salesInvoices || []).reduce(
+          (s: number, inv: any) =>
+            s + Math.max(0, Number(inv.grandTotal) - Number(inv.paidAmount)),
+          0,
+        );
+      } else if (party.type === "SUPPLIER") {
+        balance = (party.purchaseInvoices || []).reduce(
+          (s: number, inv: any) =>
+            s + Math.max(0, Number(inv.grandTotal) - Number(inv.paidAmount)),
+          0,
+        );
+      } else {
+        const rec = (party.salesInvoices || []).reduce(
+          (s: number, inv: any) =>
+            s + Math.max(0, Number(inv.grandTotal) - Number(inv.paidAmount)),
+          0,
+        );
+        const pay = (party.purchaseInvoices || []).reduce(
+          (s: number, inv: any) =>
+            s + Math.max(0, Number(inv.grandTotal) - Number(inv.paidAmount)),
+          0,
+        );
+        balance = rec >= pay ? rec - pay : pay - rec;
+      }
+
+      const { salesInvoices, purchaseInvoices, notes, appointments, ...cleanParty } = party;
+      const mappedNotes = (notes || []).map((n: any) => ({
         ...n,
         descriptions: n.description,
       }));
-      const mappedAppointments = (party.appointments || []).map((a: any) => ({
+      const mappedAppointments = (appointments || []).map((a: any) => ({
         ...a,
         descriptions: a.description,
       }));
 
       return {
-        ...party,
+        ...cleanParty,
+        balance,
         notes: mappedNotes,
         appointments: mappedAppointments,
       };

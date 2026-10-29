@@ -173,6 +173,7 @@ model Company {
   invoicePrintSettings     CompanyInvoicePrintSettings?
   partyNotes               PartyNote[]
   partyAppointments        PartyAppointment[]
+  sharedLedgerConnections  SharedLedgerConnection[]
 
   @@unique([gstin, organizationId])
   @@index([organizationId])
@@ -568,6 +569,7 @@ model Party {
   purchaseBillScans PurchaseBillScan[]
   notes            PartyNote[]
   appointments     PartyAppointment[]
+  sharedLedgerConnections SharedLedgerConnection[]
 
   @@index([organizationId, companyId])
   @@index([phone])
@@ -1858,4 +1860,26 @@ model PartyAppointment {
   @@index([date])
   @@map("party_appointments")
 }
+
+model SharedLedgerConnection {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  companyId      String    @map("company_id") @db.Uuid
+  partyId        String    @map("party_id") @db.Uuid
+  token          String    @unique @db.VarChar(64)
+  status         String    @default("INVITED") @db.VarChar(30) // INVITED, CONNECTED, DISCONNECTED
+  isAutoPaired   Boolean   @default(false) @map("is_auto_paired")
+  invitedAt      DateTime? @map("invited_at")
+  lastViewedAt   DateTime? @map("last_viewed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  party          Party     @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, companyId])
+  @@index([partyId])
+  @@map("shared_ledger_connections")
+}
+
 

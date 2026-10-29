@@ -123,6 +123,20 @@ export class DatabaseService
             "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT "party_appointments_pkey" PRIMARY KEY ("id")
         );
+        CREATE TABLE IF NOT EXISTS "shared_ledger_connections" (
+            "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+            "organization_id" UUID NOT NULL,
+            "company_id" UUID NOT NULL,
+            "party_id" UUID NOT NULL,
+            "token" VARCHAR(64) NOT NULL UNIQUE,
+            "status" VARCHAR(30) NOT NULL DEFAULT 'INVITED',
+            "is_auto_paired" BOOLEAN NOT NULL DEFAULT false,
+            "invited_at" TIMESTAMP(3),
+            "last_viewed_at" TIMESTAMP(3),
+            "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "shared_ledger_connections_pkey" PRIMARY KEY ("id")
+        );
       `).catch((err) => {
         this.logger.warn(`Notice: party notes/appointments init: ${err.message}`);
       });

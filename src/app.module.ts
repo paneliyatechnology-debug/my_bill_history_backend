@@ -34,6 +34,7 @@ import { ExpensesModule } from "./expenses/expenses.module";
 import { BankingModule } from "./banking/banking.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { InvoicePrintModule } from "./invoice-print/invoice-print.module";
+import { SharedLedgerModule } from "./shared-ledger/shared-ledger.module";
 
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 
@@ -79,6 +80,7 @@ import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
     ReconciliationModule,
     GstModule,
     ImportsModule,
+    SharedLedgerModule,
     HealthModule,
   ],
   providers: [
