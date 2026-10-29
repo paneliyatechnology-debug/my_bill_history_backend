@@ -1,0 +1,145 @@
+[
+  {
+    "id": "logo",
+    "name": "Your logo",
+    "category": "branding",
+    "festivalName": "Your Logo",
+    "description": "Display your prominent company watermark and clean brand framing.",
+    "primaryColor": "#111827",
+    "badge": "BRAND",
+    "thumbnail": "/themes/navaratri_1.jpg",
+    "variants": [],
+    "isActive": true,
+    "sortOrder": 1,
+    "createdAt": "2026-10-29T05:43:38.593Z",
+    "updatedAt": "2026-10-29T05:43:38.593Z"
+  },
+  {
+    "id": "navratri",
+    "name": "Navaratri",
+    "category": "festive",
+    "festivalName": "Navaratri",
+    "description": "Auspicious hanging temple bells, marigold genda phool toran & warm celebratory watercolor artwork.",
+    "primaryColor": "#F97316",
+    "badge": "FESTIVE",
+    "thumbnail": "/themes/navaratri_1.jpg",
+    "variants": [
+      "/themes/navaratri_1.jpg",
+      "/themes/navaratri_2.jpg"
+    ],
+    "isActive": true,
+    "sortOrder": 2,
+    "createdAt": "2026-10-29T05:43:38.593Z",
+    "updatedAt": "2026-10-29T05:43:38.593Z"
+  },
+  {
+    "id": "durga_puja",
+    "name": "Durga Puja",
+    "category": "festive",
+    "festivalName": "Durga Puja",
+    "description": "Auspicious crimson red drapes, golden trishul, conch watermark and festive lotus motifs.",
+    "primaryColor": "#DC2626",
+    "badge": "FESTIVE",
+    "thumbnail": "/themes/durga_puja_1.jpg",
+    "variants": [
+      "/themes/durga_puja_1.jpg"
+    ],
+    "isActive": true,
+    "sortOrder": 3,
+    "createdAt": "2026-10-29T05:43:38.593Z",
+    "updatedAt": "2026-10-29T05:43:38.593Z"
+  },
+  {
+    "id": "dussehra",
+    "name": "Dussehra",
+    "category": "festive",
+    "festivalName": "Dussehra",
+    "description": "Vijayadashami royal palace silhouette, golden bow & arrow victory frame and saffron toran.",
+    "primaryColor": "#EA580C",
+    "badge": "FESTIVE",
+    "thumbnail": "/themes/dussehra_1.jpg",
+    "variants": [
+      "/themes/dussehra_1.jpg"
+    ],
+    "isActive": true,
+    "sortOrder": 4,
+    "createdAt": "2026-10-29T05:43:38.593Z",
+    "updatedAt": "2026-10-29T05:43:38.593Z"
+  },
+  {
+    "id": "dhanteras",
+    "name": "Dhanteras",
+    "category": "festive",
+    "festivalName": "Dhanteras",
+    "description": "Golden kalash, overflowing gold coins and auspicious Lakshmi Puja festive letterhead stationery.",
+    "primaryColor": "#911a12",
+    "badge": "FESTIVE",
+    "thumbnail": "/themes/dhanteras_1.jpg",
+    "variants": [
+      "/themes/dhanteras_1.jpg"
+    ],
+    "isActive": true,
+    "sortOrder": 5,
+    "createdAt": "2026-10-29T05:43:38.593Z",
+    "updatedAt": "2026-10-29T06:13:03.656Z"
+  },
+  {
+    "id": "diwali",
+    "name": "Diwali",
+    "category": "festive",
+    "festivalName": "Diwali",
+    "description": "Row of glowing golden clay diyas, fairy light sparkles and magnificent warm festive atmosphere.",
+    "primaryColor": "#7C3AED",
+    "badge": "POPULAR",
+    "thumbnail": "/themes/diwali_1.jpg",
+    "variants": [
+      "/themes/diwali_1.jpg"
+    ],
+    "isActive": true,
+    "sortOrder": 6,
+    "createdAt": "2026-10-29T05:43:38.593Z",
+    "updatedAt": "2026-10-29T05:43:38.593Z"
+  },
+  {
+    "id": "stylish",
+    "name": "Stylish",
+    "category": "standard",
+    "description": "Clean modern bill without heavy boxes.",
+    "primaryColor": "#111827",
+    "badge": null,
+    "thumbnail": "/themes/navaratri_1.jpg",
+    "variants": [],
+    "isActive": true,
+    "sortOrder": 10,
+    "createdAt": "2026-10-29T05:43:38.593Z",
+    "updatedAt": "2026-10-29T05:43:38.593Z"
+  },
+  {
+    "id": "luxury",
+    "name": "Luxury",
+    "category": "standard",
+    "description": "Ornate double border, premium header and gold accent rules.",
+    "primaryColor": "#D97706",
+    "badge": "NEW",
+    "thumbnail": "/themes/navaratri_1.jpg",
+    "variants": [],
+    "isActive": true,
+    "sortOrder": 11,
+    "createdAt": "2026-10-29T05:43:38.593Z",
+    "updatedAt": "2026-10-29T05:43:38.593Z"
+  },
+  {
+    "id": "advanced_gst_tally",
+    "name": "Advanced GST (Tally)",
+    "category": "standard",
+    "description": "Full-height ruled GST invoice with rate lines and HSN summary, like Tally.",
+    "primaryColor": "#111827",
+    "badge": null,
+    "thumbnail": "/themes/navaratri_1.jpg",
+    "variants": [],
+    "isActive": true,
+    "sortOrder": 12,
+    "createdAt": "2026-10-29T05:43:38.593Z",
+    "updatedAt": "2026-10-29T05:43:38.593Z"
+  }
+]

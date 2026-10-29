@@ -54,6 +54,17 @@ const BOOLEAN_KEYS: (keyof UpdateInvoicePrintSettingsDto)[] = [
 ];
 
 const THEME_ALIASES: Record<string, string> = {
+  diwali_1: "diwali",
+  diwali_2: "diwali",
+  dhanteras_1: "dhanteras",
+  dhanteras_2: "dhanteras",
+  navratri_1: "navratri",
+  navratri_2: "navratri",
+  durga_puja_1: "durga_puja",
+  dussehra_1: "dussehra",
+  uttarayan_1: "uttarayan",
+  independence_1: "independence",
+  ganesh_chaturthi_1: "ganesh_chaturthi",
   navaratri: "navratri",
   logo: "your_logo",
   ganesh: "ganesh_chaturthi",
@@ -88,11 +99,15 @@ export class InvoicePrintService {
     const data: any = {};
 
     if (dto.themeId !== undefined) {
-      const themeId = THEME_ALIASES[dto.themeId] || dto.themeId;
+      const rawThemeId = dto.themeId;
+      const themeId = THEME_ALIASES[rawThemeId] || rawThemeId;
       if (!INVOICE_THEMES.some((t) => t.id === themeId)) {
         throw new BadRequestException("Unknown invoice theme.");
       }
       data.themeId = themeId;
+      if (rawThemeId.includes("_") && dto.festiveTheme === undefined) {
+        data.festiveTheme = rawThemeId;
+      }
       const theme = INVOICE_THEMES.find((t) => t.id === themeId);
       if (theme && !dto.paperSize) data.paperSize = theme.paper;
       if (dto.themeId === "thermal_80") data.paperSize = "THERMAL_80";

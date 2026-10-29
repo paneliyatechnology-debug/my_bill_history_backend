@@ -45,17 +45,25 @@ export class AuthService {
     let resolvedTenantId = tenantId;
     let resolvedOrgId = organizationId;
 
+    let role: string | undefined;
+    let isSupportSession = false;
+
     if (token) {
       try {
         const payload = this.jwtService.decode(token) as any;
         if (payload?.organizationId) resolvedOrgId = payload.organizationId;
         if (payload?.tenantId) resolvedTenantId = payload.tenantId;
+        role = payload?.role;
+        isSupportSession = Boolean(payload?.isSupportSession);
       } catch {
         // Safe fallback
       }
     }
 
-    return this.sessionEvents.subscribeForTenant(resolvedTenantId, resolvedOrgId);
+    return this.sessionEvents.subscribeForTenant(resolvedTenantId, resolvedOrgId, {
+      role,
+      isSupportSession,
+    });
   }
 
   /**

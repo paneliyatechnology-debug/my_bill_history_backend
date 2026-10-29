@@ -618,15 +618,31 @@ export class SuperAdminService {
 
       if (updated.isActive === false && firstOrg) {
         await tx.user.updateMany({
-          where: { organizationId: firstOrg.id },
+          where: {
+            organizationId: firstOrg.id,
+            role: { not: UserRole.SUPER_ADMIN },
+          },
           data: { updatedAt: new Date() },
         });
         for (const comp of firstOrg.companies) {
           await this.sessionRegistry.revokeAllForCompany(comp.id);
         }
-        this.sessionEvents.emitTenantSuspended(tenantId);
-      } else if (updated.isActive === true) {
-        this.sessionEvents.emitTenantActivated(tenantId);
+      }
+
+      const accessChanged =
+        updated.isActive !== existing.isActive ||
+        String(updated.subscriptionTier) !== String(existing.subscriptionTier) ||
+        String(updated.subscriptionEnds || "") !== String(existing.subscriptionEnds || "") ||
+        Boolean(tier || dto.subscriptionEnds || dto.extendDays || dto.status);
+
+      if (accessChanged) {
+        this.sessionEvents.emitAccessState({
+          tenantId,
+          organizationId: firstOrg?.id,
+          isSuspended: updated.isActive === false,
+          subscriptionEnds: updated.subscriptionEnds,
+          tier: updated.subscriptionTier,
+        });
       }
 
       if (firstOrg && firstOrg.companies[0]) {
@@ -1144,27 +1160,37 @@ export class SuperAdminService {
         data: { isActive },
       });
 
+      const orgs = await tx.organization.findMany({
+        where: { tenantId: { in: tenantIds } },
+        include: { companies: true },
+      });
+
       if (!isActive) {
-        const orgs = await tx.organization.findMany({
-          where: { tenantId: { in: tenantIds } },
-          include: { companies: true },
-        });
         const orgIds = orgs.map((o) => o.id);
         await tx.user.updateMany({
-          where: { organizationId: { in: orgIds } },
+          where: {
+            organizationId: { in: orgIds },
+            role: { not: UserRole.SUPER_ADMIN },
+          },
           data: { updatedAt: new Date() },
         });
         for (const org of orgs) {
           for (const comp of org.companies) {
             await this.sessionRegistry.revokeAllForCompany(comp.id).catch(() => {});
           }
-        }
-        for (const tId of tenantIds) {
-          this.sessionEvents.emitTenantSuspended(tId);
+          this.sessionEvents.emitAccessState({
+            tenantId: org.tenantId,
+            organizationId: org.id,
+            isSuspended: true,
+          });
         }
       } else {
-        for (const tId of tenantIds) {
-          this.sessionEvents.emitTenantActivated(tId);
+        for (const org of orgs) {
+          this.sessionEvents.emitAccessState({
+            tenantId: org.tenantId,
+            organizationId: org.id,
+            isSuspended: false,
+          });
         }
       }
 

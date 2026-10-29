@@ -384,9 +384,13 @@ export class ItemsService {
         0,
       );
       const { stockTransactions, ...rest } = item;
+      const firstBatch = item.batches?.[0];
       return {
         ...rest,
         currentStock,
+        openingBatchNumber: firstBatch?.batchNumber || null,
+        openingMfgDate: firstBatch?.mfgDate || null,
+        openingExpiryDate: firstBatch?.expiryDate || null,
       };
     });
   }
@@ -432,6 +436,10 @@ export class ItemsService {
             secondaryUom: true,
             category: true,
             hsnMaster: true,
+            batches: {
+              orderBy: { createdAt: "desc" },
+              take: 1,
+            },
             stockTransactions: {
               where: { companyId: ctx.companyId },
               select: { quantity: true },
@@ -450,9 +458,13 @@ export class ItemsService {
           0,
         );
         const { stockTransactions, ...rest } = it;
+        const firstBatch = it.batches?.[0];
         return {
           ...rest,
           currentStock,
+          openingBatchNumber: firstBatch?.batchNumber || null,
+          openingMfgDate: firstBatch?.mfgDate || null,
+          openingExpiryDate: firstBatch?.expiryDate || null,
         };
       });
 
@@ -708,6 +720,90 @@ export class ItemsService {
         }
       }
 
+      // Update or create batch if batch details provided or trackBatches is enabled
+      if (
+        trackBatches ||
+        dto.openingBatchNumber !== undefined ||
+        dto.openingMfgDate !== undefined ||
+        dto.openingExpiryDate !== undefined
+      ) {
+        const valRate = Number(dto.purchaseRate ?? updated.purchaseRate ?? updated.retailPrice ?? 0);
+        const existingBatch = await tx.itemBatch.findFirst({
+          where: { itemId: id },
+          orderBy: { createdAt: "desc" },
+        });
+
+        if (existingBatch) {
+          const updatedBatch = await tx.itemBatch.update({
+            where: { id: existingBatch.id },
+            data: {
+              batchNumber: dto.openingBatchNumber?.trim() || existingBatch.batchNumber,
+              mfgDate:
+                dto.openingMfgDate !== undefined
+                  ? dto.openingMfgDate
+                    ? new Date(dto.openingMfgDate)
+                    : null
+                  : existingBatch.mfgDate,
+              expiryDate:
+                dto.openingExpiryDate !== undefined
+                  ? dto.openingExpiryDate
+                    ? new Date(dto.openingExpiryDate)
+                    : null
+                  : existingBatch.expiryDate,
+              purchaseRate: dto.purchaseRate !== undefined ? Number(dto.purchaseRate) : existingBatch.purchaseRate,
+              salePrice: dto.retailPrice !== undefined ? Number(dto.retailPrice) : existingBatch.salePrice,
+              mrp: dto.mrp !== undefined ? (dto.mrp ? Number(dto.mrp) : null) : existingBatch.mrp,
+            },
+          });
+
+          const existingOpeningTx = await tx.stockTransaction.findFirst({
+            where: {
+              companyId: ctx.companyId,
+              itemId: id,
+              transactionType: StockTransactionType.OPENING,
+            },
+          });
+          if (existingOpeningTx && !existingOpeningTx.batchId) {
+            await tx.stockTransaction.update({
+              where: { id: existingOpeningTx.id },
+              data: { batchId: updatedBatch.id },
+            });
+          }
+        } else if (
+          dto.openingBatchNumber ||
+          dto.openingMfgDate ||
+          dto.openingExpiryDate ||
+          trackBatches
+        ) {
+          const batchNumber = dto.openingBatchNumber?.trim() || "BATCH-01";
+          const newBatch = await tx.itemBatch.create({
+            data: {
+              itemId: id,
+              batchNumber,
+              mfgDate: dto.openingMfgDate ? new Date(dto.openingMfgDate) : null,
+              expiryDate: dto.openingExpiryDate ? new Date(dto.openingExpiryDate) : null,
+              purchaseRate: valRate,
+              mrp: dto.mrp ?? updated.retailPrice,
+              salePrice: updated.retailPrice,
+            },
+          });
+
+          const existingOpeningTx = await tx.stockTransaction.findFirst({
+            where: {
+              companyId: ctx.companyId,
+              itemId: id,
+              transactionType: StockTransactionType.OPENING,
+            },
+          });
+          if (existingOpeningTx) {
+            await tx.stockTransaction.update({
+              where: { id: existingOpeningTx.id },
+              data: { batchId: newBatch.id },
+            });
+          }
+        }
+      }
+
       // Compute current stock dynamically from all stock transactions
       const stockTransactions = await tx.stockTransaction.findMany({
         where: { itemId: id, companyId: ctx.companyId },
@@ -731,9 +827,18 @@ export class ItemsService {
         });
       }
 
+      const latestBatch = await tx.itemBatch.findFirst({
+        where: { itemId: id },
+        orderBy: { createdAt: "desc" },
+      });
+
       return {
         ...updated,
         currentStock,
+        batches: latestBatch ? [latestBatch] : [],
+        openingBatchNumber: latestBatch?.batchNumber || null,
+        openingMfgDate: latestBatch?.mfgDate || null,
+        openingExpiryDate: latestBatch?.expiryDate || null,
       };
     });
   }

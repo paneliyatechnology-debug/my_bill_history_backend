@@ -28,6 +28,9 @@ export interface UpdateItemDto {
   openingStock?: number | string;
   openingStockDate?: string;
   warehouseId?: string;
+  openingBatchNumber?: string;
+  openingMfgDate?: string;
+  openingExpiryDate?: string;
 }
 
 export interface AdjustStockDto {

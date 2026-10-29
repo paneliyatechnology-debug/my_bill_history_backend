@@ -116,7 +116,7 @@ export class TenantContextInterceptor implements NestInterceptor {
       }
 
       // Check if session token was invalidated by password reset or security change
-      if (user.iat && dbUser.updatedAt) {
+      if (user.iat && dbUser.updatedAt && dbUser.role !== UserRole.SUPER_ADMIN) {
         const tokenIssuedAtMs = user.iat * 1000;
         // Invalidate tokens issued more than 2 seconds before password reset or security update
         if (dbUser.updatedAt.getTime() - tokenIssuedAtMs > 2000) {

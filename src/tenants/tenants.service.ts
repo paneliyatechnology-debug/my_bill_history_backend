@@ -18,6 +18,7 @@ import {
 } from "@billing/shared-types";
 import { CreateCompanyDto } from "./dto/create-company.dto";
 import { CompanyAssetsService } from "./company-assets.service";
+import { SessionEventsService } from "../auth/session-events.service";
 import {
   companySettingsCatalog,
   matchIndianStateCode,
@@ -86,6 +87,7 @@ export class TenantsService {
     private readonly audit: AuditService,
     private readonly ledgersService: LedgersService,
     private readonly assets: CompanyAssetsService,
+    private readonly sessionEvents: SessionEventsService,
   ) {}
 
   async getCompanies(ctx: TenantContext) {
@@ -1353,6 +1355,14 @@ export class TenantsService {
     });
 
     const plan = getPlanEntitlements(updatedTenant.subscriptionTier);
+
+    this.sessionEvents.emitAccessState({
+      tenantId: updatedTenant.id,
+      organizationId: org.id,
+      isSuspended: false,
+      subscriptionEnds: updatedTenant.subscriptionEnds,
+      tier: updatedTenant.subscriptionTier,
+    });
 
     return {
       success: true,
