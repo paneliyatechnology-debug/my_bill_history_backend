@@ -96,6 +96,36 @@ export class DatabaseService
         CREATE INDEX IF NOT EXISTS "import_jobs_company_id_module_idx" ON "import_jobs"("company_id", "module");
         CREATE INDEX IF NOT EXISTS "import_jobs_idempotency_key_idx" ON "import_jobs"("idempotency_key");
       `).catch(() => {});
+
+      await this.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "party_notes" (
+            "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+            "organization_id" UUID NOT NULL,
+            "company_id" UUID NOT NULL,
+            "party_id" UUID,
+            "title" VARCHAR(200) NOT NULL,
+            "description" TEXT NOT NULL,
+            "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "party_notes_pkey" PRIMARY KEY ("id")
+        );
+        CREATE TABLE IF NOT EXISTS "party_appointments" (
+            "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+            "organization_id" UUID NOT NULL,
+            "company_id" UUID NOT NULL,
+            "party_id" UUID,
+            "title" VARCHAR(200) NOT NULL,
+            "description" TEXT,
+            "date" DATE NOT NULL,
+            "time" VARCHAR(50) NOT NULL,
+            "status" VARCHAR(50) NOT NULL DEFAULT 'SCHEDULED',
+            "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "party_appointments_pkey" PRIMARY KEY ("id")
+        );
+      `).catch((err) => {
+        this.logger.warn(`Notice: party notes/appointments init: ${err.message}`);
+      });
     } catch {
       // Allow startup in environments without active DB
     }

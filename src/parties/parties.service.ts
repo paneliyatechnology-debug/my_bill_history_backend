@@ -15,6 +15,10 @@ import {
 import { CreatePartyDto } from "./dto/create-party.dto";
 import { UpdatePartyDto, QueryPartiesDto } from "./dto/update-party.dto";
 import {
+  CreateNoteDto,
+  CreateAppointmentDto,
+} from "./dto/note-appointment.dto";
+import {
   validatePartyGstin,
   calculateGstinChecksum,
   INDIAN_STATES,
@@ -319,6 +323,14 @@ export class PartiesService {
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
       const party = await tx.party.findFirst({
         where: { id, companyId: ctx.companyId },
+        include: {
+          notes: {
+            orderBy: { createdAt: "desc" },
+          },
+          appointments: {
+            orderBy: { date: "asc" },
+          },
+        },
       });
 
       if (!party) {
@@ -329,7 +341,20 @@ export class PartiesService {
         });
       }
 
-      return party;
+      const mappedNotes = (party.notes || []).map((n: any) => ({
+        ...n,
+        descriptions: n.description,
+      }));
+      const mappedAppointments = (party.appointments || []).map((a: any) => ({
+        ...a,
+        descriptions: a.description,
+      }));
+
+      return {
+        ...party,
+        notes: mappedNotes,
+        appointments: mappedAppointments,
+      };
     });
   }
 
@@ -1186,4 +1211,217 @@ export class PartiesService {
 
     return null;
   }
+
+  // ==========================================
+  // PARTY NOTES
+  // ==========================================
+  async createNote(
+    ctx: TenantContext,
+    partyId: string | undefined,
+    dto: CreateNoteDto,
+  ) {
+    const title = dto.title?.trim();
+    if (!title) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: "Note title is required.",
+        messageGujarati: "નોંધનું શીર્ષક જરૂરી છે.",
+      });
+    }
+
+    const descriptionText = (dto.description ?? dto.descriptions ?? "").toString();
+    const targetPartyId = partyId || dto.partyId || null;
+
+    return this.prisma.executeInTenantContext(ctx, async (tx) => {
+      if (targetPartyId) {
+        const party = await tx.party.findFirst({
+          where: { id: targetPartyId, companyId: ctx.companyId },
+          select: { id: true },
+        });
+        if (!party) {
+          throw new NotFoundException({
+            statusCode: 404,
+            message: `Party with ID '${targetPartyId}' not found.`,
+            messageGujarati: `પાર્ટી મળેલ નથી.`,
+          });
+        }
+      }
+
+      const note = await tx.partyNote.create({
+        data: {
+          organizationId: ctx.organizationId,
+          companyId: ctx.companyId,
+          partyId: targetPartyId,
+          title,
+          description: descriptionText,
+        },
+      });
+
+      return {
+        ...note,
+        descriptions: note.description,
+      };
+    });
+  }
+
+  async getNotes(ctx: TenantContext, partyId?: string) {
+    return this.prisma.executeInTenantContext(ctx, async (tx) => {
+      const where: any = { companyId: ctx.companyId };
+      if (partyId) {
+        where.partyId = partyId;
+      }
+
+      const notes = await tx.partyNote.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+      });
+
+      return notes.map((n: any) => ({
+        ...n,
+        descriptions: n.description,
+      }));
+    });
+  }
+
+  async deleteNote(ctx: TenantContext, noteId: string) {
+    return this.prisma.executeInTenantContext(ctx, async (tx) => {
+      const existing = await tx.partyNote.findFirst({
+        where: { id: noteId, companyId: ctx.companyId },
+      });
+      if (!existing) {
+        throw new NotFoundException({
+          statusCode: 404,
+          message: "Note not found.",
+          messageGujarati: "નોંધ મળેલ નથી.",
+        });
+      }
+
+      await tx.partyNote.delete({
+        where: { id: noteId },
+      });
+
+      return { success: true, message: "Note deleted successfully." };
+    });
+  }
+
+  // ==========================================
+  // APPOINTMENTS
+  // ==========================================
+  async createAppointment(
+    ctx: TenantContext,
+    partyId: string | undefined,
+    dto: CreateAppointmentDto,
+  ) {
+    const title = dto.title?.trim();
+    if (!title) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: "Appointment title is required.",
+        messageGujarati: "મુલાકાતનું શીર્ષક જરૂરી છે.",
+      });
+    }
+
+    if (!dto.date) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: "Appointment date is required.",
+        messageGujarati: "મુલાકાતની તારીખ જરૂરી છે.",
+      });
+    }
+
+    if (!dto.time || !dto.time.trim()) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: "Appointment time is required.",
+        messageGujarati: "મુલાકાતનો સમય જરૂરી છે.",
+      });
+    }
+
+    const descriptionText = (dto.description ?? dto.descriptions ?? "").toString();
+    const targetPartyId = partyId || dto.partyId || null;
+
+    const parsedDate = new Date(dto.date);
+    if (isNaN(parsedDate.getTime())) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: "Invalid appointment date format.",
+        messageGujarati: "અમાન્ય તારીખ ફોર્મેટ.",
+      });
+    }
+
+    return this.prisma.executeInTenantContext(ctx, async (tx) => {
+      if (targetPartyId) {
+        const party = await tx.party.findFirst({
+          where: { id: targetPartyId, companyId: ctx.companyId },
+          select: { id: true },
+        });
+        if (!party) {
+          throw new NotFoundException({
+            statusCode: 404,
+            message: `Party with ID '${targetPartyId}' not found.`,
+            messageGujarati: `પાર્ટી મળેલ નથી.`,
+          });
+        }
+      }
+
+      const appointment = await tx.partyAppointment.create({
+        data: {
+          organizationId: ctx.organizationId,
+          companyId: ctx.companyId,
+          partyId: targetPartyId,
+          title,
+          description: descriptionText || null,
+          date: parsedDate,
+          time: dto.time.trim(),
+          status: dto.status?.trim() || "SCHEDULED",
+        },
+      });
+
+      return {
+        ...appointment,
+        descriptions: appointment.description,
+      };
+    });
+  }
+
+  async getAppointments(ctx: TenantContext, partyId?: string) {
+    return this.prisma.executeInTenantContext(ctx, async (tx) => {
+      const where: any = { companyId: ctx.companyId };
+      if (partyId) {
+        where.partyId = partyId;
+      }
+
+      const appointments = await tx.partyAppointment.findMany({
+        where,
+        orderBy: { date: "asc" },
+      });
+
+      return appointments.map((a: any) => ({
+        ...a,
+        descriptions: a.description,
+      }));
+    });
+  }
+
+  async deleteAppointment(ctx: TenantContext, appointmentId: string) {
+    return this.prisma.executeInTenantContext(ctx, async (tx) => {
+      const existing = await tx.partyAppointment.findFirst({
+        where: { id: appointmentId, companyId: ctx.companyId },
+      });
+      if (!existing) {
+        throw new NotFoundException({
+          statusCode: 404,
+          message: "Appointment not found.",
+          messageGujarati: "મુલાકાત મળેલ નથી.",
+        });
+      }
+
+      await tx.partyAppointment.delete({
+        where: { id: appointmentId },
+      });
+
+      return { success: true, message: "Appointment deleted successfully." };
+    });
+  }
 }
+

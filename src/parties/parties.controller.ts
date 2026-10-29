@@ -14,6 +14,10 @@ import {
 import { PartiesService } from "./parties.service";
 import { CreatePartyDto } from "./dto/create-party.dto";
 import { UpdatePartyDto, QueryPartiesDto } from "./dto/update-party.dto";
+import {
+  CreateNoteDto,
+  CreateAppointmentDto,
+} from "./dto/note-appointment.dto";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import { TenantContext, UserRole } from "@billing/shared-types";
@@ -48,9 +52,104 @@ export class PartiesController {
     return this.partiesService.lookupGstin(ctx, gstin);
   }
 
+  // -------------------------------------------------------------
+  // NOTES DIRECT ENDPOINTS
+  // -------------------------------------------------------------
+  @Post("notes")
+  @HttpCode(HttpStatus.CREATED)
+  async createGeneralNote(
+    @CurrentTenant() ctx: TenantContext,
+    @Body() dto: CreateNoteDto,
+  ) {
+    return this.partiesService.createNote(ctx, dto.partyId, dto);
+  }
+
+  @Get("notes")
+  async getAllNotes(
+    @CurrentTenant() ctx: TenantContext,
+    @Query("partyId") partyId?: string,
+  ) {
+    return this.partiesService.getNotes(ctx, partyId);
+  }
+
+  @Delete("notes/:noteId")
+  async deleteNote(
+    @CurrentTenant() ctx: TenantContext,
+    @Param("noteId") noteId: string,
+  ) {
+    return this.partiesService.deleteNote(ctx, noteId);
+  }
+
+  // -------------------------------------------------------------
+  // APPOINTMENTS DIRECT ENDPOINTS
+  // -------------------------------------------------------------
+  @Post("appointments")
+  @HttpCode(HttpStatus.CREATED)
+  async createGeneralAppointment(
+    @CurrentTenant() ctx: TenantContext,
+    @Body() dto: CreateAppointmentDto,
+  ) {
+    return this.partiesService.createAppointment(ctx, dto.partyId, dto);
+  }
+
+  @Get("appointments")
+  async getAllAppointments(
+    @CurrentTenant() ctx: TenantContext,
+    @Query("partyId") partyId?: string,
+  ) {
+    return this.partiesService.getAppointments(ctx, partyId);
+  }
+
+  @Delete("appointments/:appointmentId")
+  async deleteAppointment(
+    @CurrentTenant() ctx: TenantContext,
+    @Param("appointmentId") appointmentId: string,
+  ) {
+    return this.partiesService.deleteAppointment(ctx, appointmentId);
+  }
+
   @Get(":id")
   async findOne(@CurrentTenant() ctx: TenantContext, @Param("id") id: string) {
     return this.partiesService.findOne(ctx, id);
+  }
+
+  // -------------------------------------------------------------
+  // PARTY-SPECIFIC NOTES & APPOINTMENTS
+  // -------------------------------------------------------------
+  @Post(":id/notes")
+  @HttpCode(HttpStatus.CREATED)
+  async createPartyNote(
+    @CurrentTenant() ctx: TenantContext,
+    @Param("id") partyId: string,
+    @Body() dto: CreateNoteDto,
+  ) {
+    return this.partiesService.createNote(ctx, partyId, dto);
+  }
+
+  @Get(":id/notes")
+  async getPartyNotes(
+    @CurrentTenant() ctx: TenantContext,
+    @Param("id") partyId: string,
+  ) {
+    return this.partiesService.getNotes(ctx, partyId);
+  }
+
+  @Post(":id/appointments")
+  @HttpCode(HttpStatus.CREATED)
+  async createPartyAppointment(
+    @CurrentTenant() ctx: TenantContext,
+    @Param("id") partyId: string,
+    @Body() dto: CreateAppointmentDto,
+  ) {
+    return this.partiesService.createAppointment(ctx, partyId, dto);
+  }
+
+  @Get(":id/appointments")
+  async getPartyAppointments(
+    @CurrentTenant() ctx: TenantContext,
+    @Param("id") partyId: string,
+  ) {
+    return this.partiesService.getAppointments(ctx, partyId);
   }
 
   @Roles(UserRole.COMPANY_ADMIN, UserRole.ACCOUNTANT)

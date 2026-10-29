@@ -171,6 +171,8 @@ model Company {
   gstApiAuditLogs          GstApiAuditLog[]
   importJobs               ImportJob[]
   invoicePrintSettings     CompanyInvoicePrintSettings?
+  partyNotes               PartyNote[]
+  partyAppointments        PartyAppointment[]
 
   @@unique([gstin, organizationId])
   @@index([organizationId])
@@ -564,6 +566,8 @@ model Party {
   purchaseReturns PurchaseReturn[]
   deliveryChallans DeliveryChallan[]
   purchaseBillScans PurchaseBillScan[]
+  notes            PartyNote[]
+  appointments     PartyAppointment[]
 
   @@index([organizationId, companyId])
   @@index([phone])
@@ -1810,3 +1814,48 @@ model ImportJob {
   @@index([idempotencyKey])
   @@map("import_jobs")
 }
+
+// ---------------------------------------------------------
+// 13. CRM, PARTY NOTES & APPOINTMENTS
+// ---------------------------------------------------------
+
+model PartyNote {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  companyId      String    @map("company_id") @db.Uuid
+  partyId        String?   @map("party_id") @db.Uuid
+  title          String    @db.VarChar(200)
+  description    String    @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  party          Party?    @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, companyId])
+  @@index([partyId])
+  @@map("party_notes")
+}
+
+model PartyAppointment {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  companyId      String    @map("company_id") @db.Uuid
+  partyId        String?   @map("party_id") @db.Uuid
+  title          String    @db.VarChar(200)
+  description    String?   @db.Text
+  date           DateTime  @db.Date
+  time           String    @db.VarChar(50)
+  status         String    @default("SCHEDULED") @db.VarChar(50)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  party          Party?    @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, companyId])
+  @@index([partyId])
+  @@index([date])
+  @@map("party_appointments")
+}
+
