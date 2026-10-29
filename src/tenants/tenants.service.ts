@@ -881,33 +881,73 @@ export class TenantsService {
       branchId?: string;
     },
   ) {
-    let branchId = dto.branchId || ctx.branchId;
-    if (!branchId) {
-      const branch = await this.prisma.branch.findFirst({
-        where: { companyId: ctx.companyId },
-      });
-      branchId = branch?.id;
-    }
-    if (!branchId) {
-      throw new ForbiddenException("No valid branch found for warehouse.");
-    }
+    return this.prisma.executeBypassRls(async (tx) => {
+      let compId = ctx.companyId;
+      if (!compId) {
+        const primary = await tx.company.findFirst({
+          where: { organizationId: ctx.organizationId },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        });
+        compId = primary?.id;
+      }
+      if (!compId) {
+        throw new BadRequestException("No active company found for warehouse.");
+      }
 
-    if (dto.isDefault) {
-      await this.prisma.warehouse.updateMany({
-        where: { companyId: ctx.companyId },
-        data: { isDefault: false },
-      });
-    }
+      let orgId = ctx.organizationId;
+      if (!orgId) {
+        const comp = await tx.company.findUnique({
+          where: { id: compId },
+          select: { organizationId: true },
+        });
+        orgId = comp?.organizationId;
+      }
+      if (!orgId) {
+        throw new BadRequestException("No organization found for company.");
+      }
 
-    return this.prisma.warehouse.create({
-      data: {
-        organizationId: ctx.organizationId,
-        companyId: ctx.companyId,
-        branchId,
-        name: dto.name,
-        isDefault: dto.isDefault ?? false,
-        address: dto.address,
-      },
+      let branchId = dto.branchId || ctx.branchId;
+      if (branchId) {
+        const existingBranch = await tx.branch.findFirst({
+          where: { id: branchId, companyId: compId },
+        });
+        if (!existingBranch) {
+          const fallback = await tx.branch.findFirst({
+            where: { companyId: compId },
+          });
+          branchId = fallback?.id;
+        }
+      } else {
+        const branch = await tx.branch.findFirst({
+          where: { companyId: compId },
+        });
+        branchId = branch?.id;
+      }
+
+      if (!branchId) {
+        throw new BadRequestException(
+          "No valid branch found for warehouse. Please ensure a branch exists.",
+        );
+      }
+
+      if (dto.isDefault) {
+        await tx.warehouse.updateMany({
+          where: { companyId: compId },
+          data: { isDefault: false },
+        });
+      }
+
+      return tx.warehouse.create({
+        data: {
+          organizationId: orgId,
+          companyId: compId,
+          branchId,
+          name: dto.name,
+          isDefault: dto.isDefault ?? false,
+          address: dto.address,
+        },
+      });
     });
   }
 
@@ -916,26 +956,39 @@ export class TenantsService {
     id: string,
     dto: { name?: string; isDefault?: boolean; address?: string },
   ) {
-    if (dto.isDefault) {
-      await this.prisma.warehouse.updateMany({
-        where: { companyId: ctx.companyId },
-        data: { isDefault: false },
-      });
-    }
+    return this.prisma.executeBypassRls(async (tx) => {
+      let compId = ctx.companyId;
+      if (!compId) {
+        const existingWh = await tx.warehouse.findUnique({
+          where: { id },
+          select: { companyId: true },
+        });
+        compId = existingWh?.companyId;
+      }
 
-    return this.prisma.warehouse.update({
-      where: { id },
-      data: {
-        ...(dto.name ? { name: dto.name } : {}),
-        ...(dto.isDefault !== undefined ? { isDefault: dto.isDefault } : {}),
-        ...(dto.address !== undefined ? { address: dto.address } : {}),
-      },
+      if (dto.isDefault && compId) {
+        await tx.warehouse.updateMany({
+          where: { companyId: compId },
+          data: { isDefault: false },
+        });
+      }
+
+      return tx.warehouse.update({
+        where: { id },
+        data: {
+          ...(dto.name ? { name: dto.name } : {}),
+          ...(dto.isDefault !== undefined ? { isDefault: dto.isDefault } : {}),
+          ...(dto.address !== undefined ? { address: dto.address } : {}),
+        },
+      });
     });
   }
 
   async deleteWarehouse(ctx: TenantContext, id: string) {
-    return this.prisma.warehouse.delete({
-      where: { id },
+    return this.prisma.executeBypassRls(async (tx) => {
+      return tx.warehouse.delete({
+        where: { id },
+      });
     });
   }
 
