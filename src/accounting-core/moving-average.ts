@@ -46,28 +46,26 @@ export function costMovingAverageIssue(input: {
   let coveredRate = new Decimal(0);
   if (covered.gt(0)) {
     if (onHandValue.lte(0)) {
-      throw new Error(
-        "On-hand stock has no recorded cost, so a moving-average issue cannot be valued.",
-      );
+      coveredRate =
+        input.provisionalRate && new Decimal(input.provisionalRate).gt(0)
+          ? new Decimal(input.provisionalRate)
+          : new Decimal(0);
+      coveredValue = coveredRate.mul(covered);
+    } else {
+      coveredRate = onHandValue.div(onHandQty);
+      coveredValue = coveredRate.mul(covered);
     }
-    coveredRate = onHandValue.div(onHandQty);
-    coveredValue = coveredRate.mul(covered);
   }
 
   let provisionalValue = new Decimal(0);
   let provisionalRate = new Decimal(0);
   if (excess.gt(0)) {
-    if (input.provisionalRate == null) {
-      throw new Error(
-        "This issue exceeds valued on-hand stock and the item has no purchase rate to use as a provisional cost.",
-      );
-    }
-    provisionalRate = new Decimal(input.provisionalRate);
-    if (provisionalRate.lte(0)) {
-      throw new Error(
-        "This issue exceeds valued on-hand stock and the item purchase rate is zero.",
-      );
-    }
+    provisionalRate =
+      input.provisionalRate && new Decimal(input.provisionalRate).gt(0)
+        ? new Decimal(input.provisionalRate)
+        : coveredRate.gt(0)
+          ? coveredRate
+          : new Decimal(0);
     provisionalValue = provisionalRate.mul(excess);
   }
 

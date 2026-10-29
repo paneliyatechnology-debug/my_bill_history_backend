@@ -289,21 +289,22 @@ export class InvoicesService {
             warehouse = await tx.warehouse.findFirst({
               where: { id: dto.warehouseId, companyId: tenant.companyId },
             });
-          } else {
+          }
+          if (!warehouse) {
             warehouse = await tx.warehouse.findFirst({
               where: { companyId: tenant.companyId },
             });
-            if (!warehouse) {
-              warehouse = await tx.warehouse.create({
-                data: {
-                  organizationId: tenant.organizationId,
-                  companyId: tenant.companyId,
-                  branchId,
-                  name: "Main Warehouse",
-                  isDefault: true,
-                },
-              });
-            }
+          }
+          if (!warehouse) {
+            warehouse = await tx.warehouse.create({
+              data: {
+                organizationId: tenant.organizationId,
+                companyId: tenant.companyId,
+                branchId,
+                name: "Main Warehouse",
+                isDefault: true,
+              },
+            });
           }
           if (!warehouse) {
             throw new BadRequestException(
@@ -554,6 +555,7 @@ export class InvoicesService {
               warehouse.id,
               it,
               computedLine.quantity,
+              computedLine.unitPrice,
             );
             await tx.stockTransaction.create({
               data: {
@@ -2477,13 +2479,73 @@ export class InvoicesService {
     companyId: string,
     name: string,
   ): Promise<any> {
-    const acc = await tx.ledgerAccount.findFirst({
+    let acc = await tx.ledgerAccount.findFirst({
       where: { companyId, name },
     });
     if (!acc) {
-      throw new NotFoundException(
-        `Required statutory ledger account "${name}" not found.`,
-      );
+      const isSales = name.includes("Sales");
+      const isTax =
+        name.includes("CGST") ||
+        name.includes("SGST") ||
+        name.includes("IGST") ||
+        name.includes("Tax");
+      const isRoundOff = name.includes("Round");
+
+      const groupNature = isSales
+        ? "INCOME"
+        : isTax
+          ? "LIABILITY"
+          : isRoundOff
+            ? "EXPENSE"
+            : "ASSET";
+      const groupName = isSales
+        ? "Sales Accounts"
+        : isTax
+          ? "Duties & Taxes"
+          : isRoundOff
+            ? "Indirect Expenses"
+            : "Current Assets";
+
+      let group = await tx.ledgerGroup.findFirst({
+        where: { companyId, name: groupName },
+      });
+      if (!group) {
+        group = await tx.ledgerGroup.findFirst({
+          where: { companyId, nature: groupNature },
+        });
+      }
+      if (!group) {
+        const comp = await tx.company.findUnique({
+          where: { id: companyId },
+          select: { organizationId: true },
+        });
+        group = await tx.ledgerGroup.create({
+          data: {
+            organizationId:
+              comp?.organizationId || "00000000-0000-0000-0000-000000000000",
+            companyId,
+            name: groupName,
+            nature: groupNature as any,
+            isSystem: true,
+          },
+        });
+      }
+
+      acc = await tx.ledgerAccount.create({
+        data: {
+          organizationId: group.organizationId,
+          companyId,
+          groupId: group.id,
+          name,
+          code: isSales ? "3010" : isTax ? "2010" : "4010",
+          isTaxLedger: isTax,
+          isCashLedger: false,
+          isBankLedger: false,
+          openingBalance: 0,
+          currentBalance: 0,
+          isActive: true,
+        },
+      });
     }
     return acc;
   }
@@ -2527,6 +2589,18 @@ export class InvoicesService {
         where: { companyId: tenant.companyId, nature: "ASSET" },
       });
     }
+    if (!sundryDebtors) {
+      sundryDebtors = await tx.ledgerGroup.create({
+        data: {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          name: "Sundry Debtors",
+          nameGujarati: "ગ્રાહકો / દેવાદારો",
+          nature: "ASSET",
+          isSystem: true,
+        },
+      });
+    }
 
     acc = await tx.ledgerAccount.create({
       data: {
@@ -2551,6 +2625,7 @@ export class InvoicesService {
     warehouseId: string,
     item: { id: string; name?: string; purchaseRate?: any; retailPrice?: any },
     issueQuantity: Decimal,
+    lineUnitPrice?: any,
   ) {
     await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(hashtext(${`stock_${warehouseId}_${item.id}`})::bigint)
@@ -2577,7 +2652,17 @@ export class InvoicesService {
       onHandVal = onHandVal.plus(q.isNegative() ? v.negated() : v);
     }
 
-    const provisionalRate = item.purchaseRate ?? item.retailPrice ?? null;
+    let provisionalRate: any = null;
+    if (item.purchaseRate && Number(item.purchaseRate) > 0) {
+      provisionalRate = item.purchaseRate;
+    } else if (item.retailPrice && Number(item.retailPrice) > 0) {
+      provisionalRate = item.retailPrice;
+    } else if (lineUnitPrice && Number(lineUnitPrice) > 0) {
+      provisionalRate = lineUnitPrice;
+    } else {
+      provisionalRate = new Decimal(0);
+    }
+
     return costMovingAverageIssue({
       onHandQuantity: onHandQty,
       onHandValue: onHandVal,

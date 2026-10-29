@@ -83,9 +83,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
         : {
             statusCode: status,
             error: status >= 500 ? "Internal Server Error" : "Bad Request",
-            message: isProduction && status >= 500
-              ? "An unexpected internal server error occurred. Please quote the correlation ID to support."
-              : exception instanceof Error
+            message:
+              exception instanceof Error
                 ? exception.message
                 : "An unexpected error occurred.",
             correlationId,
