@@ -54,6 +54,12 @@ function parseEndOfDay(dateStr?: string): Date | undefined {
   return new Date(`${dateStr}T23:59:59.999Z`);
 }
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isValidUuid(id?: string | null): boolean {
+  return typeof id === "string" && UUID_REGEX.test(id.trim());
+}
+
 @Injectable()
 export class InvoicesService {
   private readonly logger = new Logger(InvoicesService.name);
@@ -181,6 +187,13 @@ export class InvoicesService {
         // 5. Resolve or Create Party
         let party: any;
         if (dto.partyId) {
+          if (!isValidUuid(dto.partyId)) {
+            throw new BadRequestException({
+              statusCode: 400,
+              message: `Invalid partyId "${dto.partyId}". Must be a valid UUID. Please use real party IDs from GET /api/v1/parties.`,
+              messageGujarati: `અમાન્ય Party ID "${dto.partyId}". માન્ય UUID હોવું જરૂરી છે. તમારા સાચા Parties માટે GET /api/v1/parties જુઓ.`,
+            });
+          }
           party = await tx.party.findFirst({
             where: { id: dto.partyId, companyId: tenant.companyId },
             include: { ledgerAccount: true },
@@ -249,6 +262,18 @@ export class InvoicesService {
         }
 
         // 6. Resolve Items & Check Stock
+        if (!dto.items || !Array.isArray(dto.items) || dto.items.length === 0) {
+          throw new BadRequestException("At least one item is required in the invoice.");
+        }
+        for (const line of dto.items) {
+          if (!isValidUuid(line.itemId)) {
+            throw new BadRequestException({
+              statusCode: 400,
+              message: `Invalid itemId "${line.itemId}". It must be a valid 36-character UUID. Do not use placeholder strings like "clyitem...". Please fetch real item IDs using GET /api/v1/items.`,
+              messageGujarati: `અમાન્ય Item ID "${line.itemId}". માન્ય UUID આપવો જરૂરી છે. તમારી કંપનીના સાચા Items મેળવવા માટે GET /api/v1/items API નો ઉપયોગ કરો.`,
+            });
+          }
+        }
         const itemIds = dto.items.map((i) => i.itemId);
         const items = await tx.item.findMany({
           where: {
@@ -285,7 +310,7 @@ export class InvoicesService {
         );
         let warehouse: any = null;
         if (hasPhysicalItems) {
-          if (dto.warehouseId) {
+          if (dto.warehouseId && isValidUuid(dto.warehouseId)) {
             warehouse = await tx.warehouse.findFirst({
               where: { id: dto.warehouseId, companyId: tenant.companyId },
             });
