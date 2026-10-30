@@ -193,6 +193,10 @@ export class DashboardService {
     const limit = Math.min(200, Math.max(1, Number(query?.limit) || 50));
     const skip = (page - 1) * limit;
 
+    if (!tenant?.companyId) {
+      throw new BadRequestException("Company context is required.");
+    }
+
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
       const dateFilter: any = {};
       if (query?.startDate) {
@@ -568,6 +572,9 @@ export class DashboardService {
   async getTransactionById(tenant: TenantContext, id: string) {
     if (!id || typeof id !== "string") {
       throw new BadRequestException("Transaction ID is required.");
+    }
+    if (!tenant?.companyId) {
+      throw new BadRequestException("Company context is required to view transaction.");
     }
 
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {

@@ -262,10 +262,66 @@ export class TenantContextInterceptor implements NestInterceptor {
       return next.handle();
     }
 
+    // Helper to validate UUID
+    const isValidUuid = (val?: string): boolean => {
+      if (!val || typeof val !== "string") return false;
+      const trimmed = val.trim();
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+    };
+
+    const isPostmanTemplate = (val?: string): boolean => {
+      if (!val || typeof val !== "string") return false;
+      const trimmed = val.trim();
+      return trimmed.startsWith("{{") && trimmed.endsWith("}}");
+    };
+
+    // If explicit header was provided (not undefined and not a Postman template variable)
+    if (rawCompanyHeader !== undefined && !isPostmanTemplate(rawCompanyHeader)) {
+      const trimmed = rawCompanyHeader.trim();
+      if (!trimmed) {
+        throw new BadRequestException("Company context is required.");
+      }
+      if (!isValidUuid(trimmed)) {
+        throw new BadRequestException(
+          "Invalid company context identifier. Must be a valid UUID.",
+        );
+      }
+    }
+
+    if (rawBranchHeader !== undefined && !isPostmanTemplate(rawBranchHeader)) {
+      const trimmed = rawBranchHeader.trim();
+      if (trimmed && !isValidUuid(trimmed)) {
+        throw new BadRequestException(
+          "Invalid branch identifier. Must be a valid UUID.",
+        );
+      }
+    }
+
+    if (rawFyHeader !== undefined && !isPostmanTemplate(rawFyHeader)) {
+      const trimmed = rawFyHeader.trim();
+      if (trimmed && !isValidUuid(trimmed)) {
+        throw new BadRequestException(
+          "Invalid financial year identifier. Must be a valid UUID.",
+        );
+      }
+    }
+
+    const cleanHeader = (val?: string): string | undefined => {
+      if (!val || typeof val !== "string") return undefined;
+      const trimmed = val.trim();
+      if (!trimmed || isPostmanTemplate(trimmed)) return undefined;
+      return trimmed;
+    };
+
+    const effectiveOrgHeader = cleanHeader(rawOrgHeader);
+    const effectiveCompanyHeader = cleanHeader(rawCompanyHeader);
+    const effectiveBranchHeader = cleanHeader(rawBranchHeader);
+    const effectiveFyHeader = cleanHeader(rawFyHeader);
+
     // 3. Zero Trust: Organization Check for Standard Users
     if (
-      rawOrgHeader &&
-      rawOrgHeader !== user.organizationId &&
+      effectiveOrgHeader &&
+      effectiveOrgHeader !== user.organizationId &&
       user.role !== UserRole.SUPER_ADMIN
     ) {
       throw new ForbiddenException({
@@ -282,22 +338,17 @@ export class TenantContextInterceptor implements NestInterceptor {
 
     const tenantContext: TenantContext =
       await this.prisma.executeBypassRls(async (tx) => {
-        // 2. Zero Trust: Company Check (Derived from authenticated user membership)
+        // 2. Zero Trust: Company Check (Derived from token claims or database membership)
         let verifiedCompanyId: string;
-        const UUID_REGEX =
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (rawCompanyHeader !== undefined) {
-          const trimmedCompanyId = rawCompanyHeader.trim();
-          if (!trimmedCompanyId) {
-            throw new BadRequestException("Company context is required.");
-          }
-          if (!UUID_REGEX.test(trimmedCompanyId)) {
+
+        if (effectiveCompanyHeader) {
+          if (!isValidUuid(effectiveCompanyHeader)) {
             throw new BadRequestException(
               "Invalid company context identifier. Must be a valid UUID.",
             );
           }
           const company = await tx.company.findFirst({
-            where: { id: trimmedCompanyId, organizationId: verifiedOrgId },
+            where: { id: effectiveCompanyHeader, organizationId: verifiedOrgId },
             select: { id: true },
           });
 
@@ -310,7 +361,32 @@ export class TenantContextInterceptor implements NestInterceptor {
             });
           }
           verifiedCompanyId = company.id;
+        } else if (isValidUuid(user.companyId)) {
+          // Centrally derived directly from accessToken
+          const tokenCompany = await tx.company.findFirst({
+            where: { id: user.companyId, organizationId: verifiedOrgId },
+            select: { id: true },
+          });
+          if (tokenCompany) {
+            verifiedCompanyId = tokenCompany.id;
+          } else {
+            const defaultCompany = await tx.company.findFirst({
+              where: { organizationId: verifiedOrgId },
+              orderBy: { createdAt: "asc" },
+              select: { id: true },
+            });
+            if (!defaultCompany) {
+              throw new ForbiddenException({
+                statusCode: 403,
+                error: "NO_COMPANY_FOUND",
+                message: "No registered company found under your organization.",
+                messageGujarati: "તમારી સંસ્થા હેઠળ કોઈ રજિસ્ટર્ડ કંપની મળી નથી.",
+              });
+            }
+            verifiedCompanyId = defaultCompany.id;
+          }
         } else {
+          // Centrally fallback to default company under organization
           const defaultCompany = await tx.company.findFirst({
             where: { organizationId: verifiedOrgId },
             orderBy: { createdAt: "asc" },
@@ -330,9 +406,16 @@ export class TenantContextInterceptor implements NestInterceptor {
 
         // 3. Zero Trust: Branch Authorization Check
         let verifiedBranchId: string | undefined;
-        if (rawBranchHeader) {
+        const effectiveUserId = user.id || user.userId || user.sub;
+
+        if (effectiveBranchHeader) {
+          if (!isValidUuid(effectiveBranchHeader)) {
+            throw new BadRequestException(
+              "Invalid branch identifier. Must be a valid UUID.",
+            );
+          }
           const branch = await tx.branch.findFirst({
-            where: { id: rawBranchHeader, companyId: verifiedCompanyId },
+            where: { id: effectiveBranchHeader, companyId: verifiedCompanyId },
             select: { id: true },
           });
 
@@ -345,8 +428,6 @@ export class TenantContextInterceptor implements NestInterceptor {
             });
           }
 
-          const effectiveUserId = user.id || user.userId || user.sub;
-
           // If user has branch-constrained role (CASHIER, BRANCH_MANAGER, SALESMAN), verify assignment
           const branchConstrainedRoles = [
             UserRole.CASHIER,
@@ -358,7 +439,7 @@ export class TenantContextInterceptor implements NestInterceptor {
               where: {
                 userId_branchId: {
                   userId: effectiveUserId,
-                  branchId: rawBranchHeader,
+                  branchId: effectiveBranchHeader,
                 },
               },
             });
@@ -367,15 +448,37 @@ export class TenantContextInterceptor implements NestInterceptor {
               throw new ForbiddenException({
                 statusCode: 403,
                 error: "FORBIDDEN_BRANCH_ACCESS",
-                message: `User is not assigned or authorized to operate branch '${rawBranchHeader}'.`,
+                message: `User is not assigned or authorized to operate branch '${effectiveBranchHeader}'.`,
                 messageGujarati: "વપરાશકર્તા આ શાખા માટે અધિકૃત નથી.",
               });
             }
           }
           verifiedBranchId = branch.id;
+        } else if (isValidUuid(user.branchId)) {
+          // Centrally derived directly from accessToken
+          const tokenBranch = await tx.branch.findFirst({
+            where: { id: user.branchId, companyId: verifiedCompanyId },
+            select: { id: true },
+          });
+          if (tokenBranch) {
+            verifiedBranchId = tokenBranch.id;
+          } else {
+            const userAssignment = await tx.userBranchAssignment.findFirst({
+              where: { userId: effectiveUserId, isDefault: true },
+              select: { branchId: true },
+            });
+            if (userAssignment) {
+              verifiedBranchId = userAssignment.branchId;
+            } else {
+              const mainBranch = await tx.branch.findFirst({
+                where: { companyId: verifiedCompanyId, isMainBranch: true },
+                select: { id: true },
+              });
+              verifiedBranchId = mainBranch?.id;
+            }
+          }
         } else {
           // Find user's default branch assignment or company's main branch
-          const effectiveUserId = user.id || user.userId || user.sub;
           const userAssignment = await tx.userBranchAssignment.findFirst({
             where: { userId: effectiveUserId, isDefault: true },
             select: { branchId: true },
@@ -394,9 +497,14 @@ export class TenantContextInterceptor implements NestInterceptor {
 
         // 4. Zero Trust: Financial Year Check
         let verifiedFyId: string | undefined;
-        if (rawFyHeader) {
+        if (effectiveFyHeader) {
+          if (!isValidUuid(effectiveFyHeader)) {
+            throw new BadRequestException(
+              "Invalid financial year identifier. Must be a valid UUID.",
+            );
+          }
           const fy = await tx.financialYear.findFirst({
-            where: { id: rawFyHeader, companyId: verifiedCompanyId },
+            where: { id: effectiveFyHeader, companyId: verifiedCompanyId },
             select: { id: true },
           });
 
@@ -411,6 +519,21 @@ export class TenantContextInterceptor implements NestInterceptor {
             });
           }
           verifiedFyId = fy.id;
+        } else if (isValidUuid(user.financialYearId)) {
+          // Centrally derived directly from accessToken
+          const tokenFy = await tx.financialYear.findFirst({
+            where: { id: user.financialYearId, companyId: verifiedCompanyId },
+            select: { id: true },
+          });
+          if (tokenFy) {
+            verifiedFyId = tokenFy.id;
+          } else {
+            const currentFy = await tx.financialYear.findFirst({
+              where: { companyId: verifiedCompanyId, isCurrent: true },
+              select: { id: true },
+            });
+            verifiedFyId = currentFy?.id;
+          }
         } else {
           const currentFy = await tx.financialYear.findFirst({
             where: { companyId: verifiedCompanyId, isCurrent: true },

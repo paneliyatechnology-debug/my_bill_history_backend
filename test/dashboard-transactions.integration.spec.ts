@@ -352,4 +352,54 @@ describe("Dashboard All Transactions & Transaction by ID (Integration Test Suite
 
     expect(res.statusCode).toBe(404);
   });
+
+  it("should get transaction by ID with ONLY Authorization Bearer token (zero headers required)", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/v1/dashboard/transactions/${testSalesInvoiceId}`,
+      headers: {
+        authorization: `Bearer ${tenantAToken}`,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.id).toBe(testSalesInvoiceId);
+    expect(body.txnNo).toBe("INV-DASH-001");
+    expect(body.amount).toBe(1180);
+  });
+
+  it("should list all transactions with ONLY Authorization Bearer token (zero headers required)", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/v1/dashboard/all-transactions",
+      headers: {
+        authorization: `Bearer ${tenantAToken}`,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.items).toBeDefined();
+    expect(body.total).toBeGreaterThanOrEqual(2);
+  });
+
+  it("should seamlessly succeed even when Postman headers have unreplaced {{variable}} templates", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/v1/dashboard/transactions/${testSalesInvoiceId}`,
+      headers: {
+        authorization: `Bearer ${tenantAToken}`,
+        "x-organization-id": "{{organizationId}}",
+        "x-company-id": "{{companyId}}",
+        "x-branch-id": "{{branchId}}",
+        "x-financial-year-id": "{{financialYearId}}",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.id).toBe(testSalesInvoiceId);
+    expect(body.txnNo).toBe("INV-DASH-001");
+  });
 });
