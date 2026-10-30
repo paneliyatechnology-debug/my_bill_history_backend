@@ -690,6 +690,8 @@ export class InvoicesService {
                   balanced: true,
                 }
               : null,
+            printUrl: `/api/v1/invoices/${existing.id}/print`,
+            previewUrl: `/api/v1/invoices/${existing.id}/print`,
           };
         } else {
           throw new ConflictException(
@@ -1398,6 +1400,8 @@ export class InvoicesService {
           voucherNumber: voucher.voucherNumber,
           balanced: true,
         },
+        printUrl: `/api/v1/invoices/${updatedInvoice.id}/print`,
+        previewUrl: `/api/v1/invoices/${updatedInvoice.id}/print`,
       };
     });
   }
@@ -3778,6 +3782,8 @@ export class InvoicesService {
         ...updatedInvoice,
         items: createdItems,
         party,
+        printUrl: `/api/v1/invoices/${updatedInvoice.id}/print`,
+        previewUrl: `/api/v1/invoices/${updatedInvoice.id}/print`,
       };
     });
   }
