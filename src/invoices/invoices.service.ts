@@ -603,6 +603,8 @@ export class InvoicesService {
             grandTotalWordsGujarati: taxCalc.grandTotalWordsGujarati,
             items: createdItems,
             voucher: null,
+            printUrl: `/api/v1/invoices/${invoice.id}/print`,
+            previewUrl: `/api/v1/invoices/${invoice.id}/print`,
           };
         }
 
@@ -648,6 +650,8 @@ export class InvoicesService {
             voucherNumber: voucher.voucherNumber,
             balanced: true,
           },
+          printUrl: `/api/v1/invoices/${invoice.id}/print`,
+          previewUrl: `/api/v1/invoices/${invoice.id}/print`,
         };
       });
     } catch (err: any) {
@@ -1049,7 +1053,11 @@ export class InvoicesService {
       ]);
 
       return {
-        items,
+        items: items.map((inv) => ({
+          ...inv,
+          printUrl: `/api/v1/invoices/${inv.id}/print`,
+          previewUrl: `/api/v1/invoices/${inv.id}/print`,
+        })),
         total,
         page,
         limit,
@@ -1100,6 +1108,8 @@ export class InvoicesService {
         ...invoice,
         outstandingBalance: Number(invoice.balanceAmount),
         voucher,
+        printUrl: `/api/v1/invoices/${invoice.id}/print`,
+        previewUrl: `/api/v1/invoices/${invoice.id}/print`,
       };
     });
   }

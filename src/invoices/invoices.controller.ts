@@ -16,6 +16,7 @@ import { FastifyReply } from "fastify";
 import { Throttle } from "@nestjs/throttler";
 import { TenantContext, UserRole } from "@billing/shared-types";
 import { Roles } from "../common/decorators/roles.decorator";
+import { Public } from "../common/decorators/public.decorator";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { InvoicesService } from "./invoices.service";
 import { CreateSalesInvoiceDto } from "./dto/create-sales-invoice.dto";
@@ -213,6 +214,7 @@ export class InvoicesController {
   }
 
   @Get(["sales/:id/print", "invoices/:id/print", ":id/print"])
+  @Public()
   async printSalesInvoice(
     @Param("id") id: string,
     @Query("copy") copy: string,

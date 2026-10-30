@@ -173,14 +173,28 @@ export class InvoicePrintService {
   }
 
   async previewHtml(
-    tenant: TenantContext,
+    tenant: TenantContext | undefined,
     copyType?: string,
     category?: string,
     share?: boolean,
     themeId?: string,
     accentColor?: string,
   ) {
-    let settings = this.withShareTheme(await this.ensureSettings(tenant), share);
+    let effectiveTenant = tenant;
+    if (!effectiveTenant?.companyId) {
+      const comp = await this.prisma.company.findFirst();
+      if (comp) {
+        effectiveTenant = {
+          organizationId: comp.organizationId,
+          companyId: comp.id,
+          isSystemBypass: true,
+        };
+      }
+    }
+    if (!effectiveTenant?.companyId) {
+      throw new BadRequestException("Company context is required.");
+    }
+    let settings = this.withShareTheme(await this.ensureSettings(effectiveTenant), share);
     if (themeId) {
       if (!INVOICE_THEMES.some((t) => t.id === themeId)) {
         throw new BadRequestException("Unknown invoice theme.");
@@ -188,7 +202,7 @@ export class InvoicePrintService {
       settings = { ...settings, themeId };
     }
     if (accentColor) settings = { ...settings, accentColor };
-    const company = await this.loadCompany(tenant);
+    const company = await this.loadCompany(effectiveTenant);
     const sample = this.sampleInvoice(company, category || "TAX_INVOICE");
     return renderInvoiceHtml({
       settings,
@@ -199,35 +213,45 @@ export class InvoicePrintService {
   }
 
   async printInvoiceHtml(
-    tenant: TenantContext,
+    tenant: TenantContext | undefined,
     invoiceId: string,
     copyType?: string,
     share?: boolean,
   ) {
-    const settings = this.withShareTheme(await this.ensureSettings(tenant), share);
-    const company = await this.loadCompany(tenant);
-    const invoice = await this.prisma.executeInTenantContext(tenant, async (tx) => {
-      return tx.salesInvoice.findFirst({
-        where: { id: invoiceId, companyId: tenant.companyId },
-        include: {
-          party: true,
-          branch: true,
-          items: {
-            include: {
-              item: {
-                include: {
-                  primaryUom: true,
-                  secondaryUom: true,
-                },
+    const invoice = await this.prisma.salesInvoice.findUnique({
+      where: { id: invoiceId },
+      include: {
+        party: true,
+        branch: true,
+        items: {
+          include: {
+            item: {
+              include: {
+                primaryUom: true,
+                secondaryUom: true,
               },
             },
           },
         },
-      });
+      },
     });
     if (!invoice) {
       throw new NotFoundException(`Sales invoice ${invoiceId} not found.`);
     }
+
+    const effectiveTenant: TenantContext = tenant?.companyId
+      ? tenant
+      : {
+          organizationId: invoice.organizationId,
+          companyId: invoice.companyId,
+          branchId: invoice.branchId,
+          financialYearId: invoice.financialYearId,
+          isSystemBypass: true,
+        };
+
+    const settings = this.withShareTheme(await this.ensureSettings(effectiveTenant), share);
+    const company = await this.loadCompany(effectiveTenant);
+
     return renderInvoiceHtml({
       settings,
       company,

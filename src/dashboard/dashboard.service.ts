@@ -297,6 +297,7 @@ export class DashboardService {
           date: d ? new Date(d).toISOString().slice(0, 10) : "",
           rawDate: d ? new Date(d).getTime() : 0,
           link: `/sales/invoices/${s.id}`,
+          printUrl: `/api/v1/invoices/${s.id}/print`,
           hasSharedLedgerBadge: Boolean(s.partyId),
         });
       }
