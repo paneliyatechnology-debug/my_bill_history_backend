@@ -200,7 +200,10 @@ export class DashboardService {
       const hasDateFilter = Boolean(query?.startDate || query?.endDate);
 
       // 1. Sales Invoices
-      const salesWhere: any = { companyId: tenant.companyId };
+      const salesWhere: any = {
+        companyId: tenant.companyId,
+        status: { not: "CANCELLED" },
+      };
       if (hasDateFilter) salesWhere.invoiceDate = dateFilter;
 
       const salesPromise = tx.salesInvoice.findMany({
@@ -222,7 +225,15 @@ export class DashboardService {
       });
 
       // 3. Vouchers (Payment In, Payment Out, Expenses, Journal, Contra)
-      const voucherWhere: any = { companyId: tenant.companyId, isCancelled: false };
+      // Exclude cancelled vouchers and auto-generated SL/ vouchers created for sales invoices
+      const voucherWhere: any = {
+        companyId: tenant.companyId,
+        isCancelled: false,
+        NOT: [
+          { sourceDocument: "SALES_INVOICE" },
+          { voucherNumber: { startsWith: "SL/" } },
+        ],
+      };
       if (hasDateFilter) voucherWhere.voucherDate = dateFilter;
 
       const voucherPromise = tx.voucher.findMany({
@@ -242,7 +253,10 @@ export class DashboardService {
       });
 
       // 4. Delivery Challans
-      const challanWhere: any = { companyId: tenant.companyId };
+      const challanWhere: any = {
+        companyId: tenant.companyId,
+        status: { not: "CANCELLED" },
+      };
       if (hasDateFilter) challanWhere.challanDate = dateFilter;
 
       const challanPromise = tx.deliveryChallan.findMany({
@@ -441,19 +455,60 @@ export class DashboardService {
         where: { id, companyId: tenant.companyId },
       });
       if (sales) {
-        await tx.salesInvoice.update({
-          where: { id },
-          data: {
-            status: "CANCELLED",
-            notes: reason ? `${sales.notes || ""}\nCancelled: ${reason}` : sales.notes,
+        // Remove returns & debit notes
+        await tx.salesReturnItem.deleteMany({
+          where: { returnDoc: { salesInvoiceId: id } },
+        });
+        await tx.salesReturn.deleteMany({
+          where: { salesInvoiceId: id },
+        });
+        await tx.outwardDebitNoteItem.deleteMany({
+          where: { note: { salesInvoiceId: id } },
+        });
+        await tx.outwardDebitNote.deleteMany({
+          where: { salesInvoiceId: id },
+        });
+
+        // Remove allocations
+        await tx.paymentAllocation.deleteMany({ where: { invoiceId: id } });
+
+        // Remove e-records
+        await tx.eInvoiceRecord.deleteMany({ where: { invoiceId: id } });
+        await tx.eWayBillRecord.deleteMany({ where: { invoiceId: id } });
+
+        // Remove stock transactions
+        await tx.stockTransaction.deleteMany({
+          where: { referenceDocType: "SALES_INVOICE", referenceDocId: id },
+        });
+
+        // Remove items
+        await tx.salesInvoiceItem.deleteMany({ where: { invoiceId: id } });
+
+        // Remove linked vouchers & journal entries (SL/INV/...)
+        const linkedVouchers = await tx.voucher.findMany({
+          where: {
+            companyId: tenant.companyId,
+            OR: [
+              { sourceDocument: "SALES_INVOICE", sourceEntityId: id },
+              { voucherNumber: `SL/${sales.invoiceNumber}` },
+            ],
           },
         });
+        for (const v of linkedVouchers) {
+          await tx.paymentAllocation.deleteMany({ where: { voucherId: v.id } });
+          await tx.journalEntry.deleteMany({ where: { voucherId: v.id } });
+          await tx.voucher.delete({ where: { id: v.id } });
+        }
+
+        // Delete the sales invoice record
+        await tx.salesInvoice.delete({ where: { id } });
+
         return {
           success: true,
           type: "Sales Invoice",
           id,
-          message: `Sales invoice #${sales.invoiceNumber} cancelled successfully.`,
-          messageGujarati: `વેચાણ બિલ #${sales.invoiceNumber} સફળતાપૂર્વક રદ કરવામાં આવ્યું.`,
+          message: `Sales invoice #${sales.invoiceNumber} deleted successfully.`,
+          messageGujarati: `વેચાણ બિલ #${sales.invoiceNumber} સફળતાપૂર્વક ડિલીટ કરવામાં આવ્યું.`,
         };
       }
 
@@ -467,6 +522,23 @@ export class DashboardService {
         });
         await tx.paymentAllocation.deleteMany({ where: { purchaseInvoiceId: id } });
         await tx.purchaseInvoiceItem.deleteMany({ where: { invoiceId: id } });
+
+        // Remove linked purchase vouchers
+        const linkedVouchers = await tx.voucher.findMany({
+          where: {
+            companyId: tenant.companyId,
+            OR: [
+              { sourceDocument: "PURCHASE_INVOICE", sourceEntityId: id },
+              { voucherNumber: `PL/${purchase.vendorInvoiceNumber}` },
+            ],
+          },
+        });
+        for (const v of linkedVouchers) {
+          await tx.paymentAllocation.deleteMany({ where: { voucherId: v.id } });
+          await tx.journalEntry.deleteMany({ where: { voucherId: v.id } });
+          await tx.voucher.delete({ where: { id: v.id } });
+        }
+
         await tx.purchaseInvoice.delete({ where: { id } });
         return {
           success: true,
@@ -477,21 +549,20 @@ export class DashboardService {
         };
       }
 
-      // 3. Try Voucher (Payment In, Payment Out, Expense, Contra)
+      // 3. Try Voucher (Payment In, Payment Out, Expense, Contra, Journal)
       const voucher = await tx.voucher.findFirst({
         where: { id, companyId: tenant.companyId },
       });
       if (voucher) {
-        await tx.voucher.update({
-          where: { id },
-          data: { isCancelled: true },
-        });
+        await tx.paymentAllocation.deleteMany({ where: { voucherId: id } });
+        await tx.journalEntry.deleteMany({ where: { voucherId: id } });
+        await tx.voucher.delete({ where: { id } });
         return {
           success: true,
           type: voucher.voucherType,
           id,
-          message: `Voucher #${voucher.voucherNumber} cancelled successfully.`,
-          messageGujarati: `વાઉચર #${voucher.voucherNumber} સફળતાપૂર્વક રદ કરવામાં આવ્યું.`,
+          message: `Voucher #${voucher.voucherNumber} deleted successfully.`,
+          messageGujarati: `વાઉચર #${voucher.voucherNumber} સફળતાપૂર્વક ડિલીટ કરવામાં આવ્યું.`,
         };
       }
 
@@ -500,16 +571,14 @@ export class DashboardService {
         where: { id, companyId: tenant.companyId },
       });
       if (challan) {
-        await tx.deliveryChallan.update({
-          where: { id },
-          data: { status: "CANCELLED" },
-        });
+        await tx.deliveryChallanItem.deleteMany({ where: { challanId: id } });
+        await tx.deliveryChallan.delete({ where: { id } });
         return {
           success: true,
           type: "Delivery Challan",
           id,
-          message: `Delivery challan #${challan.challanNumber} cancelled successfully.`,
-          messageGujarati: `ડિલિવરી ચલણ #${challan.challanNumber} સફળતાપૂર્વક રદ કરવામાં આવ્યું.`,
+          message: `Delivery challan #${challan.challanNumber} deleted successfully.`,
+          messageGujarati: `ડિલિવરી ચલણ #${challan.challanNumber} સફળતાપૂર્વક ડિલીટ કરવામાં આવ્યું.`,
         };
       }
 
