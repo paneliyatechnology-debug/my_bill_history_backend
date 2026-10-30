@@ -30,123 +30,19 @@ export class DashboardService {
   async getLatestTransactions(
     tenant: TenantContext,
     limit: number = 5,
-  ): Promise<{ transactions: DashboardTransaction[]; total: number }> {
+  ): Promise<{ transactions: any[]; items: any[]; total: number }> {
     const safeLimit = Math.min(50, Math.max(1, Number(limit) || 5));
-
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
-      // 1. Fetch recent sales invoices
-      const invoices = await tx.salesInvoice.findMany({
-        where: {
-          companyId: tenant.companyId,
-          status: { not: "CANCELLED" },
-        },
-        take: safeLimit,
-        orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
-        include: {
-          party: { select: { id: true, name: true } },
-        },
-      });
-
-      // 2. Fetch recent purchase invoices
-      const purchases = await tx.purchaseInvoice.findMany({
-        where: {
-          companyId: tenant.companyId,
-        },
-        take: safeLimit,
-        orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
-        include: {
-          party: { select: { id: true, name: true } },
-        },
-      });
-
-      // 3. Fetch recent expenses (payment vouchers)
-      const expenses = await tx.voucher.findMany({
-        where: {
-          companyId: tenant.companyId,
-          voucherType: "PAYMENT",
-          isCancelled: false,
-        },
-        take: safeLimit,
-        orderBy: [{ voucherDate: "desc" }, { createdAt: "desc" }],
-        include: {
-          journalEntries: {
-            include: {
-              account: {
-                select: {
-                  id: true,
-                  name: true,
-                  group: { select: { name: true } },
-                },
-              },
-            },
-            orderBy: { sequenceOrder: "asc" },
-          },
-        },
-      });
-
-      const list: DashboardTransaction[] = [];
-
-      for (const inv of invoices) {
-        const d = inv.invoiceDate || inv.createdAt;
-        list.push({
-          id: inv.id,
-          type: "Sales Invoice",
-          txnNo: inv.invoiceNumber,
-          partyName: inv.party?.name || "-",
-          amount: Number(inv.grandTotal || 0),
-          date: d ? new Date(d).toISOString() : new Date().toISOString(),
-          rawDate: d ? new Date(d).toISOString() : new Date().toISOString(),
-          link: `/sales/invoices/${inv.id}`,
-        });
-      }
-
-      for (const p of purchases) {
-        const d = p.invoiceDate || p.createdAt;
-        list.push({
-          id: p.id,
-          type: "Purchase Invoice",
-          txnNo: p.vendorInvoiceNumber || p.id.slice(0, 8),
-          partyName: p.party?.name || "-",
-          amount: Number(p.grandTotal || 0),
-          date: d ? new Date(d).toISOString() : new Date().toISOString(),
-          rawDate: d ? new Date(d).toISOString() : new Date().toISOString(),
-          link: `/purchases/${p.id}`,
-        });
-      }
-
-      for (const e of expenses) {
-        const d = e.voucherDate || e.createdAt;
-        const debitLine = e.journalEntries?.find((j) => Number(j.debitAmount) > 0);
-        const expenseAccName =
-          debitLine?.account?.name ||
-          debitLine?.account?.group?.name ||
-          e.narration ||
-          "Expense";
-
-        list.push({
-          id: e.id,
-          type: "Expenses",
-          txnNo: e.voucherNumber || `EXP-${e.id.slice(0, 6)}`,
-          partyName: expenseAccName,
-          amount: Number(e.totalAmount || 0),
-          date: d ? new Date(d).toISOString() : new Date().toISOString(),
-          rawDate: d ? new Date(d).toISOString() : new Date().toISOString(),
-          link: `/finance/expenses`,
-        });
-      }
-
-      // Sort merged transactions by date desc and take top safeLimit
-      list.sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-      );
-
-      const topTransactions = list.slice(0, safeLimit);
-
-      return {
-        transactions: topTransactions,
-        total: topTransactions.length,
-      };
+    const res = await this.getAllTransactions(tenant, {
+      page: 1,
+      limit: safeLimit,
+      sortBy: "date",
+      sortOrder: "desc",
     });
+    return {
+      transactions: res.items,
+      items: res.items,
+      total: res.total,
+    };
   }
 
   async getSalesOverview(tenant: TenantContext, daysCount: number = 7) {
@@ -377,6 +273,7 @@ export class DashboardService {
           rawType: "SALES_INVOICE",
           type: "Sales Invoices",
           transactionNumber: s.invoiceNumber || s.id.slice(0, 8),
+          txnNo: s.invoiceNumber || s.id.slice(0, 8),
           partyName: s.party?.name || "Cash Sale",
           partyId: s.partyId,
           amount: grand,
@@ -402,6 +299,7 @@ export class DashboardService {
           rawType: "PURCHASE_INVOICE",
           type: "Purchase Invoices",
           transactionNumber: p.vendorInvoiceNumber || p.id.slice(0, 8),
+          txnNo: p.vendorInvoiceNumber || p.id.slice(0, 8),
           partyName: p.party?.name || "-",
           partyId: p.partyId,
           amount: grand,
@@ -450,6 +348,7 @@ export class DashboardService {
           rawType: v.voucherType,
           type: typeLabel,
           transactionNumber: v.voucherNumber || v.id.slice(0, 8),
+          txnNo: v.voucherNumber || v.id.slice(0, 8),
           partyName,
           amount: amt,
           paidAmount: amt,
@@ -472,6 +371,7 @@ export class DashboardService {
           rawType: "DELIVERY_CHALLAN",
           type: "Delivery Challan",
           transactionNumber: c.challanNumber || c.id.slice(0, 8),
+          txnNo: c.challanNumber || c.id.slice(0, 8),
           partyName: c.party?.name || "-",
           partyId: c.partyId,
           amount: amt,
@@ -522,6 +422,7 @@ export class DashboardService {
 
       return {
         items: paginated,
+        transactions: paginated,
         total,
         page,
         limit,
