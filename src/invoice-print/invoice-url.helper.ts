@@ -17,6 +17,14 @@ export function buildInvoiceUrls(invoiceId: string) {
   return {
     printUrl: `${base}/api/v1/invoices/${invoiceId}/print`,
     previewUrl: `${base}/api/v1/invoices/${invoiceId}/print`,
+  };
+}
+
+export function buildInvoicePdfDetails(invoiceId: string) {
+  const base = getApiBaseUrl();
+  return {
+    previewUrl: `${base}/api/v1/invoices/${invoiceId}/print`,
     pdfUrl: `${base}/api/v1/invoices/${invoiceId}/pdf`,
   };
 }
+

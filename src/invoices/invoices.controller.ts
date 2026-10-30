@@ -28,7 +28,7 @@ import { RecordInvoicePaymentDto } from "./dto/record-payment.dto";
 import { QueryStockTransactionsDto } from "./dto/query-stock.dto";
 import { CreateSalesReturnDto } from "./dto/create-sales-return.dto";
 import { InvoicePrintService } from "../invoice-print/invoice-print.service";
-import { buildInvoiceUrls } from "../invoice-print/invoice-url.helper";
+import { buildInvoiceUrls, buildInvoicePdfDetails } from "../invoice-print/invoice-url.helper";
 
 @Controller(["invoices", "sales", "sales-invoices", "inventory"])
 export class InvoicesController {
@@ -240,7 +240,17 @@ export class InvoicesController {
    * New API requested: Generates PDF in backend and returns ONLY:
    * { "pdfUrl": "...", "previewUrl": "..." }
    */
-  @Post(["sales/:id/generate-pdf", "invoices/:id/generate-pdf", ":id/generate-pdf"])
+  @Post([
+    "sales/:id/generate-pdf",
+    "invoices/:id/generate-pdf",
+    ":id/generate-pdf",
+    "sales/:id/pdf-details",
+    "invoices/:id/pdf-details",
+    ":id/pdf-details",
+    "sales/:id/pdf-url",
+    "invoices/:id/pdf-url",
+    ":id/pdf-url",
+  ])
   @Public()
   async generateSalesInvoicePdfDetails(
     @Param("id") id: string,
@@ -258,14 +268,20 @@ export class InvoicesController {
       themeId,
       accentColor,
     );
-    const urls = buildInvoiceUrls(id);
-    return {
-      pdfUrl: urls.pdfUrl,
-      previewUrl: urls.previewUrl,
-    };
+    return buildInvoicePdfDetails(id);
   }
 
-  @Get(["sales/:id/generate-pdf", "invoices/:id/generate-pdf", ":id/generate-pdf", "sales/:id/pdf-details", "invoices/:id/pdf-details", ":id/pdf-details"])
+  @Get([
+    "sales/:id/generate-pdf",
+    "invoices/:id/generate-pdf",
+    ":id/generate-pdf",
+    "sales/:id/pdf-details",
+    "invoices/:id/pdf-details",
+    ":id/pdf-details",
+    "sales/:id/pdf-url",
+    "invoices/:id/pdf-url",
+    ":id/pdf-url",
+  ])
   @Public()
   async getSalesInvoicePdfDetails(
     @Param("id") id: string,

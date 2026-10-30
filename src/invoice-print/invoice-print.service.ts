@@ -225,36 +225,36 @@ export class InvoicePrintService {
     themeId?: string,
     accentColor?: string,
   ) {
-    const invoice = await this.prisma.salesInvoice.findUnique({
-      where: { id: invoiceId },
-      include: {
-        party: true,
-        branch: true,
-        items: {
-          include: {
-            item: {
-              include: {
-                primaryUom: true,
-                secondaryUom: true,
+    const invoice = await this.prisma.executeBypassRls(async (tx) => {
+      return tx.salesInvoice.findUnique({
+        where: { id: invoiceId },
+        include: {
+          party: true,
+          branch: true,
+          items: {
+            include: {
+              item: {
+                include: {
+                  primaryUom: true,
+                  secondaryUom: true,
+                },
               },
             },
           },
         },
-      },
+      });
     });
     if (!invoice) {
       throw new NotFoundException(`Sales invoice ${invoiceId} not found.`);
     }
 
-    const effectiveTenant: TenantContext = tenant?.companyId
-      ? tenant
-      : {
-          organizationId: invoice.organizationId,
-          companyId: invoice.companyId,
-          branchId: invoice.branchId,
-          financialYearId: invoice.financialYearId,
-          isSystemBypass: true,
-        };
+    const effectiveTenant: TenantContext = {
+      organizationId: invoice.organizationId,
+      companyId: invoice.companyId,
+      branchId: invoice.branchId,
+      financialYearId: invoice.financialYearId,
+      isSystemBypass: true,
+    };
 
     let settings = this.withShareTheme(await this.ensureSettings(effectiveTenant), share);
     if (themeId) {
@@ -282,8 +282,10 @@ export class InvoicePrintService {
     themeId?: string,
     accentColor?: string,
   ): Promise<{ pdfBuffer: Buffer; invoice: any }> {
-    const invoice = await this.prisma.salesInvoice.findUnique({
-      where: { id: invoiceId },
+    const invoice = await this.prisma.executeBypassRls(async (tx) => {
+      return tx.salesInvoice.findUnique({
+        where: { id: invoiceId },
+      });
     });
     if (!invoice) {
       throw new NotFoundException(`Sales invoice ${invoiceId} not found.`);
@@ -315,11 +317,15 @@ export class InvoicePrintService {
     return settings;
   }
 
-  private async ensureSettings(tenant: TenantContext) {
+  private async ensureSettings(tenant: TenantContext): Promise<any> {
     if (!tenant.companyId) {
       throw new BadRequestException("Company context is required.");
     }
-    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+    const runner = tenant.isSystemBypass
+      ? (cb: any) => this.prisma.executeBypassRls(cb)
+      : (cb: any) => this.prisma.executeInTenantContext(tenant, cb);
+
+    return runner(async (tx: any) => {
       const found = await tx.companyInvoicePrintSettings.findUnique({
         where: { companyId: tenant.companyId },
       });
@@ -334,8 +340,12 @@ export class InvoicePrintService {
     });
   }
 
-  private async loadCompany(tenant: TenantContext) {
-    const company = await this.prisma.executeInTenantContext(tenant, async (tx) => {
+  private async loadCompany(tenant: TenantContext): Promise<any> {
+    const runner = tenant.isSystemBypass
+      ? (cb: any) => this.prisma.executeBypassRls(cb)
+      : (cb: any) => this.prisma.executeInTenantContext(tenant, cb);
+
+    const company = await runner(async (tx: any) => {
       return tx.company.findFirst({
         where: { id: tenant.companyId, organizationId: tenant.organizationId },
       });

@@ -23,12 +23,28 @@ export class JwtAuthGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    if (isPublic) {
-      return true;
-    }
-
     const request = context.switchToHttp().getRequest();
     const authHeader = request.headers.authorization;
+
+    if (isPublic) {
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const token = authHeader.substring(7);
+        try {
+          const secret = this.configService.get<string>(
+            "JWT_SECRET",
+            "dev-super-secure-jwt-secret-key-at-least-32-chars-long-123456",
+          );
+          const payload = await this.jwtService.verifyAsync(token, { secret });
+          request.user = {
+            ...payload,
+            id: payload.id || payload.userId || payload.sub,
+          };
+        } catch {
+          // Public endpoint allows unauthenticated access; ignore invalid token
+        }
+      }
+      return true;
+    }
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       throw new UnauthorizedException({
