@@ -141,22 +141,121 @@ export const INVOICE_THEMES: Array<{
 
 export const FESTIVE_SKINS: Record<
   string,
-  { title: string; border: string; ink: string; wash: string; band: string[]; motif: string }
+  {
+    title: string;
+    subGreeting: string;
+    footerWish: string;
+    border: string;
+    ink: string;
+    wash: string;
+    band: string[];
+    motif: string;
+    bgFile?: string;
+  }
 > = {
-  your_logo: { title: "YOUR LOGO", border: "#111111", ink: "#111111", wash: "#ffffff", band: ["#111111", "#5346F5"], motif: "logo" },
-  navratri: { title: "SHUBH NAVRATRI", border: "#9A3412", ink: "#9A3412", wash: "#FFF7ED", band: ["#E11D48", "#F97316", "#EAB308", "#22C55E", "#0EA5E9", "#6366F1", "#A855F7", "#EC4899", "#F43F5E"], motif: "dots" },
-  durga_puja: { title: "SHUBHO DURGA PUJA", border: "#9F1239", ink: "#9F1239", wash: "#FFF1F2", band: ["#BE123C", "#FBBF24", "#BE123C"], motif: "arch" },
-  dussehra: { title: "VIJAYADASHAMI", border: "#C2410C", ink: "#9A3412", wash: "#FFF7ED", band: ["#EA580C", "#FACC15", "#EA580C"], motif: "bow" },
-  dhanteras: { title: "SHUBH DHANTERAS", border: "#A16207", ink: "#854D0E", wash: "#FEFCE8", band: ["#CA8A04", "#FDE68A", "#CA8A04"], motif: "coins" },
-  diwali: { title: "HAPPY DIWALI", border: "#6B21A8", ink: "#6B21A8", wash: "#FAF5FF", band: ["#7E22CE", "#F59E0B", "#7E22CE"], motif: "diya" },
-  uttarayan: { title: "UTTARAYAN", border: "#0369A1", ink: "#0C4A6E", wash: "#F0F9FF", band: ["#0284C7", "#F97316", "#EAB308", "#22C55E"], motif: "kites" },
-  independence: { title: "INDEPENDENCE DAY", border: "#166534", ink: "#14532D", wash: "#F8FAFC", band: ["#FF9933", "#FFFFFF", "#138808"], motif: "flag" },
-  ganesh_chaturthi: { title: "GANESH CHATURTHI", border: "#B45309", ink: "#92400E", wash: "#FFFBEB", band: ["#F59E0B", "#DC2626", "#F59E0B"], motif: "modak" },
+  your_logo: {
+    title: "YOUR LOGO",
+    subGreeting: "★ OFFICIAL BRAND INVOICE ★",
+    footerWish: "Thank you for your business! We value your partnership.",
+    border: "#111111",
+    ink: "#111111",
+    wash: "#ffffff",
+    band: ["#111111", "#5346F5"],
+    motif: "logo",
+  },
+  navratri: {
+    title: "SHUBH NAVRATRI",
+    subGreeting: "🌸 ॥ शुभ नवरात्रि ॥ 🌸",
+    footerWish: "🌸 Wishing you and your family a blessed, joyful, and prosperous Navaratri! 🌸",
+    border: "#9A3412",
+    ink: "#9A3412",
+    wash: "#FFF8F0",
+    band: ["#E11D48", "#F97316", "#EAB308", "#10B981", "#0EA5E9", "#8B5CF6"],
+    motif: "dots",
+    bgFile: "navaratri_1.jpg",
+  },
+  durga_puja: {
+    title: "SHUBHO DURGA PUJA",
+    subGreeting: "🌺 ॥ शुभो दुर्गा पूजा - শুভ দুর্গোৎসব ॥ 🌺",
+    footerWish: "🌺 Shubho Sharodiya! May Maa Durga bless your business with divine success & prosperity! 🌺",
+    border: "#9F1239",
+    ink: "#9F1239",
+    wash: "#FFF1F2",
+    band: ["#BE123C", "#FBBF24", "#BE123C"],
+    motif: "arch",
+    bgFile: "durga_puja_1.jpg",
+  },
+  dussehra: {
+    title: "VIJAYADASHAMI",
+    subGreeting: "🏹 ॥ अधर्म पर धर्म की विजय - विजयादशमी ॥ 🏹",
+    footerWish: "🏹 Wishing you victory, peace, joy, and grand success this Vijayadashami! 🏹",
+    border: "#C2410C",
+    ink: "#9A3412",
+    wash: "#FFF7ED",
+    band: ["#EA580C", "#FACC15", "#EA580C"],
+    motif: "bow",
+    bgFile: "dussehra_1.jpg",
+  },
+  dhanteras: {
+    title: "SHUBH DHANTERAS",
+    subGreeting: "🪙 ॥ ॐ महालक्ष्म्यै नमः - शुभ धनतेरस ॥ 🪙",
+    footerWish: "🪙 May Goddess Lakshmi and Lord Dhanvantari shower eternal wealth upon you! 🪙",
+    border: "#A16207",
+    ink: "#854D0E",
+    wash: "#FEFCE8",
+    band: ["#CA8A04", "#FDE68A", "#CA8A04"],
+    motif: "coins",
+    bgFile: "dhanteras_1.jpg",
+  },
+  diwali: {
+    title: "HAPPY DIWALI",
+    subGreeting: "🪔 ॥ शुभ दीपावली - तमसो मा ज्योतिर्गमय ॥ 🪔",
+    footerWish: "🪔 Wishing you and your loved ones a sparkling, joyous, and prosperous Happy Diwali! 🪔",
+    border: "#6B21A8",
+    ink: "#6B21A8",
+    wash: "#FAF5FF",
+    band: ["#7E22CE", "#F59E0B", "#7E22CE"],
+    motif: "diya",
+    bgFile: "diwali_1.jpg",
+  },
+  uttarayan: {
+    title: "UTTARAYAN",
+    subGreeting: "🪁 ॥ કાઈપો છે ! હેપી ઉત્તરાયણ ॥ 🪁",
+    footerWish: "🪁 Wishing you a joyful, high-flying and sun-blessed Makar Sankranti & Uttarayan! 🪁",
+    border: "#0369A1",
+    ink: "#0C4A6E",
+    wash: "#F0F9FF",
+    band: ["#0284C7", "#F97316", "#EAB308", "#22C55E"],
+    motif: "kites",
+    bgFile: "dussehra_1.jpg",
+  },
+  independence: {
+    title: "INDEPENDENCE DAY",
+    subGreeting: "🇮🇳 ॥ स्वतंत्रता दिवस की हार्दिक शुभकामनाएं ॥ 🇮🇳",
+    footerWish: "🇮🇳 Proud to build and serve in India. Happy Independence Day! 🇮🇳",
+    border: "#166534",
+    ink: "#14532D",
+    wash: "#F8FAFC",
+    band: ["#FF9933", "#FFFFFF", "#138808"],
+    motif: "flag",
+    bgFile: "dhanteras_1.jpg",
+  },
+  ganesh_chaturthi: {
+    title: "GANESH CHATURTHI",
+    subGreeting: "🌸 ॥ ॐ श्री गणेशाय नमः - शुभ गणेश चतुर्थी ॥ 🌸",
+    footerWish: "🌸 May Lord Ganesha remove all obstacles and shower his divine blessings upon you! 🌸",
+    border: "#B45309",
+    ink: "#92400E",
+    wash: "#FFFBEB",
+    band: ["#F59E0B", "#DC2626", "#F59E0B"],
+    motif: "modak",
+    bgFile: "dhanteras_2.jpg",
+  },
 };
 
 export function themeLayout(themeId: string): InvoiceLayout {
   const theme = INVOICE_THEMES.find((t) => t.id === themeId);
-  return theme?.layout || "tally";
+  return theme?.layout || (FESTIVE_SKINS[themeId] ? "festival" : "tally");
 }
 
 export function festiveSkin(themeId: string) {

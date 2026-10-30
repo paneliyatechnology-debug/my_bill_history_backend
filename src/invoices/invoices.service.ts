@@ -41,6 +41,7 @@ import { RecordInvoicePaymentDto } from "./dto/record-payment.dto";
 import { QueryStockTransactionsDto } from "./dto/query-stock.dto";
 import { CreateSalesReturnDto } from "./dto/create-sales-return.dto";
 import { QuerySalesReturnsDto } from "./dto/query-sales-returns.dto";
+import { buildInvoiceUrls } from "../invoice-print/invoice-url.helper";
 
 function parseStartOfDay(dateStr?: string): Date | undefined {
   if (!dateStr) return undefined;
@@ -628,8 +629,7 @@ export class InvoicesService {
             grandTotalWordsGujarati: taxCalc.grandTotalWordsGujarati,
             items: createdItems,
             voucher: null,
-            printUrl: `/api/v1/invoices/${invoice.id}/print`,
-            previewUrl: `/api/v1/invoices/${invoice.id}/print`,
+            ...buildInvoiceUrls(invoice.id),
           };
         }
 
@@ -675,8 +675,7 @@ export class InvoicesService {
             voucherNumber: voucher.voucherNumber,
             balanced: true,
           },
-          printUrl: `/api/v1/invoices/${invoice.id}/print`,
-          previewUrl: `/api/v1/invoices/${invoice.id}/print`,
+          ...buildInvoiceUrls(invoice.id),
         };
       });
     } catch (err: any) {
@@ -715,8 +714,7 @@ export class InvoicesService {
                   balanced: true,
                 }
               : null,
-            printUrl: `/api/v1/invoices/${existing.id}/print`,
-            previewUrl: `/api/v1/invoices/${existing.id}/print`,
+            ...buildInvoiceUrls(existing.id),
           };
         } else {
           throw new ConflictException(
@@ -1082,8 +1080,7 @@ export class InvoicesService {
       return {
         items: items.map((inv) => ({
           ...inv,
-          printUrl: `/api/v1/invoices/${inv.id}/print`,
-          previewUrl: `/api/v1/invoices/${inv.id}/print`,
+          ...buildInvoiceUrls(inv.id),
         })),
         total,
         page,
@@ -1135,8 +1132,7 @@ export class InvoicesService {
         ...invoice,
         outstandingBalance: Number(invoice.balanceAmount),
         voucher,
-        printUrl: `/api/v1/invoices/${invoice.id}/print`,
-        previewUrl: `/api/v1/invoices/${invoice.id}/print`,
+        ...buildInvoiceUrls(invoice.id),
       };
     });
   }
@@ -1425,8 +1421,7 @@ export class InvoicesService {
           voucherNumber: voucher.voucherNumber,
           balanced: true,
         },
-        printUrl: `/api/v1/invoices/${updatedInvoice.id}/print`,
-        previewUrl: `/api/v1/invoices/${updatedInvoice.id}/print`,
+        ...buildInvoiceUrls(updatedInvoice.id),
       };
     });
   }
@@ -3807,8 +3802,7 @@ export class InvoicesService {
         ...updatedInvoice,
         items: createdItems,
         party,
-        printUrl: `/api/v1/invoices/${updatedInvoice.id}/print`,
-        previewUrl: `/api/v1/invoices/${updatedInvoice.id}/print`,
+        ...buildInvoiceUrls(updatedInvoice.id),
       };
     });
   }

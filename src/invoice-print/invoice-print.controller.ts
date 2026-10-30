@@ -140,6 +140,8 @@ export class InvoicePrintSettingsController {
     @Param("id") id: string,
     @Query("copy") copy: string,
     @Query("share") share: string,
+    @Query("themeId") themeId: string,
+    @Query("accentColor") accentColor: string,
     @Res() reply: FastifyReply,
   ) {
     const html = await this.printService.printInvoiceHtml(
@@ -147,8 +149,9 @@ export class InvoicePrintSettingsController {
       id,
       copy,
       share === "true" || share === "1",
+      themeId,
+      accentColor,
     );
     return reply.type("text/html; charset=utf-8").send(html);
   }
 }
-

@@ -1,3 +1,6 @@
+import * as fs from "fs";
+import * as path from "path";
+import * as QRCode from "qrcode";
 import {
   DEFAULT_DOCUMENT_TITLES,
   INVOICE_COPY_LABELS,
@@ -5,6 +8,43 @@ import {
   festiveSkin,
   themeLayout,
 } from "./invoice-themes";
+
+const THEME_IMAGE_CACHE = new Map<string, string>();
+
+export function getThemeBase64Image(filename?: string): string {
+  if (!filename) return "";
+  if (THEME_IMAGE_CACHE.has(filename)) return THEME_IMAGE_CACHE.get(filename)!;
+  const candidates = [
+    path.join(process.cwd(), "public", "themes", filename),
+    path.join(process.cwd(), "..", "Billing_backend", "public", "themes", filename),
+    path.join(__dirname, "..", "..", "public", "themes", filename),
+    path.join(__dirname, "..", "public", "themes", filename),
+    path.join("/home/dell/Jaydeep/Billing_backend/public/themes", filename),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) {
+      const b64 = fs.readFileSync(c).toString("base64");
+      const mime = filename.endsWith(".png") ? "image/png" : "image/jpeg";
+      const uri = `data:${mime};base64,${b64}`;
+      THEME_IMAGE_CACHE.set(filename, uri);
+      return uri;
+    }
+  }
+  return "";
+}
+
+export async function generateUpiQrDataUrl(c: any, inv: any): Promise<string> {
+  const vpa = c?.upiVpa || c?.upiId;
+  if (!vpa) return "";
+  try {
+    const companyName = c.tradeName || c.legalName || "Merchant";
+    const amount = Number(inv.balanceAmount ?? inv.grandTotal ?? 0).toFixed(2);
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(vpa)}&pn=${encodeURIComponent(companyName)}&am=${amount}&cu=INR`;
+    return await QRCode.toDataURL(upiUrl, { width: 88, margin: 1 });
+  } catch {
+    return "";
+  }
+}
 
 function esc(value: unknown): string {
   return String(value ?? "")
@@ -112,15 +152,16 @@ ${css}
 </style></head><body>${body}</body></html>`;
 }
 
-export function renderInvoiceHtml(input: {
+export async function renderInvoiceHtml(input: {
   settings: any;
   company: any;
   invoice: any;
   copyType: string;
-}): string {
+}): Promise<string> {
   const s = input.settings;
   const layout = themeLayout(s.themeId || s.festiveTheme);
-  const ctx = buildCtx(input);
+  const upiQrDataUrl = await generateUpiQrDataUrl(input.company, input.invoice);
+  const ctx = buildCtx({ ...input, upiQrDataUrl });
   if (layout === "luxury") return wrapPage(luxuryCss(s), luxuryBody(ctx), ctx.docTitle, s);
   if (layout === "festival") return wrapPage(festivalCss(s), festivalBody(ctx), ctx.docTitle, s);
   if (layout === "stylish" || layout === "modern" || layout === "simple" || layout === "billbook") {
@@ -129,7 +170,7 @@ export function renderInvoiceHtml(input: {
   return wrapPage(tallyCss(s, layout), tallyBody(ctx, layout), ctx.docTitle, s);
 }
 
-function buildCtx(input: { settings: any; company: any; invoice: any; copyType: string }) {
+function buildCtx(input: { settings: any; company: any; invoice: any; copyType: string; upiQrDataUrl?: string }) {
   const s = input.settings;
   const c = input.company || {};
   const inv = input.invoice || {};
@@ -158,6 +199,7 @@ function buildCtx(input: { settings: any; company: any; invoice: any; copyType: 
     hsnRows: hsnSummary(items),
     phoneIcon,
     locIcon,
+    upiQrDataUrl: input.upiQrDataUrl,
     terms:
       inv.termsAndConditions ||
       (typeof s.termsAndConditions === "object" && s.termsAndConditions?.sales) ||
@@ -216,9 +258,12 @@ function extraItemCells(ctx: any, row: any) {
 
 function footerBlocks(ctx: any) {
   const c = ctx.c;
+  const qrHtml = ctx.upiQrDataUrl
+    ? `<div style="text-align:center;margin-left:14px;"><img src="${ctx.upiQrDataUrl}" alt="UPI QR" style="width:72px;height:72px;"/><div class="muted" style="font-size:8px;">Scan to Pay UPI</div></div>`
+    : "";
   const bank =
     ctx.s.showBankDetails && (c.bankName || c.bankAccountNo)
-      ? `<div><b>Bank Details</b><br/>${esc(c.bankName || "")}<br/>A/C: ${esc(c.bankAccountNo || "")}<br/>IFSC: ${esc(c.bankIfsc || "")}${c.upiVpa && ctx.s.showUpiQr ? `<br/>UPI: ${esc(c.upiVpa)}` : ""}</div>`
+      ? `<div style="display:flex;align-items:center;gap:12px;"><div><b>Bank Details</b><br/>${esc(c.bankName || "")}<br/>A/C: ${esc(c.bankAccountNo || "")}<br/>IFSC: ${esc(c.bankIfsc || "")}${c.upiVpa && ctx.s.showUpiQr ? `<br/>UPI: ${esc(c.upiVpa)}` : ""}</div>${qrHtml}</div>`
       : "";
   const sign = ctx.s.showSignature
     ? `<div style="text-align:right;margin-top:18px">${c.signatureUrl ? `<img src="${esc(c.signatureUrl)}" alt="sign" style="height:48px"/><br/>` : ""}${esc(c.signatoryName || "")}<div class="muted">${esc(c.signatoryDesignation || "Authorised Signatory")}</div></div>`
@@ -699,111 +744,386 @@ function festivalMotif(motif: string, ink: string) {
   return "";
 }
 
+function festiveTaxLines(ctx: any) {
+  if (ctx.intra) {
+    return `<div class="fest-total-line"><span>SGST</span> <b>₹ ${money(ctx.inv.sgstAmount)}</b></div>
+            <div class="fest-total-line"><span>CGST</span> <b>₹ ${money(ctx.inv.cgstAmount)}</b></div>`;
+  }
+  return `<div class="fest-total-line"><span>IGST</span> <b>₹ ${money(ctx.inv.igstAmount)}</b></div>`;
+}
+
 function festivalCss(s: any) {
   const skin = festiveSkin(s.themeId || s.festiveTheme || "navratri");
   const accent = s.accentColor && s.accentColor !== "#111111" ? s.accentColor : skin.ink;
   return `
-  .sheet { background:${skin.wash}; border:12px solid ${skin.border}; padding:16px 18px 20px; position:relative; }
-  .sheet:before { content:""; position:absolute; inset:6px; border:1px dashed ${skin.border}; pointer-events:none; }
-  .greet { text-align:center; letter-spacing:.22em; font-size:12px; font-weight:800; color:${skin.ink}; margin:4px 0 8px; }
-  .band { display:flex; gap:4px; justify-content:center; margin-bottom:8px; }
-  .band span { width:18px; height:8px; border-radius:99px; display:inline-block; }
-  .diyas { display:flex; justify-content:center; gap:10px; margin-bottom:6px; }
-  .diyas i { width:14px; height:10px; border:2px solid; border-radius:0 0 10px 10px; display:inline-block; }
-  .kites { display:flex; justify-content:center; gap:8px; margin-bottom:6px; }
-  .kites b { width:12px; height:12px; background:${skin.band[0]}; transform:rotate(45deg); display:inline-block; }
-  .kites b:nth-child(2){ background:${skin.band[1] || skin.ink}; }
-  .kites b:nth-child(3){ background:${skin.band[2] || skin.ink}; }
-  .kites b:nth-child(4){ background:${skin.band[3] || skin.ink}; }
-  .coins { display:flex; justify-content:center; gap:6px; margin-bottom:6px; }
-  .coins b { width:18px; height:18px; border-radius:50%; border:1px solid ${skin.border}; display:inline-flex; align-items:center; justify-content:center; font-size:10px; color:${skin.ink}; }
-  .arch { width:72px; height:28px; border:3px solid; border-bottom:none; border-radius:40px 40px 0 0; margin:0 auto 6px; }
-  .bow, .flag { text-align:center; margin-bottom:4px; }
-  .flag { display:flex; width:84px; margin:0 auto 8px; height:8px; }
-  .flag span { flex:1; display:block; }
-  .flag span:nth-child(1){ background:#FF9933; } .flag span:nth-child(2){ background:#fff; } .flag span:nth-child(3){ background:#138808; }
-  .logo-slot { width:86px; height:54px; border:1px dashed ${skin.border}; display:flex; align-items:center; justify-content:center; font-size:10px; letter-spacing:.08em; color:${skin.ink}; margin-bottom:6px; background:#fff; }
-  .logo-slot img { max-width:80px; max-height:48px; }
-  .fest-head { display:flex; justify-content:space-between; align-items:flex-start; }
-  .name { font-size:24px; font-weight:800; color:${accent}; }
-  .badge { text-align:right; font-weight:800; letter-spacing:.06em; }
-  .meta { display:flex; gap:22px; margin:12px 0; font-size:12px; }
-  .party { display:flex; justify-content:space-between; margin-bottom:8px; }
-  table.items, table.hsn { width:100%; border-collapse:collapse; background:#fff; }
-  table.items th, table.hsn th { background:${skin.ink}; color:#fff; text-align:left; padding:6px; font-size:11px; }
-  table.items td, table.hsn td { padding:7px 6px; border-bottom:1px solid #f1e7d4; vertical-align:top; }
-  .r { text-align:right; } .c { text-align:center; } .muted { color:#666; font-size:11px; }
-  .bottom { display:grid; grid-template-columns: 1.1fr .9fr; gap:16px; margin-top:12px; background:#fff; padding:10px; }
+  .sheet {
+    position: relative;
+    width: 210mm;
+    min-height: 297mm;
+    margin: 10px auto;
+    padding: 16px 20px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  @media print {
+    body { background: #fff; }
+    .sheet { margin: 0; border: none; padding: 0; box-shadow: none; width: 100%; min-height: 100vh; }
+  }
+  .festive-bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 0;
+  }
+  .festive-bg img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top;
+    opacity: 0.18;
+  }
+  .festive-content {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 270mm;
+  }
+  .fest-top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .fest-doc-title {
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+  }
+  .fest-copy-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border: 1px solid #64748b;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.9);
+    margin-left: 6px;
+    text-transform: uppercase;
+  }
+  .fest-status-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 2px;
+    margin-left: 4px;
+    text-transform: uppercase;
+  }
+  .fest-status-badge.paid { background: #dcfce7; color: #15803d; }
+  .fest-status-badge.partially_paid { background: #fef3c7; color: #b45309; }
+  .fest-status-badge.issued { background: #e0f2fe; color: #0369a1; }
+  .fest-subgreeting {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #78350f;
+  }
+  .fest-outer-box {
+    border: 1px solid #111111;
+    border-radius: 1px;
+    background: transparent;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+  .fest-grid-2 {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+  }
+  .fest-border-b { border-bottom: 1px solid #111111; }
+  .fest-border-t { border-top: 1px solid #111111; }
+  .fest-border-r { border-right: 1px solid #111111; }
+  .fest-cell-left, .fest-cell-right {
+    padding: 7px 10px;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .fest-company-name {
+    font-size: 18px;
+    font-weight: 900;
+    color: #0f172a;
+    letter-spacing: -0.01em;
+  }
+  .fest-section-label {
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #475569;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+  .fest-party-name {
+    font-size: 13px;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .fest-meta-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 2px;
+  }
+  table.fest-items-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: transparent;
+  }
+  table.fest-items-table th {
+    padding: 5px 6px;
+    font-size: 10px;
+    font-weight: 800;
+    border-right: 1px solid rgba(255,255,255,0.3);
+    border-bottom: 1px solid #111;
+    text-align: left;
+  }
+  table.fest-items-table th:last-child { border-right: none; }
+  table.fest-items-table td {
+    padding: 5px 6px;
+    font-size: 11px;
+    border-bottom: 1px solid #e2e8f0;
+    border-right: 1px solid #cbd5e1;
+    background: transparent;
+    vertical-align: top;
+  }
+  table.fest-items-table td:last-child { border-right: none; }
+  table.fest-tax-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-top: 1px solid #111111;
+    background: transparent;
+  }
+  table.fest-tax-table th {
+    padding: 4px 6px;
+    font-size: 9px;
+    font-weight: 700;
+    text-align: left;
+    background: rgba(0,0,0,0.04);
+    border-bottom: 1px solid #cbd5e1;
+  }
+  table.fest-tax-table td {
+    padding: 3px 6px;
+    font-size: 10px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  table.fest-tax-table tr.total-row td {
+    font-weight: 800;
+    border-top: 1px solid #cbd5e1;
+    border-bottom: none;
+    background: rgba(0,0,0,0.02);
+  }
+  .fest-total-line {
+    display: flex;
+    justify-content: space-between;
+    padding: 1.5px 0;
+    font-size: 11px;
+  }
+  .fest-total-line.grand-total {
+    font-size: 13px;
+    font-weight: 800;
+    border-top: 1px solid #111111;
+    border-bottom: 1px solid #111111;
+    padding: 4px 0;
+    margin: 3px 0;
+  }
+  .fest-sign-block {
+    text-align: right;
+    margin-top: 14px;
+    padding-top: 4px;
+    font-size: 11px;
+  }
+  .fest-footer-wish {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 8px 4px 2px;
+    letter-spacing: 0.02em;
+  }
+  .fest-qr-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed #cbd5e1;
+  }
   `;
 }
 
 function festivalBody(ctx: any) {
-  const skin = festiveSkin(ctx.s.themeId || ctx.s.festiveTheme || "navratri");
+  const themeKey = ctx.s.themeId || ctx.s.festiveTheme || "navratri";
+  const skin = festiveSkin(themeKey);
+  const accent = ctx.s.accentColor && ctx.s.accentColor !== "#111111" ? ctx.s.accentColor : skin.ink;
+  const bgFile = skin.bgFile || "navaratri_1.jpg";
+  const bgDataUri = getThemeBase64Image(bgFile);
+
   const c = ctx.c;
   const inv = ctx.inv;
   const party = ctx.party;
-  const taxTotal = Number(inv.cgstAmount || 0) + Number(inv.sgstAmount || 0) + Number(inv.igstAmount || 0);
+
   const logo = ctx.s.logoUrl
-    ? `<div class="logo-slot"><img src="${esc(ctx.s.logoUrl)}" alt="logo"/></div>`
-    : skin.motif === "logo"
-      ? `<div class="logo-slot">YOUR LOGO</div>`
+    ? `<div style="margin-bottom:6px;"><img src="${esc(ctx.s.logoUrl)}" alt="logo" style="max-height:48px;max-width:120px;"/></div>`
+    : "";
+
+  const bankHtml =
+    ctx.s.showBankDetails !== false && (c.bankName || c.bankAccountNo || c.upiVpa)
+      ? `<div class="fest-qr-row">
+          <div>
+            <div class="fest-section-label">BANK & PAYMENT DETAILS:</div>
+            ${c.bankName ? `<div><b>Bank:</b> ${esc(c.bankName)}</div>` : ""}
+            ${c.bankAccountNo ? `<div><b>A/C No:</b> ${esc(c.bankAccountNo)}</div>` : ""}
+            ${c.bankIfsc ? `<div><b>IFSC:</b> ${esc(c.bankIfsc)}</div>` : ""}
+            ${c.upiVpa ? `<div><b>UPI:</b> ${esc(c.upiVpa)}</div>` : ""}
+          </div>
+          ${ctx.upiQrDataUrl ? `
+            <div style="text-align:center; margin-left:auto;">
+              <img src="${ctx.upiQrDataUrl}" alt="UPI QR" style="width:72px;height:72px;border:1px solid #cbd5e1;padding:2px;background:#fff;"/><br/>
+              <span class="muted" style="font-size:8px;font-weight:bold;">Scan to Pay UPI</span>
+            </div>
+          ` : ""}
+        </div>`
       : "";
+
   return `<div class="sheet">
-    ${festivalMotif(skin.motif, skin.ink)}
-    <div class="greet">${esc(skin.title)}</div>
-    <div class="fest-head">
+    ${bgDataUri ? `<div class="festive-bg"><img src="${bgDataUri}" alt="Festive Theme"/></div>` : ""}
+
+    <div class="festive-content">
       <div>
-        ${logo}
-        <div class="name">${esc(c.tradeName || c.legalName)}</div>
-        ${ctx.s.showPhoneNumber ? `<div>${esc(c.phone || "")}</div>` : ""}
-        <div class="muted">${esc([c.addressLine1, c.city].filter(Boolean).join(", "))}</div>
-        ${ctx.s.showGstin && c.gstin ? `<div>GSTIN ${esc(c.gstin)}</div>` : ""}
+        <!-- Top Header Row -->
+        <div class="fest-top-bar">
+          <div>
+            <span class="fest-doc-title" style="color:${accent};">${esc(ctx.docTitle)}</span>
+            <span class="fest-copy-badge">${esc(ctx.copyLabel)}</span>
+            ${inv.status ? `<span class="fest-status-badge ${String(inv.status).toLowerCase()}">${esc(inv.status)}</span>` : ""}
+          </div>
+          <div class="fest-subgreeting">${esc(skin.subGreeting || skin.title)}</div>
+        </div>
+
+        <!-- Outer Boxed Table Container matching myBillBook -->
+        <div class="fest-outer-box">
+          <!-- Row 1: Company Details & Invoice Metadata -->
+          <div class="fest-grid-2 fest-border-b">
+            <div class="fest-cell-left fest-border-r">
+              ${logo}
+              <div class="fest-company-name">${esc(c.tradeName || c.legalName || "My Company")}</div>
+              <div>${esc([c.addressLine1, c.addressLine2, c.city, c.pincode].filter(Boolean).join(", "))}</div>
+              ${ctx.s.showPhoneNumber !== false && c.phone ? `<div>Mobile: <b>${esc(c.phone)}</b></div>` : ""}
+              ${ctx.s.showGstin !== false && c.gstin ? `<div>GSTIN: <b>${esc(c.gstin)}</b></div>` : ""}
+              ${c.pan ? `<div>PAN: <b>${esc(c.pan)}</b></div>` : ""}
+              <div>State: ${esc(c.state || "Gujarat")} (Code: ${esc(c.stateCode || "24")})</div>
+            </div>
+
+            <div class="fest-cell-right">
+              <div class="fest-meta-row"><span class="muted">Invoice No.:</span> <b style="font-family:monospace;">#${esc(inv.invoiceNumber || "-")}</b></div>
+              <div class="fest-meta-row"><span class="muted">Invoice Date:</span> <b>${esc(formatDate(inv.invoiceDate))}</b></div>
+              ${ctx.s.showDueDate !== false && inv.dueDate ? `<div class="fest-meta-row"><span class="muted">Due Date:</span> <b>${esc(formatDate(inv.dueDate))}</b></div>` : ""}
+              ${ctx.s.showPlaceOfSupply !== false ? `<div class="fest-meta-row"><span class="muted">Place of Supply:</span> <b>${esc(inv.placeOfSupply || c.stateCode || "24")}</b></div>` : ""}
+              ${ctx.s.showPoNumber && inv.poNumber ? `<div class="fest-meta-row"><span class="muted">PO No.:</span> <b>${esc(inv.poNumber)}</b></div>` : ""}
+              ${ctx.s.showEwayBillNumber && inv.ewayBillNumber ? `<div class="fest-meta-row"><span class="muted">e-Way Bill:</span> <b>${esc(inv.ewayBillNumber)}</b></div>` : ""}
+              ${ctx.s.showVehicleNumber && inv.vehicleNumber ? `<div class="fest-meta-row"><span class="muted">Vehicle:</span> <b>${esc(inv.vehicleNumber)}</b></div>` : ""}
+              ${invoiceMetaExtras(ctx)}
+            </div>
+          </div>
+
+          <!-- Row 2: DETAILS OF RECEIVER (BILLED TO) & SHIP TO / DELIVERY -->
+          <div class="fest-grid-2 fest-border-b">
+            <div class="fest-cell-left fest-border-r">
+              <div class="fest-section-label">DETAILS OF RECEIVER (BILLED TO)</div>
+              <div class="fest-party-name">${esc(party.name || "Cash Customer")}</div>
+              <div>${esc(addr(ctx.billing))}</div>
+              ${ctx.s.showPhoneNumber !== false && party.phone ? `<div>Mobile: <b>${esc(party.phone)}</b></div>` : ""}
+              ${ctx.s.showGstin !== false && party.gstin ? `<div>GSTIN: <b>${esc(party.gstin)}</b></div>` : ""}
+              ${party.stateCode ? `<div>State: ${esc(party.state || "")} (Code: ${esc(party.stateCode)})</div>` : ""}
+              ${ctx.s.showPartyBalance ? `<div>Balance: ₹ ${money(party.currentBalance ?? ctx.balance)}</div>` : ""}
+              ${partyCustomHtml(ctx)}
+            </div>
+
+            <div class="fest-cell-right">
+              <div class="fest-section-label">SHIP TO / DELIVERY</div>
+              <div>${esc(ctx.s.showShippingAddress ? addr(ctx.shipping) || addr(ctx.billing) : addr(ctx.billing))}</div>
+              ${inv.paymentMode ? `<div style="margin-top:4px;"><span class="muted">Payment Mode:</span> <b>${esc(inv.paymentMode)}</b></div>` : ""}
+            </div>
+          </div>
+
+          <!-- Row 3: Items Table -->
+          <table class="fest-items-table">
+            <thead>
+              <tr style="background:${skin.ink}; color:#ffffff;">
+                <th class="c" style="width:36px;">#</th>
+                <th>ITEMS</th>
+                ${ctx.s.showHsn !== false ? '<th class="c" style="width:70px;">HSN</th>' : ""}
+                ${ctx.s.showQuantity !== false ? '<th class="r" style="width:80px;">QTY</th>' : ""}
+                ${ctx.s.showPricePerItem !== false ? '<th class="r" style="width:80px;">RATE</th>' : ""}
+                ${ctx.s.showDiscount ? '<th class="r" style="width:70px;">DISC</th>' : ""}
+                ${ctx.s.showTaxColumn !== false ? '<th class="r" style="width:90px;">TAX</th>' : ""}
+                ${extraItemHeaders(ctx)}
+                <th class="r" style="width:95px;">AMOUNT</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemRowsOpen(ctx)}
+            </tbody>
+          </table>
+
+          <!-- Row 4: Statutory GST Tax Summary Table -->
+          ${ctx.s.showTaxBreakup !== false ? hsnTable(ctx, skin.ink) : ""}
+
+          <!-- Row 5: Bottom Split (Notes, Bank & Totals) -->
+          <div class="fest-grid-2 fest-border-t">
+            <div class="fest-cell-left fest-border-r" style="display:flex; flex-direction:column; justify-content:space-between;">
+              <div>
+                ${ctx.s.showAmountInWords !== false ? `<div><span class="fest-section-label">Amount in words:</span><br/><b>${esc(amountInWords(Number(inv.grandTotal || 0)))}</b></div>` : ""}
+                ${ctx.s.showNotes !== false && inv.notes ? `<div style="margin-top:8px;"><span class="fest-section-label">Notes:</span><br/>${esc(inv.notes)}</div>` : ""}
+                ${ctx.s.showTerms !== false && ctx.terms ? `<div style="margin-top:8px;"><span class="fest-section-label">Terms and Conditions:</span><br/><span style="font-size:10px;color:#334155;">${esc(ctx.terms)}</span></div>` : ""}
+              </div>
+
+              ${bankHtml}
+            </div>
+
+            <div class="fest-cell-right" style="display:flex; flex-direction:column; justify-content:space-between;">
+              <div>
+                <div class="fest-total-line"><span>Taxable Amount</span> <b>₹ ${money(inv.taxableAmount || inv.subTotal)}</b></div>
+                ${festiveTaxLines(ctx)}
+                ${Number(inv.roundOff || 0) !== 0 ? `<div class="fest-total-line"><span>Round Off</span> <b>₹ ${money(inv.roundOff)}</b></div>` : ""}
+                <div class="fest-total-line grand-total" style="color:${accent};">
+                  <span>Invoice Grand Total</span>
+                  <span>₹ ${money(inv.grandTotal)}</span>
+                </div>
+                ${ctx.s.showReceivedAmount !== false ? `
+                  <div class="fest-total-line"><span>Amount Received</span> <b>₹ ${money(ctx.received)}</b></div>
+                  <div class="fest-total-line"><span>Balance Due</span> <b style="color:${ctx.balance > 0 ? '#b91c1c' : '#15803d'};">₹ ${money(ctx.balance)}</b></div>
+                ` : ""}
+              </div>
+
+              <div class="fest-sign-block">
+                ${c.signatureUrl ? `<img src="${esc(c.signatureUrl)}" alt="Signature" style="height:44px;margin-bottom:4px;"/><br/>` : `<div style="height:36px;"></div>`}
+                <div>For <b>${esc(c.tradeName || c.legalName || "Authorised Signatory")}</b></div>
+                <div class="muted" style="border-top:1px dashed #64748b; display:inline-block; padding-top:2px; margin-top:4px;">
+                  ${esc(c.signatoryDesignation || "Authorised Signatory")}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="badge">
-        <div>${esc(ctx.docTitle)}</div>
-        <div class="muted">${esc(ctx.copyLabel)}</div>
+
+      <!-- Festive Footer Wish -->
+      <div class="fest-footer-wish" style="color:${skin.ink};">
+        ${esc(skin.footerWish || "Wishing you and your family joy and prosperity!")}
       </div>
     </div>
-    <div class="meta">
-      <div><b>Invoice No.</b><br/>${esc(inv.invoiceNumber || "-")}</div>
-      <div><b>Invoice Date</b><br/>${esc(formatDate(inv.invoiceDate))}</div>
-      ${ctx.s.showDueDate && inv.dueDate ? `<div><b>Due Date</b><br/>${esc(formatDate(inv.dueDate))}</div>` : ""}
-      ${invoiceMetaExtras(ctx)}
-    </div>
-    <div class="party">
-      <div>
-        <b>Bill To</b>
-        <div>${esc(party.name || "Cash Customer")}</div>
-        <div class="muted">${esc(addr(ctx.billing))}</div>
-        ${ctx.s.showGstin && party.gstin ? `<div>GSTIN ${esc(party.gstin)}</div>` : ""}
-      </div>
-      <div class="muted">${esc(ctx.s.showShippingAddress ? addr(ctx.shipping) || "" : "")}</div>
-    </div>
-    <table class="items">
-      <thead><tr>
-        <th>#</th><th>Items</th>
-        ${ctx.s.showHsn ? "<th>HSN</th>" : ""}
-        ${ctx.s.showQuantity !== false ? '<th class="r">Qty</th>' : ""}
-        ${ctx.s.showPricePerItem !== false ? '<th class="r">Rate</th>' : ""}
-        ${ctx.s.showDiscount ? '<th class="r">Disc.</th>' : ""}
-        ${ctx.s.showTaxColumn ? '<th class="r">Tax</th>' : ""}
-        ${extraItemHeaders(ctx)}
-        <th class="r">Amount</th>
-      </tr></thead>
-      <tbody>${itemRowsOpen(ctx)}</tbody>
-    </table>
-    <div class="bottom">
-      <div>
-        ${ctx.s.showAmountInWords ? `<div><b>Amount in words</b><br/>${esc(amountInWords(Number(inv.grandTotal || 0)))}</div>` : ""}
-        ${ctx.s.showNotes && inv.notes ? `<div style="margin-top:8px"><b>Notes</b><br/>${esc(inv.notes)}</div>` : ""}
-      </div>
-      <div>
-        <div>Taxable <span style="float:right">₹ ${money(inv.taxableAmount || inv.subTotal)}</span></div>
-        ${taxLines(ctx)}
-        <div style="margin-top:6px"><b>Total</b> <span style="float:right"><b>₹ ${money(inv.grandTotal)}</b></span></div>
-        <div class="muted">Tax ₹ ${money(taxTotal)}</div>
-      </div>
-    </div>
-    ${ctx.s.showTaxBreakup ? hsnTable(ctx, skin.ink) : ""}
   </div>`;
 }

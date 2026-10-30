@@ -28,6 +28,7 @@ import { RecordInvoicePaymentDto } from "./dto/record-payment.dto";
 import { QueryStockTransactionsDto } from "./dto/query-stock.dto";
 import { CreateSalesReturnDto } from "./dto/create-sales-return.dto";
 import { InvoicePrintService } from "../invoice-print/invoice-print.service";
+import { buildInvoiceUrls } from "../invoice-print/invoice-url.helper";
 
 @Controller(["invoices", "sales", "sales-invoices", "inventory"])
 export class InvoicesController {
@@ -213,19 +214,14 @@ export class InvoicesController {
     return await this.invoicesService.listSalesInvoices(query, tenant);
   }
 
-  @Get([
-    "sales/:id/print",
-    "invoices/:id/print",
-    ":id/print",
-    "sales/:id/preview",
-    "invoices/:id/preview",
-    ":id/preview",
-  ])
+  @Get(["sales/:id/print", "invoices/:id/print", ":id/print"])
   @Public()
   async printSalesInvoice(
     @Param("id") id: string,
     @Query("copy") copy: string,
     @Query("share") share: string,
+    @Query("themeId") themeId: string,
+    @Query("accentColor") accentColor: string,
     @CurrentTenant() tenant: TenantContext,
     @Res() reply: FastifyReply,
   ) {
@@ -234,8 +230,88 @@ export class InvoicesController {
       id,
       copy,
       share === "true" || share === "1",
+      themeId,
+      accentColor,
     );
     return reply.type("text/html; charset=utf-8").send(html);
+  }
+
+  /**
+   * New API requested: Generates PDF in backend and returns ONLY:
+   * { "pdfUrl": "...", "previewUrl": "..." }
+   */
+  @Post(["sales/:id/generate-pdf", "invoices/:id/generate-pdf", ":id/generate-pdf"])
+  @Public()
+  async generateSalesInvoicePdfDetails(
+    @Param("id") id: string,
+    @Query("copy") copy: string,
+    @Query("share") share: string,
+    @Query("themeId") themeId: string,
+    @Query("accentColor") accentColor: string,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    await this.invoicePrintService.generateInvoicePdf(
+      tenant,
+      id,
+      copy,
+      share === "true" || share === "1",
+      themeId,
+      accentColor,
+    );
+    const urls = buildInvoiceUrls(id);
+    return {
+      pdfUrl: urls.pdfUrl,
+      previewUrl: urls.previewUrl,
+    };
+  }
+
+  @Get(["sales/:id/generate-pdf", "invoices/:id/generate-pdf", ":id/generate-pdf", "sales/:id/pdf-details", "invoices/:id/pdf-details", ":id/pdf-details"])
+  @Public()
+  async getSalesInvoicePdfDetails(
+    @Param("id") id: string,
+    @Query("copy") copy: string,
+    @Query("share") share: string,
+    @Query("themeId") themeId: string,
+    @Query("accentColor") accentColor: string,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.generateSalesInvoicePdfDetails(
+      id,
+      copy,
+      share,
+      themeId,
+      accentColor,
+      tenant,
+    );
+  }
+
+  /**
+   * View or download high-fidelity binary PDF
+   */
+  @Get(["sales/:id/pdf", "invoices/:id/pdf", ":id/pdf", "sales/:id/download-pdf", "invoices/:id/download-pdf", ":id/download-pdf"])
+  @Public()
+  async downloadSalesInvoicePdf(
+    @Param("id") id: string,
+    @Query("copy") copy: string,
+    @Query("share") share: string,
+    @Query("themeId") themeId: string,
+    @Query("accentColor") accentColor: string,
+    @CurrentTenant() tenant: TenantContext,
+    @Res() reply: FastifyReply,
+  ) {
+    const { pdfBuffer, invoice } = await this.invoicePrintService.generateInvoicePdf(
+      tenant,
+      id,
+      copy,
+      share === "true" || share === "1",
+      themeId,
+      accentColor,
+    );
+    const safeInvNum = String(invoice.invoiceNumber || id).replace(/[\/\\]/g, "_");
+    return reply
+      .type("application/pdf")
+      .header("Content-Disposition", `inline; filename="Invoice-${safeInvNum}.pdf"`)
+      .send(pdfBuffer);
   }
 
   @Get(["sales/:id", "invoices/:id", ":id"])

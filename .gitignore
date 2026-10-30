@@ -37,6 +37,8 @@ coverage/
 # Uploads / temp storage
 storage/uploads/*
 !storage/uploads/.gitkeep
+storage/invoice-pdfs/*
+!storage/invoice-pdfs/.gitkeep
 scratch/
 
 # Bill scans / uploaded files

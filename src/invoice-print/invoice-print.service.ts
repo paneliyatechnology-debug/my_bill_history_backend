@@ -73,9 +73,14 @@ const THEME_ALIASES: Record<string, string> = {
   corporate: "modern",
 };
 
+import { InvoicePdfService } from "./invoice-pdf.service";
+
 @Injectable()
 export class InvoicePrintService {
-  constructor(private readonly prisma: DatabaseService) {}
+  constructor(
+    private readonly prisma: DatabaseService,
+    private readonly invoicePdfService: InvoicePdfService,
+  ) {}
 
   catalog() {
     return {
@@ -204,7 +209,7 @@ export class InvoicePrintService {
     if (accentColor) settings = { ...settings, accentColor };
     const company = await this.loadCompany(effectiveTenant);
     const sample = this.sampleInvoice(company, category || "TAX_INVOICE");
-    return renderInvoiceHtml({
+    return await renderInvoiceHtml({
       settings,
       company,
       invoice: sample,
@@ -217,48 +222,83 @@ export class InvoicePrintService {
     invoiceId: string,
     copyType?: string,
     share?: boolean,
+    themeId?: string,
+    accentColor?: string,
   ) {
-    const invoice = await this.prisma.executeBypassRls(async (tx) => {
-      return tx.salesInvoice.findUnique({
-        where: { id: invoiceId },
-        include: {
-          party: true,
-          branch: true,
-          items: {
-            include: {
-              item: {
-                include: {
-                  primaryUom: true,
-                  secondaryUom: true,
-                },
+    const invoice = await this.prisma.salesInvoice.findUnique({
+      where: { id: invoiceId },
+      include: {
+        party: true,
+        branch: true,
+        items: {
+          include: {
+            item: {
+              include: {
+                primaryUom: true,
+                secondaryUom: true,
               },
             },
           },
         },
-      });
+      },
     });
-
     if (!invoice) {
       throw new NotFoundException(`Sales invoice ${invoiceId} not found.`);
     }
 
-    const effectiveTenant: TenantContext = {
-      organizationId: invoice.organizationId,
-      companyId: invoice.companyId,
-      branchId: invoice.branchId,
-      financialYearId: invoice.financialYearId,
-      isSystemBypass: true,
-    };
+    const effectiveTenant: TenantContext = tenant?.companyId
+      ? tenant
+      : {
+          organizationId: invoice.organizationId,
+          companyId: invoice.companyId,
+          branchId: invoice.branchId,
+          financialYearId: invoice.financialYearId,
+          isSystemBypass: true,
+        };
 
-    const settings = this.withShareTheme(await this.ensureSettings(effectiveTenant), share);
+    let settings = this.withShareTheme(await this.ensureSettings(effectiveTenant), share);
+    if (themeId) {
+      const resolved = THEME_ALIASES[themeId] || themeId;
+      settings = { ...settings, themeId: resolved };
+    }
+    if (accentColor) {
+      settings = { ...settings, accentColor };
+    }
     const company = await this.loadCompany(effectiveTenant);
 
-    return renderInvoiceHtml({
+    return await renderInvoiceHtml({
       settings,
       company,
       invoice,
       copyType: copyType || "ORIGINAL_FOR_RECIPIENT",
     });
+  }
+
+  async generateInvoicePdf(
+    tenant: TenantContext | undefined,
+    invoiceId: string,
+    copyType?: string,
+    share?: boolean,
+    themeId?: string,
+    accentColor?: string,
+  ): Promise<{ pdfBuffer: Buffer; invoice: any }> {
+    const invoice = await this.prisma.salesInvoice.findUnique({
+      where: { id: invoiceId },
+    });
+    if (!invoice) {
+      throw new NotFoundException(`Sales invoice ${invoiceId} not found.`);
+    }
+
+    const html = await this.printInvoiceHtml(
+      tenant,
+      invoiceId,
+      copyType,
+      share,
+      themeId,
+      accentColor,
+    );
+    const pdfBuffer = await this.invoicePdfService.generatePdf(invoiceId, html);
+    return { pdfBuffer, invoice };
   }
 
   private present(row: any) {
@@ -275,15 +315,11 @@ export class InvoicePrintService {
     return settings;
   }
 
-  private async ensureSettings(tenant: TenantContext): Promise<any> {
+  private async ensureSettings(tenant: TenantContext) {
     if (!tenant.companyId) {
       throw new BadRequestException("Company context is required.");
     }
-    const runner = tenant.isSystemBypass
-      ? (cb: any) => this.prisma.executeBypassRls(cb)
-      : (cb: any) => this.prisma.executeInTenantContext(tenant, cb);
-
-    return runner(async (tx: any) => {
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
       const found = await tx.companyInvoicePrintSettings.findUnique({
         where: { companyId: tenant.companyId },
       });
@@ -298,12 +334,8 @@ export class InvoicePrintService {
     });
   }
 
-  private async loadCompany(tenant: TenantContext): Promise<any> {
-    const runner = tenant.isSystemBypass
-      ? (cb: any) => this.prisma.executeBypassRls(cb)
-      : (cb: any) => this.prisma.executeInTenantContext(tenant, cb);
-
-    const company = await runner(async (tx: any) => {
+  private async loadCompany(tenant: TenantContext) {
+    const company = await this.prisma.executeInTenantContext(tenant, async (tx) => {
       return tx.company.findFirst({
         where: { id: tenant.companyId, organizationId: tenant.organizationId },
       });

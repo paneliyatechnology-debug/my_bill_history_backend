@@ -61,6 +61,16 @@ async function bootstrap() {
     },
   });
 
+  // Register static file serving for public themes and assets
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const path = require("path");
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  await app.register(require("@fastify/static"), {
+    root: path.join(__dirname, "..", "public"),
+    prefix: "/",
+    decorateReply: false,
+  });
+
   // 3. Graceful Shutdown Hooks
   app.enableShutdownHooks();
 

@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { TenantContext } from "@billing/shared-types";
 import { DatabaseService } from "../database/database.service";
 import { ReportsService } from "../reports/reports.service";
+import { buildInvoiceUrls } from "../invoice-print/invoice-url.helper";
 
 export interface DashboardTransaction {
   id: string;
@@ -297,7 +298,7 @@ export class DashboardService {
           date: d ? new Date(d).toISOString().slice(0, 10) : "",
           rawDate: d ? new Date(d).getTime() : 0,
           link: `/sales/invoices/${s.id}`,
-          printUrl: `/api/v1/invoices/${s.id}/print`,
+          ...buildInvoiceUrls(s.id),
           hasSharedLedgerBadge: Boolean(s.partyId),
         });
       }
