@@ -24,3 +24,21 @@ export interface QuerySharedLedgerDto {
   page?: number | string;
   limit?: number | string;
 }
+
+export interface SharedLedgerSettingsDto {
+  showSharedLedgersOfParties: boolean;
+  allowPartiesToViewSharedLedger: boolean;
+}
+
+export interface ConvertToPurchaseDto {
+  invoiceId: string;
+}
+
+export interface QueryPartyTransactionsDto {
+  startDate?: string;
+  endDate?: string;
+  search?: string;
+  type?: string;
+  sortBy?: "date" | "amount";
+  sortOrder?: "asc" | "desc";
+}
