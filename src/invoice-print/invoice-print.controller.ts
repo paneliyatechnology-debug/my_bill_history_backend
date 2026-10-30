@@ -133,4 +133,22 @@ export class InvoicePrintSettingsController {
     );
     return reply.type("text/html; charset=utf-8").send(html);
   }
+
+  @Get(["print/:id", ":id/print"])
+  @Public()
+  async printDirect(
+    @Param("id") id: string,
+    @Query("copy") copy: string,
+    @Query("share") share: string,
+    @Res() reply: FastifyReply,
+  ) {
+    const html = await this.printService.printInvoiceHtml(
+      undefined,
+      id,
+      copy,
+      share === "true" || share === "1",
+    );
+    return reply.type("text/html; charset=utf-8").send(html);
+  }
 }
+

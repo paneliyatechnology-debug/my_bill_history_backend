@@ -213,7 +213,14 @@ export class InvoicesController {
     return await this.invoicesService.listSalesInvoices(query, tenant);
   }
 
-  @Get(["sales/:id/print", "invoices/:id/print", ":id/print"])
+  @Get([
+    "sales/:id/print",
+    "invoices/:id/print",
+    ":id/print",
+    "sales/:id/preview",
+    "invoices/:id/preview",
+    ":id/preview",
+  ])
   @Public()
   async printSalesInvoice(
     @Param("id") id: string,
