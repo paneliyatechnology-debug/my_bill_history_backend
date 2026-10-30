@@ -65,6 +65,14 @@ export class DashboardController {
     return await this.dashboardService.getAllTransactions(tenant, query);
   }
 
+  @Get(["transactions/:id", "all-transactions/:id", "transaction/:id"])
+  async getTransactionById(
+    @CurrentTenant() tenant: TenantContext,
+    @Param("id") id: string,
+  ) {
+    return await this.dashboardService.getTransactionById(tenant, id);
+  }
+
   @Put(["transactions/:id", "all-transactions/:id"])
   async updateTransaction(
     @CurrentTenant() tenant: TenantContext,

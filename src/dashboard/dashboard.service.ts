@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
 import { TenantContext } from "@billing/shared-types";
 import { DatabaseService } from "../database/database.service";
 import { ReportsService } from "../reports/reports.service";
@@ -178,6 +178,11 @@ export class DashboardService {
       endDate?: string;
       search?: string;
       type?: string;
+      rawType?: string;
+      partyId?: string;
+      status?: string;
+      minAmount?: number;
+      maxAmount?: number;
       page?: number;
       limit?: number;
       sortBy?: "date" | "amount";
@@ -230,8 +235,11 @@ export class DashboardService {
       const voucherWhere: any = {
         companyId: tenant.companyId,
         isCancelled: false,
+        OR: [
+          { sourceDocument: null },
+          { sourceDocument: { not: "SALES_INVOICE" } },
+        ],
         NOT: [
-          { sourceDocument: "SALES_INVOICE" },
           { voucherNumber: { startsWith: "SL/" } },
         ],
       };
@@ -267,11 +275,35 @@ export class DashboardService {
         take: 100,
       });
 
-      const [sales, purchases, vouchers, challans] = await Promise.all([
+      // 5. Sales Returns (Credit Notes)
+      const salesReturnWhere: any = { companyId: tenant.companyId };
+      if (hasDateFilter) salesReturnWhere.returnDate = dateFilter;
+
+      const salesReturnPromise = tx.salesReturn.findMany({
+        where: salesReturnWhere,
+        orderBy: [{ returnDate: "desc" }, { createdAt: "desc" }],
+        include: { party: { select: { id: true, name: true, phone: true } } },
+        take: 100,
+      });
+
+      // 6. Purchase Returns (Debit Notes)
+      const purchaseReturnWhere: any = { companyId: tenant.companyId };
+      if (hasDateFilter) purchaseReturnWhere.returnDate = dateFilter;
+
+      const purchaseReturnPromise = tx.purchaseReturn.findMany({
+        where: purchaseReturnWhere,
+        orderBy: [{ returnDate: "desc" }, { createdAt: "desc" }],
+        include: { party: { select: { id: true, name: true, phone: true } } },
+        take: 100,
+      });
+
+      const [sales, purchases, vouchers, challans, salesReturns, purchaseReturns] = await Promise.all([
         salesPromise,
         purchasePromise,
         voucherPromise,
         challanPromise,
+        salesReturnPromise,
+        purchaseReturnPromise,
       ]);
 
       const allItems: any[] = [];
@@ -401,6 +433,54 @@ export class DashboardService {
         });
       }
 
+      // Map Sales Returns (Credit Notes)
+      for (const sr of salesReturns) {
+        const d = sr.returnDate || sr.createdAt;
+        const amt = Number(sr.grandTotal || 0);
+
+        allItems.push({
+          id: sr.id,
+          rawType: "SALES_RETURN",
+          type: "Sales Return",
+          transactionNumber: sr.returnNumber || sr.id.slice(0, 8),
+          txnNo: sr.returnNumber || sr.id.slice(0, 8),
+          partyName: sr.party?.name || "-",
+          partyId: sr.partyId,
+          amount: amt,
+          paidAmount: amt,
+          unpaidAmount: 0,
+          status: sr.status === "CANCELLED" ? "Cancelled" : "Completed",
+          date: d ? new Date(d).toISOString().slice(0, 10) : "",
+          rawDate: d ? new Date(d).getTime() : 0,
+          link: `/sales/sales-returns/${sr.id}`,
+          hasSharedLedgerBadge: Boolean(sr.partyId),
+        });
+      }
+
+      // Map Purchase Returns (Debit Notes)
+      for (const pr of purchaseReturns) {
+        const d = pr.returnDate || pr.createdAt;
+        const amt = Number(pr.grandTotal || 0);
+
+        allItems.push({
+          id: pr.id,
+          rawType: "PURCHASE_RETURN",
+          type: "Purchase Return",
+          transactionNumber: pr.returnNumber || pr.id.slice(0, 8),
+          txnNo: pr.returnNumber || pr.id.slice(0, 8),
+          partyName: pr.party?.name || "-",
+          partyId: pr.partyId,
+          amount: amt,
+          paidAmount: amt,
+          unpaidAmount: 0,
+          status: "Completed",
+          date: d ? new Date(d).toISOString().slice(0, 10) : "",
+          rawDate: d ? new Date(d).getTime() : 0,
+          link: `/purchases/returns/${pr.id}`,
+          hasSharedLedgerBadge: Boolean(pr.partyId),
+        });
+      }
+
       // Filter by Search Query
       let filtered = allItems;
       if (query?.search && query.search.trim()) {
@@ -410,7 +490,8 @@ export class DashboardService {
             it.transactionNumber.toLowerCase().includes(s) ||
             it.partyName.toLowerCase().includes(s) ||
             it.type.toLowerCase().includes(s) ||
-            String(it.amount).includes(s),
+            String(it.amount).includes(s) ||
+            (it.id && it.id.toLowerCase().includes(s)),
         );
       }
 
@@ -418,6 +499,39 @@ export class DashboardService {
       if (query?.type && query.type !== "ALL") {
         const t = query.type.toLowerCase();
         filtered = filtered.filter((it) => it.type.toLowerCase().includes(t));
+      }
+
+      // Filter by Raw Type
+      if (query?.rawType && query.rawType !== "ALL") {
+        const rt = query.rawType.toUpperCase();
+        filtered = filtered.filter((it) => it.rawType.toUpperCase() === rt);
+      }
+
+      // Filter by Party ID
+      if (query?.partyId) {
+        filtered = filtered.filter((it) => it.partyId === query.partyId);
+      }
+
+      // Filter by Status
+      if (query?.status && query.status !== "ALL") {
+        const st = query.status.toLowerCase();
+        filtered = filtered.filter((it) => it.status.toLowerCase() === st);
+      }
+
+      // Filter by Min Amount
+      if (query?.minAmount !== undefined && query.minAmount !== null && String(query.minAmount).trim() !== "") {
+        const min = Number(query.minAmount);
+        if (!isNaN(min)) {
+          filtered = filtered.filter((it) => it.amount >= min);
+        }
+      }
+
+      // Filter by Max Amount
+      if (query?.maxAmount !== undefined && query.maxAmount !== null && String(query.maxAmount).trim() !== "") {
+        const max = Number(query.maxAmount);
+        if (!isNaN(max)) {
+          filtered = filtered.filter((it) => it.amount <= max);
+        }
       }
 
       // Sort
@@ -444,6 +558,362 @@ export class DashboardService {
         limit,
         totalPages: Math.ceil(total / limit),
       };
+    });
+  }
+
+  /**
+   * Get complete transaction details by ID across Sales, Purchases, Vouchers, Challans, and Returns.
+   * Formatted consistently with getAllTransactions, enriched with items, party, and links.
+   */
+  async getTransactionById(tenant: TenantContext, id: string) {
+    if (!id || typeof id !== "string") {
+      throw new BadRequestException("Transaction ID is required.");
+    }
+
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      // 1. Try Sales Invoice
+      const sales = await tx.salesInvoice.findFirst({
+        where: { id, companyId: tenant.companyId },
+        include: {
+          party: true,
+          branch: true,
+          items: {
+            include: {
+              item: {
+                include: {
+                  primaryUom: true,
+                  secondaryUom: true,
+                },
+              },
+            },
+          },
+          returns: true,
+        },
+      });
+
+      if (sales) {
+        const d = sales.invoiceDate || sales.createdAt;
+        const grand = Number(sales.grandTotal || 0);
+        const paid = Number(sales.paidAmount || 0);
+        const unpaid = Math.max(0, grand - paid);
+
+        return {
+          id: sales.id,
+          rawType: "SALES_INVOICE",
+          type: "Sales Invoices",
+          transactionNumber: sales.invoiceNumber || sales.id.slice(0, 8),
+          txnNo: sales.invoiceNumber || sales.id.slice(0, 8),
+          partyName: sales.party?.name || "Cash Sale",
+          partyId: sales.partyId,
+          party: sales.party,
+          amount: grand,
+          paidAmount: paid,
+          unpaidAmount: unpaid,
+          status: sales.status === "CANCELLED" ? "Cancelled" : unpaid === 0 ? "Paid" : unpaid < grand ? "Partial" : "Unpaid",
+          rawStatus: sales.status,
+          date: d ? new Date(d).toISOString().slice(0, 10) : "",
+          rawDate: d ? new Date(d).getTime() : 0,
+          link: `/sales/invoices/${sales.id}`,
+          ...buildInvoiceUrls(sales.id),
+          hasSharedLedgerBadge: Boolean(sales.partyId),
+          branch: sales.branch,
+          items: sales.items,
+          returns: sales.returns,
+          notes: sales.notes,
+          termsAndConditions: sales.termsAndConditions,
+          taxableAmount: Number(sales.taxableAmount || 0),
+          cgstAmount: Number(sales.cgstAmount || 0),
+          sgstAmount: Number(sales.sgstAmount || 0),
+          igstAmount: Number(sales.igstAmount || 0),
+          roundOff: Number(sales.roundOff || 0),
+          createdAt: sales.createdAt,
+          updatedAt: sales.updatedAt,
+        };
+      }
+
+      // 2. Try Purchase Invoice
+      const purchase = await tx.purchaseInvoice.findFirst({
+        where: { id, companyId: tenant.companyId },
+        include: {
+          party: true,
+          branch: true,
+          items: {
+            include: {
+              item: {
+                include: {
+                  primaryUom: true,
+                  secondaryUom: true,
+                },
+              },
+            },
+          },
+          returns: true,
+        },
+      });
+
+      if (purchase) {
+        const d = purchase.invoiceDate || purchase.createdAt;
+        const grand = Number(purchase.grandTotal || 0);
+        const paid = Number(purchase.paidAmount || 0);
+        const unpaid = Math.max(0, grand - paid);
+
+        return {
+          id: purchase.id,
+          rawType: "PURCHASE_INVOICE",
+          type: "Purchase Invoices",
+          transactionNumber: purchase.vendorInvoiceNumber || purchase.id.slice(0, 8),
+          txnNo: purchase.vendorInvoiceNumber || purchase.id.slice(0, 8),
+          partyName: purchase.party?.name || "-",
+          partyId: purchase.partyId,
+          party: purchase.party,
+          amount: grand,
+          paidAmount: paid,
+          unpaidAmount: unpaid,
+          status: unpaid === 0 ? "Paid" : unpaid < grand ? "Partial" : "Unpaid",
+          date: d ? new Date(d).toISOString().slice(0, 10) : "",
+          rawDate: d ? new Date(d).getTime() : 0,
+          link: `/purchases/${purchase.id}`,
+          hasSharedLedgerBadge: Boolean(purchase.partyId),
+          branch: purchase.branch,
+          items: purchase.items,
+          returns: purchase.returns,
+          placeOfSupply: purchase.placeOfSupply,
+          itcEligibility: purchase.itcEligibility,
+          taxableAmount: Number(purchase.taxableAmount || 0),
+          cgstAmount: Number(purchase.cgstAmount || 0),
+          sgstAmount: Number(purchase.sgstAmount || 0),
+          igstAmount: Number(purchase.igstAmount || 0),
+          createdAt: purchase.createdAt,
+        };
+      }
+
+      // 3. Try Voucher (Receipt, Payment, Expense, Contra, Journal)
+      const voucher = await tx.voucher.findFirst({
+        where: { id, companyId: tenant.companyId },
+        include: {
+          journalEntries: {
+            include: {
+              account: {
+                select: { id: true, name: true, code: true, group: { select: { id: true, name: true } } },
+              },
+            },
+            orderBy: { sequenceOrder: "asc" },
+          },
+          allocations: true,
+        },
+      });
+
+      if (voucher) {
+        const d = voucher.voucherDate || voucher.createdAt;
+        const amt = Number(voucher.totalAmount || 0);
+
+        let typeLabel = "Payment In";
+        let partyName = "-";
+
+        if (voucher.voucherType === "RECEIPT") {
+          typeLabel = "Payment In";
+          const creditLine = voucher.journalEntries?.find((j) => Number(j.creditAmount) > 0);
+          partyName = creditLine?.account?.name || voucher.narration || "-";
+        } else if (voucher.voucherType === "PAYMENT") {
+          if (voucher.sourceDocument === "PAYMENT_OUT") {
+            typeLabel = "Payment Out";
+            const debitLine = voucher.journalEntries?.find((j) => Number(j.debitAmount) > 0);
+            partyName = debitLine?.account?.name || voucher.narration || "-";
+          } else {
+            typeLabel = "Expenses";
+            const debitLine = voucher.journalEntries?.find((j) => Number(j.debitAmount) > 0);
+            partyName = debitLine?.account?.name || debitLine?.account?.group?.name || voucher.narration || "Expense";
+          }
+        } else if (voucher.voucherType === "CONTRA") {
+          typeLabel = "Add Money";
+          partyName = "-";
+        } else {
+          typeLabel = "Journal Entry";
+          partyName = voucher.narration || "-";
+        }
+
+        return {
+          id: voucher.id,
+          rawType: voucher.voucherType,
+          type: typeLabel,
+          transactionNumber: voucher.voucherNumber || voucher.id.slice(0, 8),
+          txnNo: voucher.voucherNumber || voucher.id.slice(0, 8),
+          partyName,
+          amount: amt,
+          paidAmount: amt,
+          unpaidAmount: 0,
+          status: voucher.isCancelled ? "Cancelled" : "Completed",
+          date: d ? new Date(d).toISOString().slice(0, 10) : "",
+          rawDate: d ? new Date(d).getTime() : 0,
+          link: `/finance/vouchers`,
+          hasSharedLedgerBadge: false,
+          narration: voucher.narration,
+          referenceNo: voucher.referenceNo,
+          isCancelled: voucher.isCancelled,
+          journalEntries: voucher.journalEntries,
+          allocations: voucher.allocations,
+          createdAt: voucher.createdAt,
+          updatedAt: voucher.updatedAt,
+        };
+      }
+
+      // 4. Try Delivery Challan
+      const challan = await tx.deliveryChallan.findFirst({
+        where: { id, companyId: tenant.companyId },
+        include: {
+          party: true,
+          branch: true,
+          items: {
+            include: {
+              item: {
+                include: {
+                  primaryUom: true,
+                  secondaryUom: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (challan) {
+        const d = challan.challanDate || challan.createdAt;
+        const amt = Number(challan.totalAmount || 0);
+
+        return {
+          id: challan.id,
+          rawType: "DELIVERY_CHALLAN",
+          type: "Delivery Challan",
+          transactionNumber: challan.challanNumber || challan.id.slice(0, 8),
+          txnNo: challan.challanNumber || challan.id.slice(0, 8),
+          partyName: challan.party?.name || "-",
+          partyId: challan.partyId,
+          party: challan.party,
+          amount: amt,
+          paidAmount: 0,
+          unpaidAmount: amt,
+          status: challan.status === "CLOSED" ? "Completed" : challan.status === "CANCELLED" ? "Cancelled" : "Issued",
+          date: d ? new Date(d).toISOString().slice(0, 10) : "",
+          rawDate: d ? new Date(d).getTime() : 0,
+          link: `/sales/delivery-challan`,
+          hasSharedLedgerBadge: Boolean(challan.partyId),
+          branch: challan.branch,
+          items: challan.items,
+          notes: challan.notes,
+          createdAt: challan.createdAt,
+          updatedAt: challan.updatedAt,
+        };
+      }
+
+      // 5. Try Sales Return (Credit Note)
+      const salesReturn = await tx.salesReturn.findFirst({
+        where: { id, companyId: tenant.companyId },
+        include: {
+          party: true,
+          branch: true,
+          items: {
+            include: {
+              item: {
+                include: {
+                  primaryUom: true,
+                  secondaryUom: true,
+                },
+              },
+            },
+          },
+          salesInvoice: { select: { id: true, invoiceNumber: true } },
+        },
+      });
+
+      if (salesReturn) {
+        const d = salesReturn.returnDate || salesReturn.createdAt;
+        const amt = Number(salesReturn.grandTotal || 0);
+
+        return {
+          id: salesReturn.id,
+          rawType: "SALES_RETURN",
+          type: "Sales Return",
+          transactionNumber: salesReturn.returnNumber || salesReturn.id.slice(0, 8),
+          txnNo: salesReturn.returnNumber || salesReturn.id.slice(0, 8),
+          partyName: salesReturn.party?.name || "-",
+          partyId: salesReturn.partyId,
+          party: salesReturn.party,
+          amount: amt,
+          paidAmount: amt,
+          unpaidAmount: 0,
+          status: salesReturn.status === "CANCELLED" ? "Cancelled" : "Completed",
+          date: d ? new Date(d).toISOString().slice(0, 10) : "",
+          rawDate: d ? new Date(d).getTime() : 0,
+          link: `/sales/sales-returns/${salesReturn.id}`,
+          hasSharedLedgerBadge: Boolean(salesReturn.partyId),
+          branch: salesReturn.branch,
+          salesInvoice: salesReturn.salesInvoice,
+          items: salesReturn.items,
+          reason: salesReturn.reason,
+          reasonGujarati: salesReturn.reasonGujarati,
+          taxableAmount: Number(salesReturn.taxableAmount || 0),
+          cgstAmount: Number(salesReturn.cgstAmount || 0),
+          sgstAmount: Number(salesReturn.sgstAmount || 0),
+          igstAmount: Number(salesReturn.igstAmount || 0),
+          createdAt: salesReturn.createdAt,
+        };
+      }
+
+      // 6. Try Purchase Return (Debit Note)
+      const purchaseReturn = await tx.purchaseReturn.findFirst({
+        where: { id, companyId: tenant.companyId },
+        include: {
+          party: true,
+          branch: true,
+          items: {
+            include: {
+              item: {
+                include: {
+                  primaryUom: true,
+                  secondaryUom: true,
+                },
+              },
+            },
+          },
+          purchaseInvoice: { select: { id: true, vendorInvoiceNumber: true } },
+        },
+      });
+
+      if (purchaseReturn) {
+        const d = purchaseReturn.returnDate || purchaseReturn.createdAt;
+        const amt = Number(purchaseReturn.grandTotal || 0);
+
+        return {
+          id: purchaseReturn.id,
+          rawType: "PURCHASE_RETURN",
+          type: "Purchase Return",
+          transactionNumber: purchaseReturn.returnNumber || purchaseReturn.id.slice(0, 8),
+          txnNo: purchaseReturn.returnNumber || purchaseReturn.id.slice(0, 8),
+          partyName: purchaseReturn.party?.name || "-",
+          partyId: purchaseReturn.partyId,
+          party: purchaseReturn.party,
+          amount: amt,
+          paidAmount: amt,
+          unpaidAmount: 0,
+          status: "Completed",
+          date: d ? new Date(d).toISOString().slice(0, 10) : "",
+          rawDate: d ? new Date(d).getTime() : 0,
+          link: `/purchases/returns/${purchaseReturn.id}`,
+          hasSharedLedgerBadge: Boolean(purchaseReturn.partyId),
+          branch: purchaseReturn.branch,
+          purchaseInvoice: purchaseReturn.purchaseInvoice,
+          items: purchaseReturn.items,
+          reason: purchaseReturn.reason,
+          reasonGujarati: purchaseReturn.reasonGujarati,
+          taxableAmount: Number(purchaseReturn.taxableAmount || 0),
+          cgstAmount: Number(purchaseReturn.cgstAmount || 0),
+          sgstAmount: Number(purchaseReturn.sgstAmount || 0),
+          igstAmount: Number(purchaseReturn.igstAmount || 0),
+          createdAt: purchaseReturn.createdAt,
+        };
+      }
+
+      throw new NotFoundException(`Transaction with ID ${id} not found.`);
     });
   }
 
