@@ -529,4 +529,160 @@ export class DashboardService {
       };
     });
   }
+
+  /**
+   * Delete or Cancel any transaction by ID (Sales Invoice, Purchase Invoice, Voucher, Delivery Challan)
+   */
+  async deleteTransaction(tenant: TenantContext, id: string, reason?: string) {
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      // 1. Try Sales Invoice
+      const sales = await tx.salesInvoice.findFirst({
+        where: { id, companyId: tenant.companyId },
+      });
+      if (sales) {
+        await tx.salesInvoice.update({
+          where: { id },
+          data: {
+            status: "CANCELLED",
+            notes: reason ? `${sales.notes || ""}\nCancelled: ${reason}` : sales.notes,
+          },
+        });
+        return {
+          success: true,
+          type: "Sales Invoice",
+          id,
+          message: `Sales invoice #${sales.invoiceNumber} cancelled successfully.`,
+          messageGujarati: `વેચાણ બિલ #${sales.invoiceNumber} સફળતાપૂર્વક રદ કરવામાં આવ્યું.`,
+        };
+      }
+
+      // 2. Try Purchase Invoice
+      const purchase = await tx.purchaseInvoice.findFirst({
+        where: { id, companyId: tenant.companyId },
+      });
+      if (purchase) {
+        await tx.stockTransaction.deleteMany({
+          where: { referenceDocType: "PURCHASE_INVOICE", referenceDocId: id },
+        });
+        await tx.paymentAllocation.deleteMany({ where: { purchaseInvoiceId: id } });
+        await tx.purchaseInvoiceItem.deleteMany({ where: { invoiceId: id } });
+        await tx.purchaseInvoice.delete({ where: { id } });
+        return {
+          success: true,
+          type: "Purchase Invoice",
+          id,
+          message: `Purchase invoice #${purchase.vendorInvoiceNumber} deleted successfully.`,
+          messageGujarati: `ખરીદી બિલ #${purchase.vendorInvoiceNumber} સફળતાપૂર્વક ડિલીટ કરવામાં આવ્યું.`,
+        };
+      }
+
+      // 3. Try Voucher (Payment In, Payment Out, Expense, Contra)
+      const voucher = await tx.voucher.findFirst({
+        where: { id, companyId: tenant.companyId },
+      });
+      if (voucher) {
+        await tx.voucher.update({
+          where: { id },
+          data: { isCancelled: true },
+        });
+        return {
+          success: true,
+          type: voucher.voucherType,
+          id,
+          message: `Voucher #${voucher.voucherNumber} cancelled successfully.`,
+          messageGujarati: `વાઉચર #${voucher.voucherNumber} સફળતાપૂર્વક રદ કરવામાં આવ્યું.`,
+        };
+      }
+
+      // 4. Try Delivery Challan
+      const challan = await tx.deliveryChallan.findFirst({
+        where: { id, companyId: tenant.companyId },
+      });
+      if (challan) {
+        await tx.deliveryChallan.update({
+          where: { id },
+          data: { status: "CANCELLED" },
+        });
+        return {
+          success: true,
+          type: "Delivery Challan",
+          id,
+          message: `Delivery challan #${challan.challanNumber} cancelled successfully.`,
+          messageGujarati: `ડિલિવરી ચલણ #${challan.challanNumber} સફળતાપૂર્વક રદ કરવામાં આવ્યું.`,
+        };
+      }
+
+      throw new Error(`Transaction with ID ${id} not found.`);
+    });
+  }
+
+  /**
+   * Update notes / reference or status for any transaction by ID
+   */
+  async updateTransaction(
+    tenant: TenantContext,
+    id: string,
+    dto: { narration?: string; referenceNo?: string; notes?: string },
+  ) {
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      // 1. Try Sales Invoice
+      const sales = await tx.salesInvoice.findFirst({
+        where: { id, companyId: tenant.companyId },
+      });
+      if (sales) {
+        const updated = await tx.salesInvoice.update({
+          where: { id },
+          data: { notes: dto.notes ?? dto.narration ?? sales.notes },
+        });
+        return {
+          success: true,
+          type: "Sales Invoice",
+          id,
+          updated,
+          message: "Sales invoice updated successfully.",
+        };
+      }
+
+      // 2. Try Voucher (Expense, Payment In, Payment Out)
+      const voucher = await tx.voucher.findFirst({
+        where: { id, companyId: tenant.companyId },
+      });
+      if (voucher) {
+        const updated = await tx.voucher.update({
+          where: { id },
+          data: {
+            narration: dto.narration ?? voucher.narration,
+            referenceNo: dto.referenceNo ?? voucher.referenceNo,
+          },
+        });
+        return {
+          success: true,
+          type: "Voucher",
+          id,
+          updated,
+          message: "Voucher updated successfully.",
+        };
+      }
+
+      // 3. Try Delivery Challan
+      const challan = await tx.deliveryChallan.findFirst({
+        where: { id, companyId: tenant.companyId },
+      });
+      if (challan) {
+        const updated = await tx.deliveryChallan.update({
+          where: { id },
+          data: { notes: dto.notes ?? challan.notes },
+        });
+        return {
+          success: true,
+          type: "Delivery Challan",
+          id,
+          updated,
+          message: "Delivery challan updated successfully.",
+        };
+      }
+
+      throw new Error(`Transaction with ID ${id} not found.`);
+    });
+  }
 }
