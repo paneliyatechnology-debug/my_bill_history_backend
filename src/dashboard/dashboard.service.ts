@@ -269,4 +269,264 @@ export class DashboardService {
       };
     });
   }
+
+  /**
+   * Complete All Transactions list across Sales, Purchases, Payments, Expenses, Delivery Challans
+   * Matching MyBillBook /app/home/vouchers/all_transactions
+   */
+  async getAllTransactions(
+    tenant: TenantContext,
+    query?: {
+      startDate?: string;
+      endDate?: string;
+      search?: string;
+      type?: string;
+      page?: number;
+      limit?: number;
+      sortBy?: "date" | "amount";
+      sortOrder?: "asc" | "desc";
+    },
+  ) {
+    const page = Math.max(1, Number(query?.page) || 1);
+    const limit = Math.min(200, Math.max(1, Number(query?.limit) || 50));
+    const skip = (page - 1) * limit;
+
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const dateFilter: any = {};
+      if (query?.startDate) {
+        dateFilter.gte = new Date(query.startDate);
+      }
+      if (query?.endDate) {
+        const end = new Date(query.endDate);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.lte = end;
+      }
+      const hasDateFilter = Boolean(query?.startDate || query?.endDate);
+
+      // 1. Sales Invoices
+      const salesWhere: any = { companyId: tenant.companyId };
+      if (hasDateFilter) salesWhere.invoiceDate = dateFilter;
+
+      const salesPromise = tx.salesInvoice.findMany({
+        where: salesWhere,
+        orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
+        include: { party: { select: { id: true, name: true, phone: true } } },
+        take: 300,
+      });
+
+      // 2. Purchase Invoices
+      const purchaseWhere: any = { companyId: tenant.companyId };
+      if (hasDateFilter) purchaseWhere.invoiceDate = dateFilter;
+
+      const purchasePromise = tx.purchaseInvoice.findMany({
+        where: purchaseWhere,
+        orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
+        include: { party: { select: { id: true, name: true, phone: true } } },
+        take: 300,
+      });
+
+      // 3. Vouchers (Payment In, Payment Out, Expenses, Journal, Contra)
+      const voucherWhere: any = { companyId: tenant.companyId, isCancelled: false };
+      if (hasDateFilter) voucherWhere.voucherDate = dateFilter;
+
+      const voucherPromise = tx.voucher.findMany({
+        where: voucherWhere,
+        orderBy: [{ voucherDate: "desc" }, { createdAt: "desc" }],
+        include: {
+          journalEntries: {
+            include: {
+              account: {
+                select: { id: true, name: true, group: { select: { name: true } } },
+              },
+            },
+            orderBy: { sequenceOrder: "asc" },
+          },
+        },
+        take: 300,
+      });
+
+      // 4. Delivery Challans
+      const challanWhere: any = { companyId: tenant.companyId };
+      if (hasDateFilter) challanWhere.challanDate = dateFilter;
+
+      const challanPromise = tx.deliveryChallan.findMany({
+        where: challanWhere,
+        orderBy: [{ challanDate: "desc" }, { createdAt: "desc" }],
+        include: { party: { select: { id: true, name: true, phone: true } } },
+        take: 100,
+      });
+
+      const [sales, purchases, vouchers, challans] = await Promise.all([
+        salesPromise,
+        purchasePromise,
+        voucherPromise,
+        challanPromise,
+      ]);
+
+      const allItems: any[] = [];
+
+      // Map Sales Invoices
+      for (const s of sales) {
+        const d = s.invoiceDate || s.createdAt;
+        const grand = Number(s.grandTotal || 0);
+        const paid = Number(s.paidAmount || 0);
+        const unpaid = Math.max(0, grand - paid);
+
+        allItems.push({
+          id: s.id,
+          rawType: "SALES_INVOICE",
+          type: "Sales Invoices",
+          transactionNumber: s.invoiceNumber || s.id.slice(0, 8),
+          partyName: s.party?.name || "Cash Sale",
+          partyId: s.partyId,
+          amount: grand,
+          paidAmount: paid,
+          unpaidAmount: unpaid,
+          status: s.status === "CANCELLED" ? "Cancelled" : unpaid === 0 ? "Paid" : unpaid < grand ? "Partial" : "Unpaid",
+          date: d ? new Date(d).toISOString().slice(0, 10) : "",
+          rawDate: d ? new Date(d).getTime() : 0,
+          link: `/sales/invoices/${s.id}`,
+          hasSharedLedgerBadge: Boolean(s.partyId),
+        });
+      }
+
+      // Map Purchase Invoices
+      for (const p of purchases) {
+        const d = p.invoiceDate || p.createdAt;
+        const grand = Number(p.grandTotal || 0);
+        const paid = Number(p.paidAmount || 0);
+        const unpaid = Math.max(0, grand - paid);
+
+        allItems.push({
+          id: p.id,
+          rawType: "PURCHASE_INVOICE",
+          type: "Purchase Invoices",
+          transactionNumber: p.vendorInvoiceNumber || p.id.slice(0, 8),
+          partyName: p.party?.name || "-",
+          partyId: p.partyId,
+          amount: grand,
+          paidAmount: paid,
+          unpaidAmount: unpaid,
+          status: unpaid === 0 ? "Paid" : unpaid < grand ? "Partial" : "Unpaid",
+          date: d ? new Date(d).toISOString().slice(0, 10) : "",
+          rawDate: d ? new Date(d).getTime() : 0,
+          link: `/purchases/${p.id}`,
+          hasSharedLedgerBadge: Boolean(p.partyId),
+        });
+      }
+
+      // Map Vouchers
+      for (const v of vouchers) {
+        const d = v.voucherDate || v.createdAt;
+        const amt = Number(v.totalAmount || 0);
+
+        let typeLabel = "Payment In";
+        let partyName = "-";
+
+        if (v.voucherType === "RECEIPT") {
+          typeLabel = "Payment In";
+          const creditLine = v.journalEntries?.find((j) => Number(j.creditAmount) > 0);
+          partyName = creditLine?.account?.name || v.narration || "-";
+        } else if (v.voucherType === "PAYMENT") {
+          if (v.sourceDocument === "PAYMENT_OUT") {
+            typeLabel = "Payment Out";
+            const debitLine = v.journalEntries?.find((j) => Number(j.debitAmount) > 0);
+            partyName = debitLine?.account?.name || v.narration || "-";
+          } else {
+            typeLabel = "Expenses";
+            const debitLine = v.journalEntries?.find((j) => Number(j.debitAmount) > 0);
+            partyName = debitLine?.account?.name || debitLine?.account?.group?.name || v.narration || "Expense";
+          }
+        } else if (v.voucherType === "CONTRA") {
+          typeLabel = "Add Money";
+          partyName = "-";
+        } else {
+          typeLabel = "Journal Entry";
+          partyName = v.narration || "-";
+        }
+
+        allItems.push({
+          id: v.id,
+          rawType: v.voucherType,
+          type: typeLabel,
+          transactionNumber: v.voucherNumber || v.id.slice(0, 8),
+          partyName,
+          amount: amt,
+          paidAmount: amt,
+          unpaidAmount: 0,
+          status: "Completed",
+          date: d ? new Date(d).toISOString().slice(0, 10) : "",
+          rawDate: d ? new Date(d).getTime() : 0,
+          link: `/finance/vouchers`,
+          hasSharedLedgerBadge: false,
+        });
+      }
+
+      // Map Delivery Challans
+      for (const c of challans) {
+        const d = c.challanDate || c.createdAt;
+        const amt = Number(c.totalAmount || 0);
+
+        allItems.push({
+          id: c.id,
+          rawType: "DELIVERY_CHALLAN",
+          type: "Delivery Challan",
+          transactionNumber: c.challanNumber || c.id.slice(0, 8),
+          partyName: c.party?.name || "-",
+          partyId: c.partyId,
+          amount: amt,
+          paidAmount: 0,
+          unpaidAmount: amt,
+          status: c.status === "CLOSED" ? "Completed" : c.status === "CANCELLED" ? "Cancelled" : "Issued",
+          date: d ? new Date(d).toISOString().slice(0, 10) : "",
+          rawDate: d ? new Date(d).getTime() : 0,
+          link: `/sales/delivery-challan`,
+          hasSharedLedgerBadge: Boolean(c.partyId),
+        });
+      }
+
+      // Filter by Search Query
+      let filtered = allItems;
+      if (query?.search && query.search.trim()) {
+        const s = query.search.trim().toLowerCase();
+        filtered = filtered.filter(
+          (it) =>
+            it.transactionNumber.toLowerCase().includes(s) ||
+            it.partyName.toLowerCase().includes(s) ||
+            it.type.toLowerCase().includes(s) ||
+            String(it.amount).includes(s),
+        );
+      }
+
+      // Filter by Type
+      if (query?.type && query.type !== "ALL") {
+        const t = query.type.toLowerCase();
+        filtered = filtered.filter((it) => it.type.toLowerCase().includes(t));
+      }
+
+      // Sort
+      const sortBy = query?.sortBy || "date";
+      const sortOrder = query?.sortOrder || "desc";
+      filtered.sort((a, b) => {
+        let diff = 0;
+        if (sortBy === "amount") {
+          diff = a.amount - b.amount;
+        } else {
+          diff = a.rawDate - b.rawDate;
+        }
+        return sortOrder === "asc" ? diff : -diff;
+      });
+
+      const total = filtered.length;
+      const paginated = filtered.slice(skip, skip + limit);
+
+      return {
+        items: paginated,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    });
+  }
 }

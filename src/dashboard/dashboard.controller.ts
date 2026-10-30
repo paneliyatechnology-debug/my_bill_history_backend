@@ -46,4 +46,12 @@ export class DashboardController {
   async getBankAccounts(@CurrentTenant() tenant: TenantContext) {
     return await this.dashboardService.getBankAccounts(tenant);
   }
+
+  @Get(["all-transactions", "vouchers/all_transactions"])
+  async getAllTransactions(
+    @CurrentTenant() tenant: TenantContext,
+    @Query() query: any,
+  ) {
+    return await this.dashboardService.getAllTransactions(tenant, query);
+  }
 }
