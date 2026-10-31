@@ -25,9 +25,7 @@ export class InvoicePdfService {
       "/usr/bin/google-chrome-stable",
       "/usr/bin/chromium",
       "/usr/bin/chromium-browser",
-      "google-chrome",
-      "chromium",
-      "chromium-browser",
+      "/snap/bin/chromium",
     ].filter(Boolean) as string[];
 
     for (const bin of candidates) {
@@ -35,8 +33,27 @@ export class InvoicePdfService {
         return bin;
       }
     }
-    // Return standard command name as fallback
-    return candidates[0] || "google-chrome";
+
+    // Check system PATH directories
+    const pathDirs = (process.env.PATH || "").split(":");
+    const binaryNames = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"];
+    for (const dir of pathDirs) {
+      for (const name of binaryNames) {
+        const fullPath = path.join(dir, name);
+        if (fs.existsSync(fullPath)) {
+          try {
+            fs.accessSync(fullPath, fs.constants.X_OK);
+            return fullPath;
+          } catch {}
+        }
+      }
+    }
+
+    return null;
+  }
+
+  isChromeAvailable(): boolean {
+    return this.resolveChromeBinary() !== null;
   }
 
   async getCachedPdf(invoiceId: string): Promise<Buffer | null> {
@@ -53,6 +70,11 @@ export class InvoicePdfService {
 
   async generatePdf(invoiceId: string, html: string): Promise<Buffer> {
     const chromeBin = this.resolveChromeBinary();
+    if (!chromeBin) {
+      throw new Error(
+        "CHROME_NOT_FOUND: Google Chrome or Chromium executable is not installed on this server. Please install chromium-browser or set CHROME_BIN environment variable."
+      );
+    }
     const tempHtmlPath = path.join("/tmp", `invoice_${invoiceId}_${Date.now()}.html`);
     const outputPath = path.join(this.pdfDir, `${invoiceId}.pdf`);
 

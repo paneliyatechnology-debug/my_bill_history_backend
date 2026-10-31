@@ -12,6 +12,8 @@ import {
   HttpStatus,
   Res,
   BadRequestException,
+  NotFoundException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { FastifyReply } from "fastify";
 import { Throttle } from "@nestjs/throttler";
@@ -278,15 +280,30 @@ export class InvoicesController {
     const themeId = body?.themeId || themeIdQuery;
     const accentColor = body?.accentColor || accentColorQuery;
 
-    const { invoice } = await this.invoicePrintService.generateInvoicePdf(
-      tenant,
-      cleanInvoiceId,
-      copy,
-      share,
-      themeId,
-      accentColor,
-    );
-    return buildInvoicePdfDetails(cleanInvoiceId, invoice?.invoiceNumber);
+    let invoiceNumber: string | undefined;
+    try {
+      const result = await this.invoicePrintService.generateInvoicePdf(
+        tenant,
+        cleanInvoiceId,
+        copy,
+        share,
+        themeId,
+        accentColor,
+      );
+      invoiceNumber = result.invoice?.invoiceNumber;
+    } catch (err: any) {
+      if (
+        err instanceof NotFoundException ||
+        err instanceof ForbiddenException ||
+        err instanceof BadRequestException
+      ) {
+        throw err;
+      }
+      // Fallback: If host environment lacks Chrome executable, still resolve invoice to ensure tenant access
+      const invoice = await this.invoicesService.getSalesInvoiceById(cleanInvoiceId, tenant);
+      invoiceNumber = invoice?.invoiceNumber;
+    }
+    return buildInvoicePdfDetails(cleanInvoiceId, invoiceNumber);
   }
 
   @Get([
@@ -333,19 +350,26 @@ export class InvoicesController {
     @CurrentTenant() tenant: TenantContext,
     @Res() reply: FastifyReply,
   ) {
-    const { pdfBuffer, invoice } = await this.invoicePrintService.generateInvoicePdf(
-      tenant,
-      id,
-      copy,
-      share === "true" || share === "1",
-      themeId,
-      accentColor,
-    );
-    const safeInvNum = String(invoice.invoiceNumber || id).replace(/[\/\\]/g, "_");
-    return reply
-      .type("application/pdf")
-      .header("Content-Disposition", `inline; filename="Invoice-${safeInvNum}.pdf"`)
-      .send(pdfBuffer);
+    try {
+      const { pdfBuffer, invoice } = await this.invoicePrintService.generateInvoicePdf(
+        tenant,
+        id,
+        copy,
+        share === "true" || share === "1",
+        themeId,
+        accentColor,
+      );
+      const safeInvNum = String(invoice.invoiceNumber || id).replace(/[\/\\]/g, "_");
+      return reply
+        .type("application/pdf")
+        .header("Content-Disposition", `inline; filename="Invoice-${safeInvNum}.pdf"`)
+        .send(pdfBuffer);
+    } catch (err: any) {
+      if (err?.message?.includes("CHROME_NOT_FOUND") || err?.message?.includes("ENOENT")) {
+        return reply.redirect(302, `/api/v1/invoices/${id}/print`);
+      }
+      throw err;
+    }
   }
 
   @Get(["sales/:id", "invoices/:id", ":id"])

@@ -61,6 +61,12 @@ describe("Generate Invoice PDF API (Authentication & Tenant Isolation)", () => {
         await tx.userBranchAssignment.deleteMany({
           where: { branch: { organizationId: { in: orgIds } } },
         });
+        await tx.journalEntry.deleteMany({
+          where: { voucher: { organizationId: { in: orgIds } } },
+        });
+        await tx.voucher.deleteMany({ where: { organizationId: { in: orgIds } } });
+        await tx.ledgerAccount.deleteMany({ where: { organizationId: { in: orgIds } } });
+        await tx.ledgerGroup.deleteMany({ where: { organizationId: { in: orgIds } } });
         await tx.branch.deleteMany({
           where: { organizationId: { in: orgIds } },
         });
@@ -203,6 +209,12 @@ describe("Generate Invoice PDF API (Authentication & Tenant Isolation)", () => {
           await tx.userBranchAssignment.deleteMany({
             where: { branch: { organizationId: { in: orgIds } } },
           });
+          await tx.journalEntry.deleteMany({
+            where: { voucher: { organizationId: { in: orgIds } } },
+          });
+          await tx.voucher.deleteMany({ where: { organizationId: { in: orgIds } } });
+          await tx.ledgerAccount.deleteMany({ where: { organizationId: { in: orgIds } } });
+          await tx.ledgerGroup.deleteMany({ where: { organizationId: { in: orgIds } } });
           await tx.branch.deleteMany({
             where: { organizationId: { in: orgIds } },
           });
