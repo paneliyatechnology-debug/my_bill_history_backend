@@ -133,21 +133,69 @@ function hsnSummary(items: any[]) {
 }
 
 function wrapPage(css: string, body: string, title: string, s: any) {
-  const paper = s?.paperSize === "A5" ? "A5 portrait" : s?.paperSize === "THERMAL_80" ? "80mm auto" : s?.paperSize === "THERMAL_58" ? "58mm auto" : "A4 portrait";
-  const width = s?.paperSize === "A5" ? "148mm" : s?.paperSize?.startsWith("THERMAL") ? "80mm" : "210mm";
-  const mt = Number(s?.marginTop ?? 8);
-  const mr = Number(s?.marginRight ?? 8);
-  const mb = Number(s?.marginBottom ?? 8);
-  const ml = Number(s?.marginLeft ?? 8);
+  const isThermal = s?.paperSize?.startsWith("THERMAL");
+  const isA5 = s?.paperSize === "A5";
+  const paper = isA5
+    ? "A5 portrait"
+    : isThermal
+    ? s?.paperSize === "THERMAL_58"
+      ? "58mm auto"
+      : "80mm auto"
+    : "A4 portrait";
+  const width = isA5 ? "148mm" : isThermal ? (s?.paperSize === "THERMAL_58" ? "58mm" : "80mm") : "210mm";
+  const minHeight = isA5 ? "210mm" : isThermal ? "auto" : "297mm";
   const family = s?.fontFamily || "Arial, Helvetica, sans-serif";
-  const fontSize = `${s?.fontSize || 13}px`;
+  const fontSize = `${s?.fontSize || 12}px`;
+
   return `<!doctype html><html><head><meta charset="utf-8"/><title>${esc(title)}</title>
 <style>
-@page { size: ${paper}; margin: ${mt}mm ${mr}mm ${mb}mm ${ml}mm; }
-* { box-sizing: border-box; }
-body { margin: 0; background: #eceff3; font-family: ${family}; font-size: ${fontSize}; color: #111; }
-.sheet { width: ${width}; min-height: ${s?.paperSize === "A5" ? "210mm" : "297mm"}; margin: 16px auto; background: #fff; }
-@media print { body { background: #fff; } .sheet { margin: 0; } }
+@page {
+  size: ${paper};
+  margin: 0;
+}
+*, *:before, *:after { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: ${family};
+  font-size: ${fontSize};
+  color: #111;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}
+@media screen {
+  body {
+    background: #eceff3;
+    padding: 16px 0;
+    display: flex;
+    justify-content: center;
+  }
+  .sheet {
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  }
+}
+@media print {
+  body {
+    background: #fff;
+    margin: 0;
+    padding: 0;
+  }
+  .sheet {
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+}
+.sheet {
+  width: ${width};
+  min-height: ${minHeight};
+  ${!isThermal ? `height: ${minHeight}; max-height: ${minHeight};` : ""}
+  position: relative;
+  background: #fff;
+  margin: 0 auto;
+  overflow: hidden;
+  box-sizing: border-box;
+}
 ${css}
 </style></head><body>${body}</body></html>`;
 }
@@ -759,23 +807,25 @@ function festivalCss(s: any) {
   .sheet {
     position: relative;
     width: 210mm;
+    height: 297mm;
     min-height: 297mm;
-    margin: 10px auto;
-    padding: 16px 20px;
+    max-height: 297mm;
+    margin: 0 auto;
+    padding: 8mm 10mm;
     background: #ffffff;
-    border: 1px solid #cbd5e1;
     box-sizing: border-box;
     overflow: hidden;
   }
   @media print {
-    body { background: #fff; }
-    .sheet { margin: 0; border: none; padding: 0; box-shadow: none; width: 100%; min-height: 100vh; }
+    body { background: #fff; margin: 0; padding: 0; }
+    .sheet { margin: 0 !important; border: none !important; padding: 8mm 10mm !important; box-shadow: none !important; width: 210mm !important; height: 297mm !important; min-height: 297mm !important; max-height: 297mm !important; }
   }
   .festive-bg {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
+    top: 0;
+    left: 0;
+    width: 210mm;
+    height: 297mm;
     pointer-events: none;
     overflow: hidden;
     z-index: 0;
@@ -784,7 +834,7 @@ function festivalCss(s: any) {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: top;
+    object-position: center top;
     opacity: 0.18;
   }
   .festive-content {
@@ -793,7 +843,8 @@ function festivalCss(s: any) {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    min-height: 270mm;
+    height: 100%;
+    min-height: calc(297mm - 16mm);
   }
   .fest-top-bar {
     display: flex;
@@ -963,6 +1014,32 @@ function festivalCss(s: any) {
   `;
 }
 
+function festiveFillerRows(ctx: any, targetRows = 8) {
+  const count = (ctx.items || []).length;
+  const needed = Math.max(0, targetRows - count);
+  if (needed === 0) return "";
+  let cols = 2; // #, ITEMS
+  if (ctx.s.showHsn !== false) cols++;
+  if (ctx.s.showQuantity !== false) cols++;
+  if (ctx.s.showPricePerItem !== false) cols++;
+  if (ctx.s.showDiscount) cols++;
+  if (ctx.s.showTaxColumn !== false) cols++;
+  if (ctx.s.showBatch) cols++;
+  if (ctx.s.showExpiry) cols++;
+  if (ctx.s.showMfgDate) cols++;
+  if (Array.isArray(ctx.s.itemCustomColumns)) {
+    cols += ctx.s.itemCustomColumns.filter((c: any) => c && c.enabled !== false).length;
+  }
+  cols++; // AMOUNT
+
+  return Array.from({ length: needed })
+    .map(
+      () =>
+        `<tr style="height:26px;">${Array.from({ length: cols }, (_, i) => `<td style="border-bottom:1px solid #e2e8f0; border-right:${i === cols - 1 ? "none" : "1px solid #cbd5e1"}; background:transparent;">&nbsp;</td>`).join("")}</tr>`,
+    )
+    .join("");
+}
+
 function festivalBody(ctx: any) {
   const themeKey = ctx.s.themeId || ctx.s.festiveTheme || "navratri";
   const skin = festiveSkin(themeKey);
@@ -1075,6 +1152,7 @@ function festivalBody(ctx: any) {
             </thead>
             <tbody>
               ${itemRowsOpen(ctx)}
+              ${festiveFillerRows(ctx)}
             </tbody>
           </table>
 
