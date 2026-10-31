@@ -346,6 +346,8 @@ export class DashboardService {
           status: s.status === "CANCELLED" ? "Cancelled" : unpaid === 0 ? "Paid" : unpaid < grand ? "Partial" : "Unpaid",
           date: d ? new Date(d).toISOString().slice(0, 10) : "",
           rawDate: d ? new Date(d).getTime() : 0,
+          createdAt: s.createdAt,
+          rawCreatedAt: s.createdAt ? new Date(s.createdAt).getTime() : 0,
           link: `/sales/invoices/${s.id}`,
           ...buildInvoiceUrls(s.id),
           hasSharedLedgerBadge: Boolean(s.partyId),
@@ -373,6 +375,8 @@ export class DashboardService {
           status: unpaid === 0 ? "Paid" : unpaid < grand ? "Partial" : "Unpaid",
           date: d ? new Date(d).toISOString().slice(0, 10) : "",
           rawDate: d ? new Date(d).getTime() : 0,
+          createdAt: p.createdAt,
+          rawCreatedAt: p.createdAt ? new Date(p.createdAt).getTime() : 0,
           link: `/purchases/${p.id}`,
           hasSharedLedgerBadge: Boolean(p.partyId),
         });
@@ -478,6 +482,8 @@ export class DashboardService {
           status: v.isCancelled ? "Cancelled" : "Completed",
           date: d ? new Date(d).toISOString().slice(0, 10) : "",
           rawDate: d ? new Date(d).getTime() : 0,
+          createdAt: v.createdAt,
+          rawCreatedAt: v.createdAt ? new Date(v.createdAt).getTime() : 0,
           link,
           paymentMode: v.paymentMode || null,
           referenceNo: v.referenceNo || null,
@@ -505,6 +511,8 @@ export class DashboardService {
           status: c.status === "CLOSED" ? "Completed" : c.status === "CANCELLED" ? "Cancelled" : "Issued",
           date: d ? new Date(d).toISOString().slice(0, 10) : "",
           rawDate: d ? new Date(d).getTime() : 0,
+          createdAt: c.createdAt,
+          rawCreatedAt: c.createdAt ? new Date(c.createdAt).getTime() : 0,
           link: `/sales/delivery-challan`,
           hasSharedLedgerBadge: Boolean(c.partyId),
         });
@@ -529,6 +537,8 @@ export class DashboardService {
           status: sr.status === "CANCELLED" ? "Cancelled" : "Completed",
           date: d ? new Date(d).toISOString().slice(0, 10) : "",
           rawDate: d ? new Date(d).getTime() : 0,
+          createdAt: sr.createdAt,
+          rawCreatedAt: sr.createdAt ? new Date(sr.createdAt).getTime() : 0,
           link: `/sales/sales-returns/${sr.id}`,
           hasSharedLedgerBadge: Boolean(sr.partyId),
         });
@@ -553,6 +563,8 @@ export class DashboardService {
           status: "Completed",
           date: d ? new Date(d).toISOString().slice(0, 10) : "",
           rawDate: d ? new Date(d).getTime() : 0,
+          createdAt: pr.createdAt,
+          rawCreatedAt: pr.createdAt ? new Date(pr.createdAt).getTime() : 0,
           link: `/purchases/returns/${pr.id}`,
           hasSharedLedgerBadge: Boolean(pr.partyId),
         });
@@ -638,7 +650,10 @@ export class DashboardService {
         if (sortBy === "amount") {
           diff = a.amount - b.amount;
         } else {
-          diff = a.rawDate - b.rawDate;
+          diff = (a.rawDate || 0) - (b.rawDate || 0);
+          if (diff === 0) {
+            diff = (a.rawCreatedAt || 0) - (b.rawCreatedAt || 0);
+          }
         }
         return sortOrder === "asc" ? diff : -diff;
       });
