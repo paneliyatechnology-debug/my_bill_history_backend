@@ -145,15 +145,15 @@ function wrapPage(css: string, body: string, title: string, s: any) {
   const width = isA5 ? "148mm" : isThermal ? (s?.paperSize === "THERMAL_58" ? "58mm" : "80mm") : "210mm";
   const minHeight = isA5 ? "210mm" : isThermal ? "auto" : "297mm";
   const baseFamily = s?.fontFamily || "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
-  const fontStack = `${baseFamily}, 'Noto Sans Devanagari', 'Noto Sans Gujarati', 'Noto Sans', 'Lohit Devanagari', 'Lohit Gujarati', 'Mangal', 'Shruti', 'Gargi', sans-serif`;
+  const fontStack = `${baseFamily}, 'Noto Sans Devanagari', 'Noto Sans Gujarati', 'Noto Sans', 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Twemoji Mozilla', 'Lohit Devanagari', 'Lohit Gujarati', 'Mangal', 'Shruti', 'Gargi', sans-serif`;
   const fontSize = `${s?.fontSize || 12}px`;
 
   return `<!doctype html><html><head><meta charset="utf-8"/><title>${esc(title)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700;800;900&family=Noto+Sans+Gujarati:wght@400;600;700;800;900&family=Noto+Sans:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Noto+Sans+Devanagari:wght@400;600;700;800;900&family=Noto+Sans+Gujarati:wght@400;600;700;800;900&family=Noto+Sans:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700;800;900&family=Noto+Sans+Gujarati:wght@400;600;700;800;900&family=Noto+Sans:wght@400;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Noto+Sans+Devanagari:wght@400;600;700;800;900&family=Noto+Sans+Gujarati:wght@400;600;700;800;900&family=Noto+Sans:wght@400;600;700;800;900&display=swap');
 @page {
   size: ${paper};
   margin: 0;
