@@ -144,20 +144,27 @@ function wrapPage(css: string, body: string, title: string, s: any) {
     : "A4 portrait";
   const width = isA5 ? "148mm" : isThermal ? (s?.paperSize === "THERMAL_58" ? "58mm" : "80mm") : "210mm";
   const minHeight = isA5 ? "210mm" : isThermal ? "auto" : "297mm";
-  const family = s?.fontFamily || "Arial, Helvetica, sans-serif";
+  const baseFamily = s?.fontFamily || "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+  const fontStack = `${baseFamily}, 'Noto Sans Devanagari', 'Noto Sans Gujarati', 'Noto Sans', 'Lohit Devanagari', 'Lohit Gujarati', 'Mangal', 'Shruti', 'Gargi', sans-serif`;
   const fontSize = `${s?.fontSize || 12}px`;
 
   return `<!doctype html><html><head><meta charset="utf-8"/><title>${esc(title)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700;800;900&family=Noto+Sans+Gujarati:wght@400;600;700;800;900&family=Noto+Sans:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700;800;900&family=Noto+Sans+Gujarati:wght@400;600;700;800;900&family=Noto+Sans:wght@400;600;700;800;900&display=swap');
 @page {
   size: ${paper};
   margin: 0;
 }
 *, *:before, *:after { box-sizing: border-box; }
+html, body, table, td, th, div, span, b, p {
+  font-family: ${fontStack};
+}
 html, body {
   margin: 0;
   padding: 0;
-  font-family: ${family};
   font-size: ${fontSize};
   color: #111;
   -webkit-print-color-adjust: exact !important;
@@ -811,14 +818,14 @@ function festivalCss(s: any) {
     min-height: 297mm;
     max-height: 297mm;
     margin: 0 auto;
-    padding: 8mm 10mm;
+    padding: 6mm 8mm 4mm 8mm;
     background: #ffffff;
     box-sizing: border-box;
     overflow: hidden;
   }
   @media print {
     body { background: #fff; margin: 0; padding: 0; }
-    .sheet { margin: 0 !important; border: none !important; padding: 8mm 10mm !important; box-shadow: none !important; width: 210mm !important; height: 297mm !important; min-height: 297mm !important; max-height: 297mm !important; }
+    .sheet { margin: 0 !important; border: none !important; padding: 6mm 8mm 4mm 8mm !important; box-shadow: none !important; width: 210mm !important; height: 297mm !important; min-height: 297mm !important; max-height: 297mm !important; }
   }
   .festive-bg {
     position: absolute;
@@ -844,13 +851,14 @@ function festivalCss(s: any) {
     flex-direction: column;
     justify-content: space-between;
     height: 100%;
-    min-height: calc(297mm - 16mm);
+    min-height: calc(297mm - 10mm);
+    max-height: calc(297mm - 10mm);
   }
   .fest-top-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
   .fest-doc-title {
     font-size: 14px;
@@ -891,6 +899,8 @@ function festivalCss(s: any) {
     display: flex;
     flex-direction: column;
     flex: 1;
+    justify-content: space-between;
+    margin-bottom: 3px;
   }
   .fest-grid-2 {
     display: grid;
@@ -1014,7 +1024,9 @@ function festivalCss(s: any) {
   `;
 }
 
-function festiveFillerRows(ctx: any, targetRows = 8) {
+function festiveFillerRows(ctx: any) {
+  const hasHsn = ctx.s.showTaxBreakup !== false && (ctx.hsnRows || []).length > 0;
+  const targetRows = hasHsn ? 15 : 17;
   const count = (ctx.items || []).length;
   const needed = Math.max(0, targetRows - count);
   if (needed === 0) return "";
@@ -1035,7 +1047,7 @@ function festiveFillerRows(ctx: any, targetRows = 8) {
   return Array.from({ length: needed })
     .map(
       () =>
-        `<tr style="height:26px;">${Array.from({ length: cols }, (_, i) => `<td style="border-bottom:1px solid #e2e8f0; border-right:${i === cols - 1 ? "none" : "1px solid #cbd5e1"}; background:transparent;">&nbsp;</td>`).join("")}</tr>`,
+        `<tr style="height:27px;"><td class="c" style="border-bottom:1px solid #e2e8f0; border-right:1px solid #cbd5e1; background:transparent;">&nbsp;</td>${Array.from({ length: cols - 1 }, (_, i) => `<td style="border-bottom:1px solid #e2e8f0; border-right:${i === cols - 2 ? "none" : "1px solid #cbd5e1"}; background:transparent;">&nbsp;</td>`).join("")}</tr>`,
     )
     .join("");
 }
@@ -1078,19 +1090,18 @@ function festivalBody(ctx: any) {
     ${bgDataUri ? `<div class="festive-bg"><img src="${bgDataUri}" alt="Festive Theme"/></div>` : ""}
 
     <div class="festive-content">
-      <div>
-        <!-- Top Header Row -->
-        <div class="fest-top-bar">
-          <div>
-            <span class="fest-doc-title" style="color:${accent};">${esc(ctx.docTitle)}</span>
-            <span class="fest-copy-badge">${esc(ctx.copyLabel)}</span>
-            ${inv.status ? `<span class="fest-status-badge ${String(inv.status).toLowerCase()}">${esc(inv.status)}</span>` : ""}
-          </div>
-          <div class="fest-subgreeting">${esc(skin.subGreeting || skin.title)}</div>
+      <!-- Top Header Row -->
+      <div class="fest-top-bar">
+        <div>
+          <span class="fest-doc-title" style="color:${accent};">${esc(ctx.docTitle)}</span>
+          <span class="fest-copy-badge">${esc(ctx.copyLabel)}</span>
+          ${inv.status ? `<span class="fest-status-badge ${String(inv.status).toLowerCase()}">${esc(inv.status)}</span>` : ""}
         </div>
+        <div class="fest-subgreeting">${esc(skin.subGreeting || skin.title)}</div>
+      </div>
 
-        <!-- Outer Boxed Table Container matching myBillBook -->
-        <div class="fest-outer-box">
+      <!-- Outer Boxed Table Container matching myBillBook -->
+      <div class="fest-outer-box">
           <!-- Row 1: Company Details & Invoice Metadata -->
           <div class="fest-grid-2 fest-border-b">
             <div class="fest-cell-left fest-border-r">
@@ -1196,7 +1207,6 @@ function festivalBody(ctx: any) {
             </div>
           </div>
         </div>
-      </div>
 
       <!-- Festive Footer Wish -->
       <div class="fest-footer-wish" style="color:${skin.ink};">

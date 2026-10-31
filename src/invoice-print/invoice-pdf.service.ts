@@ -82,11 +82,13 @@ export class InvoicePdfService {
 
     return new Promise<Buffer>((resolve, reject) => {
       const args = [
-        "--headless",
+        "--headless=new",
         "--no-sandbox",
         "--disable-gpu",
         "--disable-dev-shm-usage",
         "--no-pdf-header-footer",
+        "--run-all-compositor-stages-before-draw",
+        "--virtual-time-budget=3000",
         `--print-to-pdf=${outputPath}`,
         tempHtmlPath,
       ];
