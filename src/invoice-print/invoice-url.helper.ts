@@ -21,11 +21,15 @@ export function buildInvoiceUrls(invoiceId: string) {
   };
 }
 
-export function buildInvoicePdfDetails(invoiceId: string) {
+export function buildInvoicePdfDetails(invoiceId: string, invoiceNumber?: string) {
   const base = getApiBaseUrl();
   return {
-    previewUrl: `${base}/api/v1/invoices/${invoiceId}/print`,
+    success: true,
+    invoiceId,
+    ...(invoiceNumber ? { invoiceNumber } : {}),
     pdfUrl: `${base}/api/v1/invoices/${invoiceId}/pdf`,
+    previewUrl: `${base}/api/v1/invoices/${invoiceId}/print`,
+    downloadUrl: `${base}/api/v1/invoices/${invoiceId}/download-pdf`,
   };
 }
 

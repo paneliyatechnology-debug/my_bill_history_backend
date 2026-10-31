@@ -11,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
   Res,
+  BadRequestException,
 } from "@nestjs/common";
 import { FastifyReply } from "fastify";
 import { Throttle } from "@nestjs/throttler";
@@ -27,6 +28,7 @@ import { QueryInvoicesDto } from "./dto/query-invoices.dto";
 import { RecordInvoicePaymentDto } from "./dto/record-payment.dto";
 import { QueryStockTransactionsDto } from "./dto/query-stock.dto";
 import { CreateSalesReturnDto } from "./dto/create-sales-return.dto";
+import { GenerateInvoicePdfDto } from "./dto/generate-invoice-pdf.dto";
 import { InvoicePrintService } from "../invoice-print/invoice-print.service";
 import { buildInvoiceUrls, buildInvoicePdfDetails } from "../invoice-print/invoice-url.helper";
 
@@ -237,10 +239,16 @@ export class InvoicesController {
   }
 
   /**
-   * New API requested: Generates PDF in backend and returns ONLY:
-   * { "pdfUrl": "...", "previewUrl": "..." }
+   * Generates PDF in backend and returns:
+   * { "success": true, "invoiceId": "...", "pdfUrl": "...", "previewUrl": "...", "downloadUrl": "..." }
+   * Requires JWT authentication: User details and tenant context are derived directly from the login token.
    */
   @Post([
+    "generate-pdf",
+    "pdf-details",
+    "pdf-url",
+    "sales/generate-pdf",
+    "invoices/generate-pdf",
     "sales/:id/generate-pdf",
     "invoices/:id/generate-pdf",
     ":id/generate-pdf",
@@ -251,24 +259,34 @@ export class InvoicesController {
     "invoices/:id/pdf-url",
     ":id/pdf-url",
   ])
-  @Public()
   async generateSalesInvoicePdfDetails(
-    @Param("id") id: string,
-    @Query("copy") copy: string,
-    @Query("share") share: string,
-    @Query("themeId") themeId: string,
-    @Query("accentColor") accentColor: string,
+    @Param("id") paramId: string | undefined,
+    @Body() body: GenerateInvoicePdfDto | undefined,
+    @Query("copy") copyQuery: string | undefined,
+    @Query("share") shareQuery: string | undefined,
+    @Query("themeId") themeIdQuery: string | undefined,
+    @Query("accentColor") accentColorQuery: string | undefined,
     @CurrentTenant() tenant: TenantContext,
   ) {
-    await this.invoicePrintService.generateInvoicePdf(
+    const invoiceId = paramId || body?.invoiceId || body?.id;
+    if (!invoiceId || typeof invoiceId !== "string" || !invoiceId.trim()) {
+      throw new BadRequestException("Invoice ID is required. Please provide it in the URL path or JSON body.");
+    }
+    const cleanInvoiceId = invoiceId.trim();
+    const copy = body?.copy || copyQuery;
+    const share = body?.share !== undefined ? Boolean(body.share) : (shareQuery === "true" || shareQuery === "1");
+    const themeId = body?.themeId || themeIdQuery;
+    const accentColor = body?.accentColor || accentColorQuery;
+
+    const { invoice } = await this.invoicePrintService.generateInvoicePdf(
       tenant,
-      id,
+      cleanInvoiceId,
       copy,
-      share === "true" || share === "1",
+      share,
       themeId,
       accentColor,
     );
-    return buildInvoicePdfDetails(id);
+    return buildInvoicePdfDetails(cleanInvoiceId, invoice?.invoiceNumber);
   }
 
   @Get([
@@ -282,7 +300,6 @@ export class InvoicesController {
     "invoices/:id/pdf-url",
     ":id/pdf-url",
   ])
-  @Public()
   async getSalesInvoicePdfDetails(
     @Param("id") id: string,
     @Query("copy") copy: string,
@@ -293,6 +310,7 @@ export class InvoicesController {
   ) {
     return await this.generateSalesInvoicePdfDetails(
       id,
+      undefined,
       copy,
       share,
       themeId,

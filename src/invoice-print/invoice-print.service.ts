@@ -291,6 +291,15 @@ export class InvoicePrintService {
       throw new NotFoundException(`Sales invoice ${invoiceId} not found.`);
     }
 
+    if (tenant && !tenant.isSystemBypass) {
+      if (tenant.organizationId && invoice.organizationId && invoice.organizationId !== tenant.organizationId) {
+        throw new NotFoundException(`Sales invoice ${invoiceId} not found.`);
+      }
+      if (tenant.companyId && invoice.companyId !== tenant.companyId) {
+        throw new NotFoundException(`Sales invoice ${invoiceId} not found.`);
+      }
+    }
+
     const html = await this.printInvoiceHtml(
       tenant,
       invoiceId,
