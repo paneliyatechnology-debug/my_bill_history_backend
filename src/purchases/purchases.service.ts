@@ -708,105 +708,106 @@ export class PurchasesService {
    * Retrieves purchase invoices with filters for party, date range, search and pagination.
    */
   async getPurchaseInvoices(dto: QueryPurchasesDto, tenant: TenantContext) {
-    const where: any = {
-      companyId: tenant.companyId,
-    };
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const where: any = {
+        companyId: tenant.companyId,
+      };
 
-    if (dto.partyId) {
-      where.partyId = dto.partyId;
-    }
-    if (dto.search && dto.search.trim() !== "") {
-      where.OR = [
-        {
-          vendorInvoiceNumber: {
-            contains: dto.search.trim(),
-            mode: "insensitive",
-          },
-        },
-        {
-          party: { name: { contains: dto.search.trim(), mode: "insensitive" } },
-        },
-      ];
-    }
-    if (dto.startDate || dto.endDate) {
-      where.invoiceDate = {};
-      if (dto.startDate) {
-        where.invoiceDate.gte = parseStartOfDay(dto.startDate);
+      if (dto.partyId) {
+        where.partyId = dto.partyId;
       }
-      if (dto.endDate) {
-        where.invoiceDate.lte = parseEndOfDay(dto.endDate);
-      }
-    }
-
-    const [invoices, total] = await Promise.all([
-      this.prisma.purchaseInvoice.findMany({
-        where,
-        include: {
-          party: {
-            select: {
-              id: true,
-              name: true,
-              nameGujarati: true,
-              gstin: true,
-              phone: true,
+      if (dto.search && dto.search.trim() !== "") {
+        where.OR = [
+          {
+            vendorInvoiceNumber: {
+              contains: dto.search.trim(),
+              mode: "insensitive",
             },
           },
-          items: {
-            include: {
-              item: { select: { id: true, name: true, nameGujarati: true } },
+          {
+            party: { name: { contains: dto.search.trim(), mode: "insensitive" } },
+          },
+        ];
+      }
+      if (dto.startDate || dto.endDate) {
+        where.invoiceDate = {};
+        if (dto.startDate) {
+          where.invoiceDate.gte = parseStartOfDay(dto.startDate);
+        }
+        if (dto.endDate) {
+          where.invoiceDate.lte = parseEndOfDay(dto.endDate);
+        }
+      }
+
+      const [invoices, total] = await Promise.all([
+        tx.purchaseInvoice.findMany({
+          where,
+          include: {
+            party: {
+              select: {
+                id: true,
+                name: true,
+                nameGujarati: true,
+                gstin: true,
+                phone: true,
+              },
+            },
+            items: {
+              include: {
+                item: { select: { id: true, name: true, nameGujarati: true } },
+              },
             },
           },
-        },
-        orderBy: { invoiceDate: "desc" },
-        take: dto.limit ? Number(dto.limit) : 50,
-        skip: dto.offset ? Number(dto.offset) : 0,
-      }),
-      this.prisma.purchaseInvoice.count({ where }),
-    ]);
+          orderBy: { invoiceDate: "desc" },
+          take: dto.limit ? Number(dto.limit) : 50,
+          skip: dto.offset ? Number(dto.offset) : 0,
+        }),
+        tx.purchaseInvoice.count({ where }),
+      ]);
 
-    return {
-      items: invoices,
-      total,
-      limit: dto.limit ? Number(dto.limit) : 50,
-      offset: dto.offset ? Number(dto.offset) : 0,
-    };
+      return {
+        items: invoices,
+        total,
+        limit: dto.limit ? Number(dto.limit) : 50,
+        offset: dto.offset ? Number(dto.offset) : 0,
+      };
+    });
   }
 
   /**
    * Retrieves single purchase invoice details by ID.
    */
-  /**
-   * Retrieves single purchase invoice details by ID.
-   */
   async getPurchaseInvoiceById(id: string, tenant: TenantContext) {
-    const invoice = await this.prisma.purchaseInvoice.findFirst({
-      where: {
-        id,
-        companyId: tenant.companyId,
-      },
-      include: {
-        party: true,
-        items: {
-          include: {
-            item: true,
-          },
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const invoice = await tx.purchaseInvoice.findFirst({
+        where: {
+          id,
+          companyId: tenant.companyId,
         },
-        branch: true,
-        returns: {
-          include: {
-            items: {
-              include: { item: true },
+        include: {
+          party: true,
+          items: {
+            include: {
+              item: true,
+            },
+          },
+          branch: true,
+          returns: {
+            include: {
+              items: {
+                include: { item: true },
+              },
             },
           },
         },
-      },
+      });
+
+      if (!invoice) {
+        throw new NotFoundException(`Purchase invoice with ID ${id} not found.`);
+      }
+
+      return invoice;
     });
-
-    if (!invoice) {
-      throw new NotFoundException(`Purchase invoice with ID ${id} not found.`);
-    }
-
-    return invoice;
   }
 
   /**
@@ -1397,34 +1398,36 @@ export class PurchasesService {
     purchaseId: string,
     tenant: TenantContext,
   ) {
-    const invoice = await this.prisma.purchaseInvoice.findFirst({
-      where: {
-        id: purchaseId,
-        companyId: tenant.companyId,
-      },
-    });
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const invoice = await tx.purchaseInvoice.findFirst({
+        where: {
+          id: purchaseId,
+          companyId: tenant.companyId,
+        },
+      });
 
-    if (!invoice) {
-      throw new NotFoundException(
-        `Purchase invoice with ID ${purchaseId} not found.`,
-      );
-    }
+      if (!invoice) {
+        throw new NotFoundException(
+          `Purchase invoice with ID ${purchaseId} not found.`,
+        );
+      }
 
-    return this.prisma.purchaseReturn.findMany({
-      where: {
-        purchaseInvoiceId: purchaseId,
-        companyId: tenant.companyId,
-      },
-      include: {
-        party: true,
-        items: {
-          include: {
-            item: true,
-            purchaseItem: true,
+      return tx.purchaseReturn.findMany({
+        where: {
+          purchaseInvoiceId: purchaseId,
+          companyId: tenant.companyId,
+        },
+        include: {
+          party: true,
+          items: {
+            include: {
+              item: true,
+              purchaseItem: true,
+            },
           },
         },
-      },
-      orderBy: { returnDate: "desc" },
+        orderBy: { returnDate: "desc" },
+      });
     });
   }
 
@@ -1435,127 +1438,131 @@ export class PurchasesService {
     dto: QueryPurchaseReturnsDto,
     tenant: TenantContext,
   ) {
-    const where: any = {
-      companyId: tenant.companyId,
-    };
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const where: any = {
+        companyId: tenant.companyId,
+      };
 
-    if (dto.partyId) {
-      where.partyId = dto.partyId;
-    }
-    if (dto.purchaseInvoiceId) {
-      where.purchaseInvoiceId = dto.purchaseInvoiceId;
-    }
-    if (dto.search && dto.search.trim() !== "") {
-      const q = dto.search.trim();
-      where.OR = [
-        { returnNumber: { contains: q, mode: "insensitive" } },
-        { party: { name: { contains: q, mode: "insensitive" } } },
-        {
-          purchaseInvoice: {
-            vendorInvoiceNumber: { contains: q, mode: "insensitive" },
-          },
-        },
-      ];
-    }
-    if (dto.startDate || dto.endDate) {
-      where.returnDate = {};
-      if (dto.startDate) {
-        where.returnDate.gte = new Date(dto.startDate);
+      if (dto.partyId) {
+        where.partyId = dto.partyId;
       }
-      if (dto.endDate) {
-        where.returnDate.lte = new Date(dto.endDate);
+      if (dto.purchaseInvoiceId) {
+        where.purchaseInvoiceId = dto.purchaseInvoiceId;
       }
-    }
+      if (dto.search && dto.search.trim() !== "") {
+        const q = dto.search.trim();
+        where.OR = [
+          { returnNumber: { contains: q, mode: "insensitive" } },
+          { party: { name: { contains: q, mode: "insensitive" } } },
+          {
+            purchaseInvoice: {
+              vendorInvoiceNumber: { contains: q, mode: "insensitive" },
+            },
+          },
+        ];
+      }
+      if (dto.startDate || dto.endDate) {
+        where.returnDate = {};
+        if (dto.startDate) {
+          where.returnDate.gte = new Date(dto.startDate);
+        }
+        if (dto.endDate) {
+          where.returnDate.lte = new Date(dto.endDate);
+        }
+      }
 
-    const [items, total] = await Promise.all([
-      this.prisma.purchaseReturn.findMany({
-        where,
-        include: {
-          party: {
-            select: {
-              id: true,
-              name: true,
-              nameGujarati: true,
-              gstin: true,
-              phone: true,
+      const [items, total] = await Promise.all([
+        tx.purchaseReturn.findMany({
+          where,
+          include: {
+            party: {
+              select: {
+                id: true,
+                name: true,
+                nameGujarati: true,
+                gstin: true,
+                phone: true,
+              },
+            },
+            purchaseInvoice: {
+              select: {
+                id: true,
+                vendorInvoiceNumber: true,
+                invoiceDate: true,
+                grandTotal: true,
+                balanceAmount: true,
+              },
+            },
+            items: {
+              include: {
+                item: { select: { id: true, name: true, nameGujarati: true } },
+              },
             },
           },
-          purchaseInvoice: {
-            select: {
-              id: true,
-              vendorInvoiceNumber: true,
-              invoiceDate: true,
-              grandTotal: true,
-              balanceAmount: true,
-            },
-          },
-          items: {
-            include: {
-              item: { select: { id: true, name: true, nameGujarati: true } },
-            },
-          },
-        },
-        orderBy: { returnDate: "desc" },
-        take: dto.limit ? Number(dto.limit) : 50,
-        skip: dto.offset ? Number(dto.offset) : 0,
-      }),
-      this.prisma.purchaseReturn.count({ where }),
-    ]);
+          orderBy: { returnDate: "desc" },
+          take: dto.limit ? Number(dto.limit) : 50,
+          skip: dto.offset ? Number(dto.offset) : 0,
+        }),
+        tx.purchaseReturn.count({ where }),
+      ]);
 
-    return {
-      items,
-      total,
-      limit: dto.limit ? Number(dto.limit) : 50,
-      offset: dto.offset ? Number(dto.offset) : 0,
-    };
+      return {
+        items,
+        total,
+        limit: dto.limit ? Number(dto.limit) : 50,
+        offset: dto.offset ? Number(dto.offset) : 0,
+      };
+    });
   }
 
   /**
    * Retrieves single purchase return details by ID.
    */
   async getPurchaseReturnById(id: string, tenant: TenantContext) {
-    const purchaseReturn = await this.prisma.purchaseReturn.findFirst({
-      where: {
-        id,
-        companyId: tenant.companyId,
-      },
-      include: {
-        party: true,
-        purchaseInvoice: {
-          include: {
-            items: { include: { item: true } },
-          },
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const purchaseReturn = await tx.purchaseReturn.findFirst({
+        where: {
+          id,
+          companyId: tenant.companyId,
         },
-        items: {
-          include: {
-            item: true,
-            purchaseItem: true,
+        include: {
+          party: true,
+          purchaseInvoice: {
+            include: {
+              items: { include: { item: true } },
+            },
           },
+          items: {
+            include: {
+              item: true,
+              purchaseItem: true,
+            },
+          },
+          branch: true,
         },
-        branch: true,
-      },
+      });
+
+      if (!purchaseReturn) {
+        throw new NotFoundException(`Purchase return with ID ${id} not found.`);
+      }
+
+      return purchaseReturn;
     });
-
-    if (!purchaseReturn) {
-      throw new NotFoundException(`Purchase return with ID ${id} not found.`);
-    }
-
-    return purchaseReturn;
   }
 
   async deletePurchaseReturn(id: string, tenant: TenantContext) {
-    const purchaseReturn = await this.prisma.purchaseReturn.findFirst({
-      where: {
-        id,
-        companyId: tenant.companyId,
-      },
-    });
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const purchaseReturn = await tx.purchaseReturn.findFirst({
+        where: {
+          id,
+          companyId: tenant.companyId,
+        },
+      });
 
-    if (!purchaseReturn) {
-      throw new NotFoundException(`Purchase return with ID ${id} not found.`);
-    }
+      if (!purchaseReturn) {
+        throw new NotFoundException(`Purchase return with ID ${id} not found.`);
+      }
 
-    return this.prisma.$transaction(async (tx) => {
       // 1. Delete associated stock transactions
       await tx.stockTransaction.deleteMany({
         where: {
@@ -1651,12 +1658,7 @@ export class PurchasesService {
     dto: CreatePurchaseReturnDto & { purchaseInvoiceId?: string; returnNumber?: string },
     tenant: TenantContext,
   ) {
-    const existing = await this.prisma.purchaseReturn.findFirst({
-      where: { id, companyId: tenant.companyId },
-    });
-    if (!existing) {
-      throw new NotFoundException(`Purchase return with ID ${id} not found.`);
-    }
+    const existing = await this.getPurchaseReturnById(id, tenant);
 
     // 1. Delete previous return records, stock, and ledger atomically
     await this.deletePurchaseReturn(id, tenant);
