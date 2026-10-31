@@ -235,16 +235,14 @@ export class DashboardService {
       });
 
       // 3. Vouchers (Payment In, Payment Out, Expenses, Journal, Contra)
-      // Exclude cancelled vouchers and auto-generated SL/ vouchers created for sales invoices
+      // Exclude auto-generated invoice accounting vouchers (SALES & PURCHASE)
       const voucherWhere: any = {
         companyId: tenant.companyId,
         isCancelled: false,
-        OR: [
-          { sourceDocument: null },
-          { sourceDocument: { not: "SALES_INVOICE" } },
-        ],
+        voucherType: { in: ["RECEIPT", "PAYMENT", "CONTRA", "JOURNAL"] },
         NOT: [
           { voucherNumber: { startsWith: "SL/" } },
+          { voucherNumber: { startsWith: "PUR/" } },
         ],
       };
       if (hasDateFilter) voucherWhere.voucherDate = dateFilter;
@@ -256,10 +254,25 @@ export class DashboardService {
           journalEntries: {
             include: {
               account: {
-                select: { id: true, name: true, group: { select: { name: true } } },
+                select: {
+                  id: true,
+                  name: true,
+                  partyId: true,
+                  isPartyLedger: true,
+                  isCashLedger: true,
+                  isBankLedger: true,
+                  party: { select: { id: true, name: true, phone: true } },
+                  group: { select: { id: true, name: true, nature: true } },
+                },
               },
             },
             orderBy: { sequenceOrder: "asc" },
+          },
+          allocations: {
+            include: {
+              salesInvoice: { select: { id: true, invoiceNumber: true, party: { select: { id: true, name: true } } } },
+              purchaseInvoice: { select: { id: true, vendorInvoiceNumber: true, party: { select: { id: true, name: true } } } },
+            },
           },
         },
         take: 300,
@@ -371,45 +384,105 @@ export class DashboardService {
         const amt = Number(v.totalAmount || 0);
 
         let typeLabel = "Payment In";
+        let rawType: string = v.voucherType;
         let partyName = "-";
+        let partyId: string | null = null;
+        let link = "/finance/vouchers";
 
         if (v.voucherType === "RECEIPT") {
           typeLabel = "Payment In";
-          const creditLine = v.journalEntries?.find((j) => Number(j.creditAmount) > 0);
-          partyName = creditLine?.account?.name || v.narration || "-";
+          rawType = "RECEIPT";
+          link = `/sales/payment-in/${v.id}`;
+
+          const allocParty = v.allocations?.find((a: any) => a.salesInvoice?.party)?.salesInvoice?.party;
+          const partyEntry = v.journalEntries?.find(
+            (j: any) =>
+              Number(j.creditAmount) > 0 &&
+              (j.account?.partyId || j.account?.isPartyLedger || j.account?.party),
+          );
+          const anyCredit = v.journalEntries?.find((j: any) => Number(j.creditAmount) > 0);
+
+          if (allocParty) {
+            partyName = allocParty.name;
+            partyId = allocParty.id;
+          } else if (partyEntry) {
+            partyName = partyEntry.account?.party?.name || partyEntry.account?.name || "-";
+            partyId = partyEntry.account?.partyId || partyEntry.account?.party?.id || null;
+          } else if (anyCredit?.account?.name) {
+            partyName = anyCredit.account.name;
+            partyId = anyCredit.account.partyId || null;
+          } else if (v.narration) {
+            partyName = v.narration.replace(/^Receipt from\s+/i, "").trim() || "-";
+          }
         } else if (v.voucherType === "PAYMENT") {
-          if (v.sourceDocument === "PAYMENT_OUT") {
+          const allocParty = v.allocations?.find((a: any) => a.purchaseInvoice?.party)?.purchaseInvoice?.party;
+          const partyDebit = v.journalEntries?.find(
+            (j: any) =>
+              Number(j.debitAmount) > 0 &&
+              (j.account?.partyId ||
+                j.account?.isPartyLedger ||
+                j.account?.party ||
+                j.account?.group?.name?.toLowerCase().includes("creditor") ||
+                j.account?.group?.name?.toLowerCase().includes("payable")),
+          );
+          const isPaymentOut = Boolean(
+            v.sourceDocument === "PAYMENT_OUT" ||
+            allocParty ||
+            partyDebit ||
+            (v.narration && /payment\s+(to|out)/i.test(v.narration)),
+          );
+
+          if (isPaymentOut) {
             typeLabel = "Payment Out";
-            const debitLine = v.journalEntries?.find((j) => Number(j.debitAmount) > 0);
-            partyName = debitLine?.account?.name || v.narration || "-";
+            rawType = "PAYMENT_OUT";
+            link = `/purchases/payment-out/${v.id}`;
+            if (allocParty) {
+              partyName = allocParty.name;
+              partyId = allocParty.id;
+            } else if (partyDebit) {
+              partyName = partyDebit.account?.party?.name || partyDebit.account?.name || "-";
+              partyId = partyDebit.account?.partyId || partyDebit.account?.party?.id || null;
+            } else if (v.narration) {
+              partyName = v.narration.replace(/^Payment to\s+/i, "").trim() || "-";
+            }
           } else {
             typeLabel = "Expenses";
-            const debitLine = v.journalEntries?.find((j) => Number(j.debitAmount) > 0);
+            rawType = "EXPENSE";
+            link = `/finance/expenses`;
+            const debitLine = v.journalEntries?.find((j: any) => Number(j.debitAmount) > 0);
             partyName = debitLine?.account?.name || debitLine?.account?.group?.name || v.narration || "Expense";
           }
         } else if (v.voucherType === "CONTRA") {
           typeLabel = "Add Money";
-          partyName = "-";
+          rawType = "CONTRA";
+          partyName = v.narration || "Bank/Cash Transfer";
+          link = `/finance/cash-bank`;
         } else {
           typeLabel = "Journal Entry";
+          rawType = "JOURNAL";
           partyName = v.narration || "-";
+          link = `/accounting/vouchers`;
         }
 
         allItems.push({
           id: v.id,
-          rawType: v.voucherType,
+          rawType,
           type: typeLabel,
           transactionNumber: v.voucherNumber || v.id.slice(0, 8),
           txnNo: v.voucherNumber || v.id.slice(0, 8),
           partyName,
+          partyId,
           amount: amt,
           paidAmount: amt,
           unpaidAmount: 0,
-          status: "Completed",
+          status: v.isCancelled ? "Cancelled" : "Completed",
           date: d ? new Date(d).toISOString().slice(0, 10) : "",
           rawDate: d ? new Date(d).getTime() : 0,
-          link: `/finance/vouchers`,
-          hasSharedLedgerBadge: false,
+          link,
+          paymentMode: v.paymentMode || null,
+          referenceNo: v.referenceNo || null,
+          narration: v.narration || null,
+          hasSharedLedgerBadge: Boolean(partyId),
         });
       }
 
@@ -501,14 +574,33 @@ export class DashboardService {
 
       // Filter by Type
       if (query?.type && query.type !== "ALL") {
-        const t = query.type.toLowerCase();
-        filtered = filtered.filter((it) => it.type.toLowerCase().includes(t));
+        const t = query.type.toLowerCase().replace(/[-_]/g, " ").trim();
+        filtered = filtered.filter((it) => {
+          const itemType = it.type.toLowerCase().replace(/[-_]/g, " ");
+          const itemRaw = String(it.rawType || "").toLowerCase().replace(/[-_]/g, " ");
+          return (
+            itemType.includes(t) ||
+            itemRaw.includes(t) ||
+            (t === "payment in" && (itemType.includes("payment in") || itemRaw === "receipt")) ||
+            (t === "payment out" && (itemType.includes("payment out") || itemRaw === "payment out"))
+          );
+        });
       }
 
       // Filter by Raw Type
       if (query?.rawType && query.rawType !== "ALL") {
-        const rt = query.rawType.toUpperCase();
-        filtered = filtered.filter((it) => it.rawType.toUpperCase() === rt);
+        const rt = query.rawType.toUpperCase().replace(/-/g, "_");
+        filtered = filtered.filter((it) => {
+          const itemRaw = String(it.rawType || "").toUpperCase();
+          const itemType = String(it.type || "").toUpperCase();
+          if (rt === "PAYMENT_IN" || rt === "RECEIPT") {
+            return itemRaw === "PAYMENT_IN" || itemRaw === "RECEIPT" || itemType === "PAYMENT IN";
+          }
+          if (rt === "PAYMENT_OUT") {
+            return itemRaw === "PAYMENT_OUT" || itemType === "PAYMENT OUT";
+          }
+          return itemRaw === rt;
+        });
       }
 
       // Filter by Party ID
@@ -701,12 +793,28 @@ export class DashboardService {
           journalEntries: {
             include: {
               account: {
-                select: { id: true, name: true, code: true, group: { select: { id: true, name: true } } },
+                select: {
+                  id: true,
+                  name: true,
+                  code: true,
+                  partyId: true,
+                  party: true,
+                  group: { select: { id: true, name: true } },
+                },
               },
             },
             orderBy: { sequenceOrder: "asc" },
           },
-          allocations: true,
+          allocations: {
+            include: {
+              salesInvoice: {
+                select: { id: true, invoiceNumber: true, partyId: true, party: { select: { id: true, name: true, phone: true } } },
+              },
+              purchaseInvoice: {
+                select: { id: true, vendorInvoiceNumber: true, partyId: true, party: { select: { id: true, name: true, phone: true } } },
+              },
+            },
+          },
         },
       });
 
@@ -715,45 +823,110 @@ export class DashboardService {
         const amt = Number(voucher.totalAmount || 0);
 
         let typeLabel = "Payment In";
+        let rawType: string = voucher.voucherType;
         let partyName = "-";
+        let partyId: string | null = null;
+        let party: any = null;
+        let link = "/finance/vouchers";
 
         if (voucher.voucherType === "RECEIPT") {
           typeLabel = "Payment In";
-          const creditLine = voucher.journalEntries?.find((j) => Number(j.creditAmount) > 0);
-          partyName = creditLine?.account?.name || voucher.narration || "-";
+          rawType = "RECEIPT";
+          link = `/sales/payment-in/${voucher.id}`;
+
+          const allocParty = voucher.allocations?.find((a: any) => a.salesInvoice?.party)?.salesInvoice?.party;
+          const partyEntry = voucher.journalEntries?.find(
+            (j: any) =>
+              Number(j.creditAmount) > 0 &&
+              (j.account?.partyId || (j.account as any)?.isPartyLedger || j.account?.party),
+          );
+          const anyCredit = voucher.journalEntries?.find((j: any) => Number(j.creditAmount) > 0);
+
+          if (allocParty) {
+            partyName = allocParty.name;
+            partyId = allocParty.id;
+            party = allocParty;
+          } else if (partyEntry) {
+            partyName = partyEntry.account?.party?.name || partyEntry.account?.name || "-";
+            partyId = partyEntry.account?.partyId || partyEntry.account?.party?.id || null;
+            party = partyEntry.account?.party || null;
+          } else if (anyCredit?.account?.name) {
+            partyName = anyCredit.account.name;
+            partyId = anyCredit.account.partyId || null;
+            party = anyCredit.account.party || null;
+          } else if (voucher.narration) {
+            partyName = voucher.narration.replace(/^Receipt from\s+/i, "").trim() || "-";
+          }
         } else if (voucher.voucherType === "PAYMENT") {
-          if (voucher.sourceDocument === "PAYMENT_OUT") {
+          const allocParty = voucher.allocations?.find((a: any) => a.purchaseInvoice?.party)?.purchaseInvoice?.party;
+          const partyDebit = voucher.journalEntries?.find(
+            (j: any) =>
+              Number(j.debitAmount) > 0 &&
+              (j.account?.partyId ||
+                (j.account as any)?.isPartyLedger ||
+                j.account?.party ||
+                j.account?.group?.name?.toLowerCase().includes("creditor") ||
+                j.account?.group?.name?.toLowerCase().includes("payable")),
+          );
+          const isPaymentOut = Boolean(
+            voucher.sourceDocument === "PAYMENT_OUT" ||
+            allocParty ||
+            partyDebit ||
+            (voucher.narration && /payment\s+(to|out)/i.test(voucher.narration)),
+          );
+
+          if (isPaymentOut) {
             typeLabel = "Payment Out";
-            const debitLine = voucher.journalEntries?.find((j) => Number(j.debitAmount) > 0);
-            partyName = debitLine?.account?.name || voucher.narration || "-";
+            rawType = "PAYMENT_OUT";
+            link = `/purchases/payment-out/${voucher.id}`;
+            if (allocParty) {
+              partyName = allocParty.name;
+              partyId = allocParty.id;
+              party = allocParty;
+            } else if (partyDebit) {
+              partyName = partyDebit.account?.party?.name || partyDebit.account?.name || "-";
+              partyId = partyDebit.account?.partyId || partyDebit.account?.party?.id || null;
+              party = partyDebit.account?.party || null;
+            } else if (voucher.narration) {
+              partyName = voucher.narration.replace(/^Payment to\s+/i, "").trim() || "-";
+            }
           } else {
             typeLabel = "Expenses";
-            const debitLine = voucher.journalEntries?.find((j) => Number(j.debitAmount) > 0);
+            rawType = "EXPENSE";
+            link = `/finance/expenses`;
+            const debitLine = voucher.journalEntries?.find((j: any) => Number(j.debitAmount) > 0);
             partyName = debitLine?.account?.name || debitLine?.account?.group?.name || voucher.narration || "Expense";
           }
         } else if (voucher.voucherType === "CONTRA") {
           typeLabel = "Add Money";
-          partyName = "-";
+          rawType = "CONTRA";
+          partyName = voucher.narration || "Bank/Cash Transfer";
+          link = `/finance/cash-bank`;
         } else {
           typeLabel = "Journal Entry";
+          rawType = "JOURNAL";
           partyName = voucher.narration || "-";
+          link = `/accounting/vouchers`;
         }
 
         return {
           id: voucher.id,
-          rawType: voucher.voucherType,
+          rawType,
           type: typeLabel,
           transactionNumber: voucher.voucherNumber || voucher.id.slice(0, 8),
           txnNo: voucher.voucherNumber || voucher.id.slice(0, 8),
           partyName,
+          partyId,
+          party,
           amount: amt,
           paidAmount: amt,
           unpaidAmount: 0,
           status: voucher.isCancelled ? "Cancelled" : "Completed",
           date: d ? new Date(d).toISOString().slice(0, 10) : "",
           rawDate: d ? new Date(d).getTime() : 0,
-          link: `/finance/vouchers`,
-          hasSharedLedgerBadge: false,
+          link,
+          hasSharedLedgerBadge: Boolean(partyId),
+          paymentMode: (voucher as any).paymentMode || null,
           narration: voucher.narration,
           referenceNo: voucher.referenceNo,
           isCancelled: voucher.isCancelled,

@@ -30,6 +30,7 @@ describe("Dashboard All Transactions & Transaction by ID (Integration Test Suite
   let customerPartyId: string;
   let testSalesInvoiceId: string;
   let testVoucherId: string;
+  let testPaymentOutVoucherId: string;
 
   const testPhones = ["9898000911", "9898000912"];
 
@@ -187,6 +188,24 @@ describe("Dashboard All Transactions & Transaction by ID (Integration Test Suite
       });
     });
     testVoucherId = voucher.id;
+
+    // 6. Create a Payment Out Voucher for Tenant A
+    const paymentOutVoucher = await prisma.executeBypassRls(async (tx) => {
+      return await tx.voucher.create({
+        data: {
+          organizationId: tenantAOrgId,
+          companyId: tenantACompanyId,
+          financialYearId: tenantAFinancialYearId,
+          voucherType: "PAYMENT",
+          voucherNumber: "PAY-DASH-001",
+          voucherDate: new Date("2026-10-17"),
+          totalAmount: 350,
+          sourceDocument: "PAYMENT_OUT",
+          narration: "Payment to Supplier XYZ",
+        },
+      });
+    });
+    testPaymentOutVoucherId = paymentOutVoucher.id;
   });
 
   afterAll(async () => {
@@ -331,6 +350,48 @@ describe("Dashboard All Transactions & Transaction by ID (Integration Test Suite
     expect(body.type).toBe("Payment In");
     expect(body.txnNo).toBe("REC-DASH-001");
     expect(body.amount).toBe(500);
+    expect(body.link).toBe(`/sales/payment-in/${testVoucherId}`);
+  });
+
+  it("should get Payment Out transaction details by ID with proper type and link", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/v1/dashboard/all-transactions/${testPaymentOutVoucherId}`,
+      headers: headers(tenantAToken, tenantAOrgId, tenantACompanyId),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.id).toBe(testPaymentOutVoucherId);
+    expect(body.rawType).toBe("PAYMENT_OUT");
+    expect(body.type).toBe("Payment Out");
+    expect(body.txnNo).toBe("PAY-DASH-001");
+    expect(body.amount).toBe(350);
+    expect(body.link).toBe(`/purchases/payment-out/${testPaymentOutVoucherId}`);
+  });
+
+  it("should filter all transactions by type=payment-in and type=payment-out", async () => {
+    const resIn = await app.inject({
+      method: "GET",
+      url: "/api/v1/dashboard/all-transactions?type=payment-in",
+      headers: headers(tenantAToken, tenantAOrgId, tenantACompanyId),
+    });
+    expect(resIn.statusCode).toBe(200);
+    const bodyIn = JSON.parse(resIn.body);
+    expect(bodyIn.items.length).toBeGreaterThanOrEqual(1);
+    expect(bodyIn.items.some((it: any) => it.id === testVoucherId)).toBe(true);
+    expect(bodyIn.items.every((it: any) => it.type === "Payment In")).toBe(true);
+
+    const resOut = await app.inject({
+      method: "GET",
+      url: "/api/v1/dashboard/all-transactions?type=payment-out",
+      headers: headers(tenantAToken, tenantAOrgId, tenantACompanyId),
+    });
+    expect(resOut.statusCode).toBe(200);
+    const bodyOut = JSON.parse(resOut.body);
+    expect(bodyOut.items.length).toBeGreaterThanOrEqual(1);
+    expect(bodyOut.items.some((it: any) => it.id === testPaymentOutVoucherId)).toBe(true);
+    expect(bodyOut.items.every((it: any) => it.type === "Payment Out")).toBe(true);
   });
 
   it("should return 404 for non-existent transaction ID", async () => {
