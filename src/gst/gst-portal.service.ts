@@ -1100,8 +1100,11 @@ export class GstPortalService {
 
   private invoiceDraft(invoice: any): EInvoiceDraft {
     const buyerAddress = addressOf(invoice.billingAddress ?? invoice.party.billingAddress);
+    const isExport = invoice.category === "EXPORT_INVOICE" || invoice.isExport;
+    const docType: "INV" | "CRN" | "DBN" =
+      invoice.category === "CREDIT_NOTE" ? "CRN" : invoice.category === "DEBIT_NOTE" ? "DBN" : "INV";
     return {
-      documentType: "INV",
+      documentType: docType,
       documentNumber: invoice.invoiceNumber,
       documentDate: nicDate(invoice.invoiceDate),
       supplier: {
@@ -1114,11 +1117,11 @@ export class GstPortalService {
         stateCode: invoice.company.stateCode,
       },
       buyer: {
-        gstin: invoice.party.gstin || "",
+        gstin: invoice.party.gstin || (isExport ? "URP" : ""),
         legalName: invoice.party.name,
         address1: buyerAddress.line || "Address not captured",
         location: buyerAddress.city || invoice.party.stateCode,
-        pin: buyerAddress.pin,
+        pin: buyerAddress.pin || (isExport ? 999999 : 0),
         stateCode: invoice.party.stateCode,
         placeOfSupply: invoice.placeOfSupply,
       },

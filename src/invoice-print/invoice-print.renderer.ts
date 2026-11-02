@@ -216,7 +216,18 @@ export async function renderInvoiceHtml(input: {
   const s = input.settings;
   const layout = themeLayout(s.themeId || s.festiveTheme);
   const upiQrDataUrl = await generateUpiQrDataUrl(input.company, input.invoice);
-  const ctx = buildCtx({ ...input, upiQrDataUrl });
+  let eInvoiceQrDataUrl: string | undefined;
+  const eInvoice = input.invoice?.eInvoiceRecord;
+  if (eInvoice?.signedQrCode) {
+    try {
+      eInvoiceQrDataUrl = await QRCode.toDataURL(eInvoice.signedQrCode, {
+        width: 100,
+        margin: 1,
+        errorCorrectionLevel: "M",
+      });
+    } catch {}
+  }
+  const ctx = buildCtx({ ...input, upiQrDataUrl, eInvoice, eInvoiceQrDataUrl });
   if (layout === "luxury") return wrapPage(luxuryCss(s), luxuryBody(ctx), ctx.docTitle, s);
   if (layout === "festival") return wrapPage(festivalCss(s), festivalBody(ctx), ctx.docTitle, s);
   if (layout === "stylish" || layout === "modern" || layout === "simple" || layout === "billbook" || layout === "custom") {
@@ -225,7 +236,29 @@ export async function renderInvoiceHtml(input: {
   return wrapPage(tallyCss(s, layout), tallyBody(ctx, layout), ctx.docTitle, s);
 }
 
-function buildCtx(input: { settings: any; company: any; invoice: any; copyType: string; upiQrDataUrl?: string }) {
+function einvoiceHeaderHtml(ctx: any): string {
+  const einv = ctx.eInvoice;
+  if (!einv) return "";
+  const isCnl = einv.status === "CNL";
+  if (isCnl) {
+    return `<div style="border: 2px dashed #dc2626; background: #fef2f2; color: #b91c1c; padding: 6px 10px; margin-bottom: 8px; border-radius: 4px; font-size: 8.5px;">
+      <div style="font-weight: bold; font-size: 10px; text-transform: uppercase;">⚠️ CANCELLED E-INVOICE</div>
+      <div><b>IRN:</b> <span style="font-family: monospace; font-size: 8px;">${esc(einv.irn)}</span></div>
+      <div><b>Ack No:</b> ${esc(einv.ackNo)} &nbsp;|&nbsp; <b>Ack Date:</b> ${esc(formatDate(einv.ackDate))} &nbsp;|&nbsp; <b>Cancelled At:</b> ${esc(formatDate(einv.cancelledAt))}</div>
+      ${einv.cancelReason ? `<div><b>Cancel Reason:</b> ${esc(einv.cancelReason)}</div>` : ""}
+    </div>`;
+  }
+  return `<div style="border: 1.5px solid #059669; background: #f0fdf4; color: #065f46; padding: 6px 10px; margin-bottom: 8px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+    <div style="font-size: 8.5px; line-height: 1.35; flex: 1;">
+      <div style="font-weight: bold; font-size: 9.5px; color: #047857; margin-bottom: 2px;">GST E-INVOICE (IRP ACKNOWLEDGED)</div>
+      <div style="word-break: break-all;"><b>IRN:</b> <span style="font-family: monospace; font-size: 7.5px;">${esc(einv.irn)}</span></div>
+      <div style="margin-top: 2px;"><b>Ack No:</b> ${esc(einv.ackNo)} &nbsp;|&nbsp; <b>Ack Date:</b> ${esc(formatDate(einv.ackDate))}</div>
+    </div>
+    ${ctx.eInvoiceQrDataUrl ? `<div style="text-align: center; margin-left: 10px; flex-shrink: 0;"><img src="${ctx.eInvoiceQrDataUrl}" alt="IRP Signed QR" style="width: 70px; height: 70px; display: block; border: 1px solid #10b981; background: #fff;"/><span style="font-size: 7px; color: #047857; font-weight: 600;">IRP Signed QR</span></div>` : ""}
+  </div>`;
+}
+
+function buildCtx(input: { settings: any; company: any; invoice: any; copyType: string; upiQrDataUrl?: string; eInvoice?: any; eInvoiceQrDataUrl?: string }) {
   const s = input.settings;
   const c = input.company || {};
   const inv = input.invoice || {};
@@ -255,6 +288,8 @@ function buildCtx(input: { settings: any; company: any; invoice: any; copyType: 
     phoneIcon,
     locIcon,
     upiQrDataUrl: input.upiQrDataUrl,
+    eInvoice: input.eInvoice,
+    eInvoiceQrDataUrl: input.eInvoiceQrDataUrl,
     terms:
       inv.termsAndConditions ||
       (typeof s.termsAndConditions === "object" && s.termsAndConditions?.sales) ||
@@ -511,6 +546,7 @@ function tallyBody(ctx: any, layout: InvoiceLayout = "tally") {
     .join("");
   const taxTotal = Number(inv.cgstAmount || 0) + Number(inv.sgstAmount || 0) + Number(inv.igstAmount || 0);
   return `<div class="sheet">
+    ${einvoiceHeaderHtml(ctx)}
     <div class="topbar"><span>${esc(ctx.docTitle)}</span><span class="copy">${esc(ctx.copyLabel)}</span></div>
     <div class="grid2">
       <div class="cell">
@@ -614,6 +650,7 @@ function luxuryBody(ctx: any) {
   const party = ctx.party;
   const taxTotal = Number(inv.cgstAmount || 0) + Number(inv.sgstAmount || 0) + Number(inv.igstAmount || 0);
   return `<div class="sheet">
+    ${einvoiceHeaderHtml(ctx)}
     <div class="lux-head">
       <div>
         <div class="name">${esc(c.tradeName || c.legalName)}</div>
@@ -713,6 +750,7 @@ function stylishBody(ctx: any, layout: InvoiceLayout = "stylish") {
         : `<div class="logo-mark">${initial}</div>`
       : "";
   return `<div class="sheet ${esc(layout)}">
+    ${einvoiceHeaderHtml(ctx)}
     ${logo}
     ${layout === "simple" ? "" : `<div class="stamp">${esc(ctx.docTitle)} &nbsp; ${esc(ctx.copyLabel)}</div>`}
     <div class="name">${esc(c.tradeName || c.legalName)}</div>
@@ -1090,6 +1128,7 @@ function festivalBody(ctx: any) {
     ${bgDataUri ? `<div class="festive-bg"><img src="${bgDataUri}" alt="Festive Theme"/></div>` : ""}
 
     <div class="festive-content">
+      ${einvoiceHeaderHtml(ctx)}
       <!-- Top Header Row -->
       <div class="fest-top-bar">
         <div>

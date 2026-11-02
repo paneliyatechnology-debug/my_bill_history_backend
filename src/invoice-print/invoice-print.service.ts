@@ -250,6 +250,7 @@ export class InvoicePrintService {
         include: {
           party: true,
           branch: true,
+          eInvoiceRecord: true,
           items: {
             include: {
               item: {
