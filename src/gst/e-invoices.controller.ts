@@ -40,7 +40,7 @@ const cancellers = [
   UserRole.ACCOUNTANT,
 ];
 
-@Controller("e-invoices")
+@Controller(["e-invoices", "sales/e-invoices", "gst/e-invoices", "gst/einvoices"])
 export class EInvoicesController {
   constructor(private readonly service: EInvoicesService) {}
 
@@ -116,7 +116,7 @@ export class EInvoicesController {
   }
 }
 
-@Controller("settings/e-invoice")
+@Controller(["settings/e-invoice", "gst/settings/e-invoice"])
 export class EInvoicesSettingsController {
   constructor(private readonly service: EInvoicesService) {}
 
