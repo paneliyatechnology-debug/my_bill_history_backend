@@ -856,5 +856,23 @@ describe("Purchase Returns & Debit Notes Workflow Integration", () => {
     expect(detail.party).toBeDefined();
     expect(detail.purchaseInvoice).toBeDefined();
     expect(detail.items).toBeDefined();
+
+    // Verify GET /api/v1/purchases/debit-notes/:id alias
+    const debitNoteRes = await app.inject({
+      method: "GET",
+      url: `/api/v1/purchases/debit-notes/${singleReturnId}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    expect(debitNoteRes.statusCode).toBe(200);
+    expect(JSON.parse(debitNoteRes.body).id).toBe(singleReturnId);
+
+    // Verify GET /api/v1/purchases/invoices/debit-notes/:id alias
+    const invDebitNoteRes = await app.inject({
+      method: "GET",
+      url: `/api/v1/purchases/invoices/debit-notes/${singleReturnId}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    expect(invDebitNoteRes.statusCode).toBe(200);
+    expect(JSON.parse(invDebitNoteRes.body).id).toBe(singleReturnId);
   });
 });

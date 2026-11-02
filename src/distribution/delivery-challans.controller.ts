@@ -16,7 +16,7 @@ import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import { TenantContext, UserRole } from "@billing/shared-types";
 
-@Controller(["distribution/challans", "sales/challans"])
+@Controller(["distribution/challans", "sales/challans", "sales/delivery-challan", "sales/delivery-challans"])
 export class DeliveryChallansController {
   constructor(private readonly service: DeliveryChallansService) {}
 

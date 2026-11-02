@@ -23,6 +23,7 @@ import { QueryPurchaseReturnsDto } from "./dto/query-purchase-returns.dto";
   "purchases/debit-notes",
   "purchases/returns",
   "debit-notes",
+  "purchases/invoices/debit-notes",
 ])
 export class PurchaseReturnsController {
   constructor(private readonly purchasesService: PurchasesService) {}

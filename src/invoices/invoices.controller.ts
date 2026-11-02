@@ -377,6 +377,9 @@ export class InvoicesController {
     @Param("id") id: string,
     @CurrentTenant() tenant: TenantContext,
   ) {
+    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      throw new NotFoundException(`Sales invoice ${id} not found.`);
+    }
     return await this.invoicesService.getSalesInvoiceById(id, tenant);
   }
 

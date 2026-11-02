@@ -38,6 +38,7 @@ export type InvoiceLayout =
   | "modern"
   | "simple"
   | "billbook"
+  | "custom"
   | "festival";
 
 export const INVOICE_THEMES: Array<{
@@ -136,6 +137,14 @@ export const INVOICE_THEMES: Array<{
     paper: "A4",
     layout: "billbook",
     description: "Large trade name with a solid colour footer.",
+  },
+  {
+    id: "custom",
+    name: "Custom Theme",
+    group: "standard",
+    paper: "A4",
+    layout: "custom",
+    description: "Custom designed theme layout.",
   },
 ];
 

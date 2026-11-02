@@ -219,7 +219,7 @@ export async function renderInvoiceHtml(input: {
   const ctx = buildCtx({ ...input, upiQrDataUrl });
   if (layout === "luxury") return wrapPage(luxuryCss(s), luxuryBody(ctx), ctx.docTitle, s);
   if (layout === "festival") return wrapPage(festivalCss(s), festivalBody(ctx), ctx.docTitle, s);
-  if (layout === "stylish" || layout === "modern" || layout === "simple" || layout === "billbook") {
+  if (layout === "stylish" || layout === "modern" || layout === "simple" || layout === "billbook" || layout === "custom") {
     return wrapPage(stylishCss(s, layout), stylishBody(ctx, layout), ctx.docTitle, s);
   }
   return wrapPage(tallyCss(s, layout), tallyBody(ctx, layout), ctx.docTitle, s);

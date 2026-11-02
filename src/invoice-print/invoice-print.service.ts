@@ -61,25 +61,40 @@ const THEME_ALIASES: Record<string, string> = {
   navratri_1: "navratri",
   navratri_2: "navratri",
   durga_puja_1: "durga_puja",
+  durga_puja_2: "durga_puja",
   dussehra_1: "dussehra",
+  dussehra_2: "dussehra",
   uttarayan_1: "uttarayan",
+  uttarayan_2: "uttarayan",
   independence_1: "independence",
+  independence_2: "independence",
   ganesh_chaturthi_1: "ganesh_chaturthi",
+  ganesh_chaturthi_2: "ganesh_chaturthi",
   navaratri: "navratri",
+  navaratri_1: "navratri",
+  navaratri_2: "navratri",
   logo: "your_logo",
+  logo_1: "your_logo",
+  your_logo_1: "your_logo",
   ganesh: "ganesh_chaturthi",
   compact: "advanced_compact",
   thermal_80: "stylish",
   corporate: "modern",
+  tally: "advanced_gst_tally",
+  gst: "advanced_gst",
+  lite: "tallybook_lite",
+  custom: "custom",
 };
 
 import { InvoicePdfService } from "./invoice-pdf.service";
+import { InvoiceThemeManagerService } from "./invoice-theme-manager.service";
 
 @Injectable()
 export class InvoicePrintService {
   constructor(
     private readonly prisma: DatabaseService,
     private readonly invoicePdfService: InvoicePdfService,
+    private readonly themeManager?: InvoiceThemeManagerService,
   ) {}
 
   catalog() {
@@ -104,9 +119,13 @@ export class InvoicePrintService {
     const data: any = {};
 
     if (dto.themeId !== undefined) {
-      const rawThemeId = dto.themeId;
+      const rawThemeId = (dto.themeId === "festival" && dto.festiveTheme) ? dto.festiveTheme : dto.themeId;
       const themeId = THEME_ALIASES[rawThemeId] || rawThemeId;
-      if (!INVOICE_THEMES.some((t) => t.id === themeId)) {
+      const isKnownTheme =
+        INVOICE_THEMES.some((t) => t.id === themeId) ||
+        (this.themeManager ? this.themeManager.getThemeById(themeId) !== undefined : false) ||
+        themeId === "custom";
+      if (!isKnownTheme) {
         throw new BadRequestException("Unknown invoice theme.");
       }
       data.themeId = themeId;
@@ -201,10 +220,10 @@ export class InvoicePrintService {
     }
     let settings = this.withShareTheme(await this.ensureSettings(effectiveTenant), share);
     if (themeId) {
-      if (!INVOICE_THEMES.some((t) => t.id === themeId)) {
-        throw new BadRequestException("Unknown invoice theme.");
+      const resolved = THEME_ALIASES[themeId] || themeId;
+      if (INVOICE_THEMES.some((t) => t.id === resolved) || resolved === "custom") {
+        settings = { ...settings, themeId: resolved };
       }
-      settings = { ...settings, themeId };
     }
     if (accentColor) settings = { ...settings, accentColor };
     const company = await this.loadCompany(effectiveTenant);
