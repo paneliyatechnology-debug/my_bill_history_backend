@@ -87,18 +87,43 @@ describe("Automated Billing / Recurring Invoices Integration Test Suite", () => 
     const partyData = JSON.parse(partyRes.body);
     customerIdA = partyData.id;
 
-    // 4. Create an Item for Tenant A
+    // 4. Fetch UOM and create a Service Item for Tenant A
+    const uomRes = await app.inject({
+      method: "GET",
+      url: "/api/v1/units",
+      headers: { authorization: `Bearer ${tenantTokenA}` },
+    });
+    const uoms = JSON.parse(uomRes.body);
+    const uomList = Array.isArray(uoms) ? uoms : uoms.items || [];
+    let uomId: string;
+    if (uomList.length > 0) {
+      uomId = uomList[0].id;
+    } else {
+      const createUom = await app.inject({
+        method: "POST",
+        url: "/api/v1/units",
+        headers: { authorization: `Bearer ${tenantTokenA}` },
+        payload: { name: "Pieces", symbol: "PCS" },
+      });
+      uomId = JSON.parse(createUom.body).id;
+    }
+
     const itemRes = await app.inject({
       method: "POST",
       url: "/api/v1/items",
       headers: { authorization: `Bearer ${tenantTokenA}` },
       payload: {
+        type: "SERVICE",
         name: "Monthly AMC Service",
+        sku: `AMC-SRV-${Date.now()}`,
         salePrice: 1500,
+        retailPrice: 1500,
         taxRate: 18,
         hsnCode: "998313",
+        primaryUomId: uomId,
       },
     });
+    expect(itemRes.statusCode).toBe(201);
     const itemData = JSON.parse(itemRes.body);
     itemIdA = itemData.id;
   });
