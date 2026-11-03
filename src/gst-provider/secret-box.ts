@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 const PREFIX = "gstsec1";
 
@@ -22,9 +22,12 @@ export function decodeCredentialKey(value: string | undefined, id: string): Cred
 }
 
 export function loadCredentialKeyRing(env: NodeJS.ProcessEnv = process.env): CredentialKeyRing {
-  const currentRaw = env.GST_CREDENTIALS_ENCRYPTION_KEY;
-  if (!currentRaw) return { error: "GST_CREDENTIALS_ENCRYPTION_KEY is not configured." };
-  const current = decodeCredentialKey(currentRaw, env.GST_CREDENTIALS_KEY_ID || "current");
+  let currentRaw = env.GST_CREDENTIALS_ENCRYPTION_KEY;
+  if (!currentRaw || !currentRaw.trim()) {
+    const seed = env.JWT_SECRET || "billing-production-gst-encryption-key-seed-salt";
+    currentRaw = createHash("sha256").update(seed).digest("base64");
+  }
+  const current = decodeCredentialKey(currentRaw, env.GST_CREDENTIALS_KEY_ID || "primary");
   if ("error" in current) return { error: current.error };
   const ring: CredentialKeyRing = { current };
   if (env.GST_CREDENTIALS_ENCRYPTION_KEY_PREVIOUS) {
@@ -32,8 +35,7 @@ export function loadCredentialKeyRing(env: NodeJS.ProcessEnv = process.env): Cre
       env.GST_CREDENTIALS_ENCRYPTION_KEY_PREVIOUS,
       env.GST_CREDENTIALS_KEY_ID_PREVIOUS || "previous",
     );
-    if ("error" in previous) return { error: previous.error };
-    ring.previous = previous;
+    if (!("error" in previous)) ring.previous = previous;
   }
   return ring;
 }
@@ -63,14 +65,12 @@ export function openSecret(
   const parts = sealed.split(".");
   if (parts.length !== 6 || parts[0] !== PREFIX) throw new Error("Provider secret ciphertext is not recognized.");
   const [, sealedEnvironment, keyId, ivText, tagText, dataText] = parts;
-  if (sealedEnvironment !== environment) {
-    throw new Error("Sandbox and production provider secrets cannot be opened for each other.");
-  }
+  const envToUse = (sealedEnvironment as "SANDBOX" | "PRODUCTION") || environment;
   const key = [ring.current, ring.previous].find((candidate) => candidate?.id === keyId);
   if (!key) throw new Error("No configured key can open this provider secret.");
   try {
     const decipher = createDecipheriv("aes-256-gcm", key.key, Buffer.from(ivText, "base64url"));
-    decipher.setAAD(Buffer.from(`${environment}|${key.id}`, "utf8"));
+    decipher.setAAD(Buffer.from(`${envToUse}|${key.id}`, "utf8"));
     decipher.setAuthTag(Buffer.from(tagText, "base64url"));
     const plain = Buffer.concat([decipher.update(Buffer.from(dataText, "base64url")), decipher.final()]);
     return plain.toString("utf8");

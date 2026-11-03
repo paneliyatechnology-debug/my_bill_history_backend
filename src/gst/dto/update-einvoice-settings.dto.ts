@@ -8,5 +8,8 @@ export class UpdateEInvoiceSettingsDto {
   ewayUsername?: string;
   clientSecret?: string;
   password?: string;
+  ewayClientSecret?: string;
+  ewayPassword?: string;
+  einvoiceBaseUrl?: string;
+  ewayBaseUrl?: string;
 }
-

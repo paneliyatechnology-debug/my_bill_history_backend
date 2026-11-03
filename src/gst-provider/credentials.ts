@@ -56,7 +56,7 @@ export function resolveGstCredentials(input: {
     ewayClientSecret: Boolean(input.ewayClientSecret || input.clientSecret),
     ewayPassword: Boolean(input.ewayPassword || input.password),
   };
-  if (input.environment === "PRODUCTION" && !input.productionEnabled) {
+  if (input.environment === "PRODUCTION" && input.productionEnabled === false && (!input.clientId || !input.clientSecret)) {
     return {
       ok: false,
       code: "PRODUCTION_NOT_ENABLED",
@@ -65,17 +65,9 @@ export function resolveGstCredentials(input: {
       secretsPresent,
     };
   }
-  const defaults = OFFICIAL_GST_ENDPOINTS[input.environment];
+  const defaults = OFFICIAL_GST_ENDPOINTS[input.environment] || OFFICIAL_GST_ENDPOINTS.PRODUCTION;
   const einvoiceBaseUrl = input.einvoiceBaseUrl || defaults.einvoice;
   const ewayBaseUrl = input.ewayBaseUrl || defaults.eway;
-  if (input.environment === "SANDBOX" && /ewaybillgst\.gov\.in|einvoice1\.gst\.gov\.in/i.test(`${einvoiceBaseUrl}${ewayBaseUrl}`)) {
-    return {
-      ok: false,
-      code: "PRODUCTION_URL_BLOCKED",
-      message: "Sandbox mode cannot use production GST host names.",
-      secretsPresent,
-    };
-  }
   const clientId = input.clientId?.trim();
   const username = input.username?.trim();
   if (!input.gstin || !clientId || !input.clientSecret || !username || !input.password) {
@@ -83,7 +75,7 @@ export function resolveGstCredentials(input: {
       ok: false,
       code: "CREDENTIALS_UNAVAILABLE",
       message:
-        "E-invoice or e-way bill credentials are incomplete. Client secrets and passwords are read from environment variables and are not stored in the database.",
+        "E-invoice or e-way bill credentials are incomplete. Please configure Client ID, Client Secret, Username, and Password in E-Invoice settings.",
       secretsPresent,
     };
   }

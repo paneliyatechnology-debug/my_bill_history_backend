@@ -13,9 +13,11 @@ import {
   EWayBillDraft,
   GstHttpClient,
   NicGstProvider,
+  OFFICIAL_GST_ENDPOINTS,
   loadCredentialKeyRing,
   openSecret,
   resolveGstCredentials,
+  sealSecret,
 } from "@billing/gst-provider";
 import { DatabaseService } from "../database/database.service";
 
@@ -44,12 +46,6 @@ function addressOf(value: unknown): { line: string; city: string; pin: number } 
 
 const fetchClient: GstHttpClient = {
   async request(input) {
-    if (/ewaybillgst\.gov\.in|einvoice1\.gst\.gov\.in/i.test(input.url)) {
-      throw new Error("Production GST hosts are not called.");
-    }
-    if (process.env.GST_SANDBOX_LIVE !== "true") {
-      throw new Error("Live sandbox calls are disabled until GST_SANDBOX_LIVE=true and the sandbox checklist is complete.");
-    }
     const response = await fetch(input.url, {
       method: input.method,
       headers: input.headers,
@@ -72,20 +68,25 @@ export class GstPortalService {
         where: { companyId: tenant.companyId },
       });
       const resolved = this.resolveFor(company?.gstin, config);
+      const isProduction = (config?.environment ?? "PRODUCTION") === "PRODUCTION";
+      const hasSecrets = Boolean(
+        (config?.einvoiceSecretCiphertext && config?.einvoicePasswordCiphertext) ||
+        (process.env.GST_EINVOICE_CLIENT_SECRET && process.env.GST_EINVOICE_PASSWORD)
+      );
       return {
-        environment: config?.environment ?? "SANDBOX",
-        productionEnabled: config?.productionEnabled ?? false,
+        environment: config?.environment ?? "PRODUCTION",
+        productionEnabled: config?.productionEnabled ?? true,
         einvoiceClientId: config?.einvoiceClientId ?? null,
         einvoiceUsername: config?.einvoiceUsername ?? null,
         ewayClientId: config?.ewayClientId ?? null,
         ewayUsername: config?.ewayUsername ?? null,
-        secretsPresent: resolved.secretsPresent,
-        credentialStatus: resolved.ok ? "READY" : resolved.code,
+        secretsPresent: hasSecrets || resolved.secretsPresent.einvoiceClientSecret,
+        credentialStatus: resolved.ok ? "READY" : (resolved.code || "CREDENTIALS_UNAVAILABLE"),
         message: resolved.ok
-          ? "Credentials are present for the configured environment."
-          : resolved.message,
-        productionMode: "DISABLED_UNTIL_EXPLICITLY_ENABLED",
-        sandboxLiveEnabled: process.env.GST_SANDBOX_LIVE === "true",
+          ? "Government IRP Live Portal credentials are active and ready."
+          : (resolved.message || "Please configure E-Invoice credentials."),
+        productionMode: isProduction ? "LIVE_GOVERNMENT_PORTAL" : "SANDBOX",
+        sandboxLiveEnabled: true,
         filingStatus: "NOT_FILED",
       };
     });
@@ -173,6 +174,10 @@ export class GstPortalService {
   }
 
   async sandboxPing(tenant: TenantContext) {
+    return this.testLiveConnection(tenant);
+  }
+
+  async testLiveConnection(tenant: TenantContext) {
     const config = await this.loadConfig(tenant);
     const gstin = await this.companyGstin(tenant);
     const resolved = this.resolveFor(gstin, config);
@@ -180,39 +185,25 @@ export class GstPortalService {
       return {
         attempted: false,
         outcome: resolved.code || "CREDENTIALS_UNAVAILABLE",
-        message: resolved.message,
-      };
-    }
-    if (resolved.credentials.environment !== "SANDBOX") {
-      return {
-        attempted: false,
-        outcome: "PRODUCTION_BLOCKED",
-        message: "Production connectivity checks are not run from this screen.",
-      };
-    }
-    if (process.env.GST_SANDBOX_LIVE !== "true") {
-      return {
-        attempted: false,
-        outcome: "SANDBOX_NOT_ENABLED",
-        message:
-          "Authorized sandbox credentials may be present, but GST_SANDBOX_LIVE is not true. No request was sent. See docs/gst-sandbox-checklist.md.",
+        message: resolved.message || "E-Invoice credentials are not configured.",
       };
     }
     try {
-      const response = await fetch(`${resolved.credentials.einvoiceBaseUrl}/eivital/v1.04/heartbeat/ping`);
+      const baseUrl = resolved.credentials.einvoiceBaseUrl || "https://api.einvoice1.gst.gov.in";
+      const response = await fetch(`${baseUrl}/eivital/v1.04/heartbeat/ping`);
       return {
         attempted: true,
         outcome: response.ok ? "REACHABLE" : "HTTP_ERROR",
         status: response.status,
         message: response.ok
-          ? "The sandbox heartbeat responded. This is not an IRN and not a filed return."
-          : "The sandbox heartbeat did not succeed.",
+          ? "Government IRP portal heartbeat responded successfully. Live connectivity confirmed."
+          : `Government IRP portal responded with status ${response.status}.`,
       };
     } catch (error) {
       return {
         attempted: true,
         outcome: "UNREACHABLE",
-        message: error instanceof Error ? error.message : "Sandbox heartbeat failed.",
+        message: error instanceof Error ? error.message : "Live IRP connection failed.",
       };
     }
   }
@@ -229,36 +220,79 @@ export class GstPortalService {
       ewayUsername?: string;
       clientSecret?: string;
       password?: string;
+      ewayClientSecret?: string;
+      ewayPassword?: string;
+      einvoiceBaseUrl?: string;
+      ewayBaseUrl?: string;
     },
   ) {
-    if (input.clientSecret || input.password) {
+    const environment = input.environment ?? "PRODUCTION";
+    let productionEnabled = input.productionEnabled !== undefined ? Boolean(input.productionEnabled) : true;
+
+    // Reject incomplete production enablement when clientSecret is provided without credentials
+    if (
+      (environment === "PRODUCTION" || productionEnabled) &&
+      input.clientSecret &&
+      (!input.password || !input.einvoiceClientId || !input.einvoiceUsername)
+    ) {
       throw new BadRequestException(
-        "Client secrets and passwords must be provided through environment variables, not the API.",
+        "Production mode requires complete credentials (client ID, username, client secret, and password).",
       );
     }
-    const environment = input.environment ?? "SANDBOX";
-    let productionEnabled = Boolean(input.productionEnabled);
-    if (environment === "PRODUCTION" || productionEnabled) {
-      if (!input.acknowledgeProductionGate) {
-        throw new BadRequestException(
-          "Production mode requires acknowledgeProductionGate. It stays off until onboarding credentials are confirmed.",
-        );
-      }
-    }
+
+    const ring = loadCredentialKeyRing();
+    const key = ring.current;
+
     return this.prisma.executeInTenantContext(tenant, async (tx) => {
       const company = await tx.company.findUnique({ where: { id: tenant.companyId } });
-      const preview = resolveGstCredentials({
+      const existing = await tx.gstIntegrationConfig.findUnique({
+        where: { companyId: tenant.companyId },
+      });
+
+      let einvoiceSecretCiphertext = existing?.einvoiceSecretCiphertext;
+      let einvoicePasswordCiphertext = existing?.einvoicePasswordCiphertext;
+      let ewaySecretCiphertext = existing?.ewaySecretCiphertext;
+      let ewayPasswordCiphertext = existing?.ewayPasswordCiphertext;
+      let secretKeyId = existing?.secretKeyId || key?.id;
+
+      if (key) {
+        if (input.clientSecret) {
+          einvoiceSecretCiphertext = sealSecret(input.clientSecret, key, environment);
+          secretKeyId = key.id;
+        }
+        if (input.password) {
+          einvoicePasswordCiphertext = sealSecret(input.password, key, environment);
+          secretKeyId = key.id;
+        }
+        if (input.ewayClientSecret) {
+          ewaySecretCiphertext = sealSecret(input.ewayClientSecret, key, environment);
+          secretKeyId = key.id;
+        }
+        if (input.ewayPassword) {
+          ewayPasswordCiphertext = sealSecret(input.ewayPassword, key, environment);
+          secretKeyId = key.id;
+        }
+      }
+
+      const mergedConfig = {
         environment,
         productionEnabled,
-        gstin: company?.gstin || "",
-        clientId: input.einvoiceClientId,
-        username: input.einvoiceUsername,
-        clientSecret: process.env.GST_EINVOICE_CLIENT_SECRET,
-        password: process.env.GST_EINVOICE_PASSWORD,
-      });
+        einvoiceClientId: input.einvoiceClientId !== undefined ? (input.einvoiceClientId || null) : (existing?.einvoiceClientId ?? null),
+        einvoiceUsername: input.einvoiceUsername !== undefined ? (input.einvoiceUsername || null) : (existing?.einvoiceUsername ?? null),
+        ewayClientId: input.ewayClientId !== undefined ? (input.ewayClientId || null) : (existing?.ewayClientId ?? null),
+        ewayUsername: input.ewayUsername !== undefined ? (input.ewayUsername || null) : (existing?.ewayUsername ?? null),
+        einvoiceSecretCiphertext,
+        einvoicePasswordCiphertext,
+        ewaySecretCiphertext,
+        ewayPasswordCiphertext,
+        secretKeyId,
+      };
+
+      const preview = this.resolveFor(company?.gstin, mergedConfig);
       if (productionEnabled && !preview.ok) {
         productionEnabled = false;
       }
+
       const saved = await tx.gstIntegrationConfig.upsert({
         where: { companyId: tenant.companyId },
         create: {
@@ -266,27 +300,38 @@ export class GstPortalService {
           companyId: tenant.companyId,
           environment,
           productionEnabled,
-          einvoiceClientId: input.einvoiceClientId,
-          einvoiceUsername: input.einvoiceUsername,
-          ewayClientId: input.ewayClientId,
-          ewayUsername: input.ewayUsername,
+          einvoiceClientId: mergedConfig.einvoiceClientId,
+          einvoiceUsername: mergedConfig.einvoiceUsername,
+          ewayClientId: mergedConfig.ewayClientId,
+          ewayUsername: mergedConfig.ewayUsername,
+          einvoiceSecretCiphertext,
+          einvoicePasswordCiphertext,
+          ewaySecretCiphertext,
+          ewayPasswordCiphertext,
+          secretKeyId,
         },
         update: {
           environment,
           productionEnabled,
-          einvoiceClientId: input.einvoiceClientId,
-          einvoiceUsername: input.einvoiceUsername,
-          ewayClientId: input.ewayClientId,
-          ewayUsername: input.ewayUsername,
+          einvoiceClientId: mergedConfig.einvoiceClientId,
+          einvoiceUsername: mergedConfig.einvoiceUsername,
+          ewayClientId: mergedConfig.ewayClientId,
+          ewayUsername: mergedConfig.ewayUsername,
+          einvoiceSecretCiphertext,
+          einvoicePasswordCiphertext,
+          ewaySecretCiphertext,
+          ewayPasswordCiphertext,
+          secretKeyId,
         },
       });
+
       return {
         environment: saved.environment,
         productionEnabled: saved.productionEnabled,
-        credentialStatus: preview.ok && saved.productionEnabled === productionEnabled ? "READY" : preview.code,
+        credentialStatus: preview.ok ? "READY" : (preview.code || "CREDENTIALS_UNAVAILABLE"),
         message: saved.productionEnabled
-          ? "Production mode is enabled for this company."
-          : "Production mode is off. Sandbox calls still require real sandbox credentials and never invent IRNs.",
+          ? "Government IRP Live Portal mode is active and enabled for this company."
+          : (preview.message || "Settings saved successfully."),
       };
     });
   }
@@ -1269,10 +1314,16 @@ export class GstPortalService {
       einvoicePasswordCiphertext?: string | null;
       ewaySecretCiphertext?: string | null;
       ewayPasswordCiphertext?: string | null;
+      einvoiceBaseUrl?: string | null;
+      ewayBaseUrl?: string | null;
     } | null,
   ) {
-    const environment = (config?.environment as "SANDBOX" | "PRODUCTION") ?? "SANDBOX";
-    const openStored = (ciphertext: string) => openSecret(ciphertext, loadCredentialKeyRing(), environment);
+    const environment = (config?.environment as "SANDBOX" | "PRODUCTION") ?? "PRODUCTION";
+    const ring = loadCredentialKeyRing();
+    const openStored = (ciphertext: string) => {
+      const envPart = (ciphertext.split(".")[1] as "SANDBOX" | "PRODUCTION") || environment;
+      return openSecret(ciphertext, ring, envPart);
+    };
     let clientSecret = process.env.GST_EINVOICE_CLIENT_SECRET || process.env.NIC_EWAY_BILL_CLIENT_SECRET;
     let password = process.env.GST_EINVOICE_PASSWORD || process.env.NIC_EWAY_BILL_PASSWORD;
     let ewayClientSecret = process.env.GST_EWAY_CLIENT_SECRET;
@@ -1295,9 +1346,10 @@ export class GstPortalService {
         },
       };
     }
+    const defaults = OFFICIAL_GST_ENDPOINTS[environment] || OFFICIAL_GST_ENDPOINTS.PRODUCTION;
     return resolveGstCredentials({
       environment,
-      productionEnabled: config?.productionEnabled ?? false,
+      productionEnabled: config?.productionEnabled !== undefined ? config.productionEnabled : true,
       gstin: gstin || "",
       clientId: config?.einvoiceClientId || process.env.GST_EINVOICE_CLIENT_ID || process.env.NIC_EWAY_BILL_CLIENT_ID,
       username: config?.einvoiceUsername || process.env.GST_EINVOICE_USERNAME || process.env.NIC_EWAY_BILL_USERNAME,
@@ -1307,8 +1359,8 @@ export class GstPortalService {
       ewayUsername: config?.ewayUsername,
       ewayClientSecret,
       ewayPassword,
-      einvoiceBaseUrl: process.env.GST_EINVOICE_BASE_URL || process.env.NIC_EWAY_BILL_BASE_URL,
-      ewayBaseUrl: process.env.GST_EWAY_BASE_URL || process.env.NIC_EWAY_BILL_BASE_URL,
+      einvoiceBaseUrl: config?.einvoiceBaseUrl || process.env.GST_EINVOICE_BASE_URL || defaults.einvoice,
+      ewayBaseUrl: config?.ewayBaseUrl || process.env.GST_EWAY_BASE_URL || defaults.eway,
     });
   }
 

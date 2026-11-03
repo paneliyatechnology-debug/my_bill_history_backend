@@ -164,6 +164,12 @@ export class GstController {
     return this.portal.sandboxPing(tenant);
   }
 
+  @Post(["integration/live-ping", "integration/test-connection"])
+  @Roles(...writers)
+  testLiveConnection(@CurrentTenant() tenant: TenantContext) {
+    return this.portal.testLiveConnection(tenant);
+  }
+
   @Put("integration")
   @Roles(...writers)
   saveIntegration(@CurrentTenant() tenant: TenantContext, @Body() body: any) {
