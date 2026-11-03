@@ -3481,6 +3481,40 @@ export class InvoicesService {
     return salesReturn;
   }
 
+  /**
+   * Reverses ledger account impacts and deletes accounting vouchers and journal entries.
+   */
+  private async reverseAndDeleteVouchers(tx: any, vouchers: any[]) {
+    for (const voucher of vouchers) {
+      if (voucher.journalEntries && voucher.journalEntries.length > 0) {
+        for (const entry of voucher.journalEntries) {
+          const acc = await tx.ledgerAccount.findUnique({
+            where: { id: entry.accountId },
+            include: { group: true },
+          });
+          if (acc && acc.group) {
+            const reversedBalance = applyTransactionToBalance(
+              acc.group.nature as any,
+              acc.currentBalance.toString(),
+              entry.creditAmount, // swap credit as debit to revert
+              entry.debitAmount,  // swap debit as credit to revert
+            );
+            await tx.ledgerAccount.update({
+              where: { id: acc.id },
+              data: { currentBalance: reversedBalance.toNumber() },
+            });
+          }
+        }
+      }
+      await tx.journalEntry.deleteMany({
+        where: { voucherId: voucher.id },
+      });
+      await tx.voucher.deleteMany({
+        where: { id: voucher.id },
+      });
+    }
+  }
+
   async deleteSalesReturn(id: string, tenant: TenantContext) {
     return this.prisma.executeInTenantContext(tenant, async (tx) => {
       const salesReturn = await tx.salesReturn.findFirst({
@@ -3510,15 +3544,18 @@ export class InvoicesService {
         }
       }
 
-      // 2. Remove accounting voucher and entries if posted
-      if (salesReturn.voucherId) {
-        await tx.journalEntry.deleteMany({
-          where: { voucherId: salesReturn.voucherId },
-        });
-        await tx.voucher.deleteMany({
-          where: { id: salesReturn.voucherId },
-        });
-      }
+      // 2. Remove accounting voucher and entries if posted and reverse ledger balances
+      const returnVouchers = await tx.voucher.findMany({
+        where: {
+          companyId: tenant.companyId,
+          OR: [
+            salesReturn.voucherId ? { id: salesReturn.voucherId } : null,
+            { sourceDocument: "SALES_RETURN", sourceEntityId: salesReturn.id },
+          ].filter(Boolean) as any,
+        },
+        include: { journalEntries: true },
+      });
+      await this.reverseAndDeleteVouchers(tx, returnVouchers);
 
       // 3. Remove stock transactions created for this return
       await tx.stockTransaction.deleteMany({
@@ -3872,26 +3909,74 @@ export class InvoicesService {
         });
       }
 
-      // 1. Remove outward debit notes / sales returns
-      await tx.salesReturnItem.deleteMany({
-        where: { returnDoc: { salesInvoiceId: id } },
-      });
-      await tx.salesReturn.deleteMany({
+      // 1. Process and remove linked sales returns and their vouchers/stock/items
+      const linkedReturns = await tx.salesReturn.findMany({
         where: { salesInvoiceId: id },
       });
-      await tx.outwardDebitNoteItem.deleteMany({
-        where: { note: { salesInvoiceId: id } },
-      });
-      await tx.outwardDebitNote.deleteMany({
-        where: { salesInvoiceId: id },
-      });
+      for (const ret of linkedReturns) {
+        const retVouchers = await tx.voucher.findMany({
+          where: {
+            companyId: tenant.companyId,
+            OR: [
+              ret.voucherId ? { id: ret.voucherId } : null,
+              { sourceDocument: "SALES_RETURN", sourceEntityId: ret.id },
+            ].filter(Boolean) as any,
+          },
+          include: { journalEntries: true },
+        });
+        await this.reverseAndDeleteVouchers(tx, retVouchers);
 
-      // 2. Remove payment allocations
+        await tx.stockTransaction.deleteMany({
+          where: {
+            companyId: tenant.companyId,
+            referenceDocType: "SALES_RETURN",
+            referenceDocId: ret.id,
+          },
+        });
+        await tx.salesReturnItem.deleteMany({
+          where: { returnId: ret.id },
+        });
+        await tx.salesReturn.delete({
+          where: { id: ret.id },
+        });
+      }
+
+      // 2. Process and remove linked outward debit notes
+      const linkedDebitNotes = await tx.outwardDebitNote.findMany({
+        where: { salesInvoiceId: id },
+      });
+      for (const note of linkedDebitNotes) {
+        const noteVouchers = await tx.voucher.findMany({
+          where: {
+            companyId: tenant.companyId,
+            OR: [
+              note.voucherId ? { id: note.voucherId } : null,
+              { sourceDocument: "OUTWARD_DEBIT_NOTE", sourceEntityId: note.id },
+            ].filter(Boolean) as any,
+          },
+          include: { journalEntries: true },
+        });
+        await this.reverseAndDeleteVouchers(tx, noteVouchers);
+
+        await tx.outwardDebitNoteItem.deleteMany({
+          where: { noteId: note.id },
+        });
+        await tx.outwardDebitNote.delete({
+          where: { id: note.id },
+        });
+      }
+
+      // 3. Remove payment allocations
       await tx.paymentAllocation.deleteMany({
         where: { invoiceId: id },
       });
 
-      // 3. Remove e-invoice and e-way bill records
+      // 4. Remove advance adjustments
+      await tx.advanceAdjustment.deleteMany({
+        where: { salesInvoiceId: id },
+      });
+
+      // 5. Remove e-invoice and e-way bill records
       await tx.eInvoiceRecord.deleteMany({
         where: { invoiceId: id },
       });
@@ -3899,23 +3984,67 @@ export class InvoicesService {
         where: { invoiceId: id },
       });
 
-      // 4. Remove stock transactions
+      // 6. Unlink converted delivery challans
+      await tx.deliveryChallan.updateMany({
+        where: { convertedInvoiceId: id },
+        data: { convertedInvoiceId: null },
+      });
+
+      // 7. Unlink automated billing runs
+      await tx.automatedBillingRun.updateMany({
+        where: { invoiceId: id },
+        data: { invoiceId: null },
+      });
+
+      // 8. Remove stock transactions
       await tx.stockTransaction.deleteMany({
         where: {
+          companyId: tenant.companyId,
           referenceDocType: "SALES_INVOICE",
           referenceDocId: id,
         },
       });
 
-      // 5. Remove items
+      // 9. Revert & delete vouchers created for this sales invoice
+      const invoiceVouchers = await tx.voucher.findMany({
+        where: {
+          companyId: tenant.companyId,
+          OR: [
+            { sourceDocument: "SALES_INVOICE", sourceEntityId: id },
+            { referenceNo: existing.invoiceNumber },
+          ],
+        },
+        include: { journalEntries: true },
+      });
+      await this.reverseAndDeleteVouchers(tx, invoiceVouchers);
+
+      // 10. Remove items
       await tx.salesInvoiceItem.deleteMany({
         where: { invoiceId: id },
       });
 
-      // 6. Remove sales invoice
+      // 11. Remove sales invoice
       await tx.salesInvoice.delete({
         where: { id },
       });
+
+      // 12. Audit log
+      await this.audit.record(
+        {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          userId: tenant.userId || "00000000-0000-0000-0000-000000000000",
+          action: "DELETE_SALES_INVOICE",
+          entityName: "SalesInvoice",
+          entityId: existing.id,
+          newState: {
+            deleted: true,
+            invoiceNumber: existing.invoiceNumber,
+            grandTotal: String(existing.grandTotal),
+          },
+        },
+        tx,
+      );
 
       return {
         success: true,

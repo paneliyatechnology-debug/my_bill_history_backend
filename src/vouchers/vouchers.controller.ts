@@ -70,6 +70,24 @@ export class VouchersController {
     return await this.vouchersService.updateReceiptVoucher(id, dto, tenant);
   }
 
+  @Delete(["receipt/:id", "payment-in/:id", "receipts/:id", "payments-in/:id"])
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+  )
+  async cancelReceipt(
+    @Param("id") id: string,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.vouchersService.reverseVoucher(
+      id,
+      { reason: "Payment-in voucher cancelled" },
+      tenant,
+    );
+  }
+
   @Post("expense")
   @HttpCode(HttpStatus.CREATED)
   @Roles(

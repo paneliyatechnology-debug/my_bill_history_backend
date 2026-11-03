@@ -2146,7 +2146,41 @@ export class PurchasesService {
         where: { purchaseInvoiceId: id },
       });
 
-      // 3. Delete purchase return items and returns
+      // 3. Delete purchase return items, vouchers, and returns
+      const linkedReturns = await tx.purchaseReturn.findMany({
+        where: { purchaseInvoiceId: id },
+      });
+      for (const pr of linkedReturns) {
+        const retVouchers = await tx.voucher.findMany({
+          where: {
+            companyId: tenant.companyId,
+            sourceEntityId: pr.id,
+          },
+          include: { journalEntries: true },
+        });
+        for (const voucher of retVouchers) {
+          for (const entry of voucher.journalEntries) {
+            const acc = await tx.ledgerAccount.findUnique({
+              where: { id: entry.accountId },
+              include: { group: true },
+            });
+            if (acc) {
+              const reversedBalance = applyTransactionToBalance(
+                acc.group.nature as any,
+                acc.currentBalance.toString(),
+                entry.creditAmount,
+                entry.debitAmount,
+              );
+              await tx.ledgerAccount.update({
+                where: { id: acc.id },
+                data: { currentBalance: reversedBalance.toFixed(2) },
+              });
+            }
+          }
+          await tx.journalEntry.deleteMany({ where: { voucherId: voucher.id } });
+          await tx.voucher.deleteMany({ where: { id: voucher.id } });
+        }
+      }
       await tx.purchaseReturnItem.deleteMany({
         where: { returnDoc: { purchaseInvoiceId: id } },
       });
@@ -2162,12 +2196,46 @@ export class PurchasesService {
         where: { purchaseInvoiceId: id },
       });
 
-      // 5. Delete items
+      // 5. Revert & delete vouchers for this purchase invoice
+      const invoiceVouchers = await tx.voucher.findMany({
+        where: {
+          companyId: tenant.companyId,
+          OR: [
+            { sourceDocument: "PURCHASE_INVOICE", sourceEntityId: id },
+            existing.vendorInvoiceNumber ? { referenceNo: existing.vendorInvoiceNumber } : {},
+          ].filter((cond) => Object.keys(cond).length > 0) as any,
+        },
+        include: { journalEntries: true },
+      });
+      for (const voucher of invoiceVouchers) {
+        for (const entry of voucher.journalEntries) {
+          const acc = await tx.ledgerAccount.findUnique({
+            where: { id: entry.accountId },
+            include: { group: true },
+          });
+          if (acc) {
+            const reversedBalance = applyTransactionToBalance(
+              acc.group.nature as any,
+              acc.currentBalance.toString(),
+              entry.creditAmount,
+              entry.debitAmount,
+            );
+            await tx.ledgerAccount.update({
+              where: { id: acc.id },
+              data: { currentBalance: reversedBalance.toFixed(2) },
+            });
+          }
+        }
+        await tx.journalEntry.deleteMany({ where: { voucherId: voucher.id } });
+        await tx.voucher.deleteMany({ where: { id: voucher.id } });
+      }
+
+      // 6. Delete items
       await tx.purchaseInvoiceItem.deleteMany({
         where: { invoiceId: id },
       });
 
-      // 6. Delete invoice
+      // 7. Delete invoice
       await tx.purchaseInvoice.delete({
         where: { id },
       });

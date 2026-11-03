@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Param,
   Query,
   Body,
@@ -81,5 +82,23 @@ export class SalesPaymentInController {
     @CurrentTenant() tenant: TenantContext,
   ) {
     return await this.vouchersService.reverseVoucher(id, dto, tenant);
+  }
+
+  @Delete(":id")
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+  )
+  async deleteReceipt(
+    @Param("id") id: string,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.vouchersService.reverseVoucher(
+      id,
+      { reason: "Payment-in voucher cancelled" },
+      tenant,
+    );
   }
 }

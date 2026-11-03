@@ -811,4 +811,163 @@ describe("Sales Returns & Credit Notes Module Integration", () => {
     expect(Number(refreshed?.balanceAmount)).toBe(-Number(credit.grandTotal));
     expect(Number(credit.grandTotal)).toBeGreaterThan(0);
   });
+
+  it("10. Deleting a sales return cleanly cascades: restores invoice balance, deletes stock transaction, reverses accounting voucher and ledger balance", async () => {
+    // 1. Create credit sales invoice
+    const invRes = await app.inject({
+      method: "POST",
+      url: "/api/v1/invoices/sales",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        partyId: customerAId,
+        invoiceDate: "2026-10-12",
+        warehouseId: warehouseAId,
+        paymentMode: "CREDIT",
+        items: [
+          { itemId: itemAId, quantity: 2, unitPrice: 1000, taxRate: 18 },
+        ],
+      },
+    });
+    expect(invRes.statusCode).toBe(201);
+    const inv = JSON.parse(invRes.body);
+    const originalBal = Number(inv.balanceAmount);
+
+    // 2. Create sales return for 1 unit
+    const retRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/invoices/sales/${inv.id}/returns`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        returnDate: "2026-10-12",
+        reason: "Defective piece returned",
+        warehouseId: warehouseAId,
+        restoreStock: true,
+        items: [{ salesItemId: inv.items[0].id, quantity: 1 }],
+      },
+    });
+    expect(retRes.statusCode).toBe(201);
+    const retData = JSON.parse(retRes.body);
+
+    // 3. Delete the sales return
+    const delRes = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/sales-returns/${retData.id}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    expect(delRes.statusCode).toBe(200);
+
+    // 4. Verification: Return does not exist
+    const fetchReturn = await app.inject({
+      method: "GET",
+      url: `/api/v1/sales-returns/${retData.id}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    expect(fetchReturn.statusCode).toBe(404);
+
+    // 5. Verification: Invoice balance restored
+    const refreshedInv = await prisma.executeBypassRls((tx) =>
+      tx.salesInvoice.findUnique({ where: { id: inv.id } }),
+    );
+    expect(Number(refreshedInv?.balanceAmount)).toBe(originalBal);
+
+    // 6. Verification: Associated return voucher & stock transaction removed
+    const orphanStock = await prisma.executeBypassRls((tx) =>
+      tx.stockTransaction.findMany({
+        where: { referenceDocType: "SALES_RETURN", referenceDocId: retData.id },
+      }),
+    );
+    expect(orphanStock).toHaveLength(0);
+
+    const orphanVoucher = await prisma.executeBypassRls((tx) =>
+      tx.voucher.findMany({
+        where: { sourceDocument: "SALES_RETURN", sourceEntityId: retData.id },
+      }),
+    );
+    expect(orphanVoucher).toHaveLength(0);
+  });
+
+  it("11. Deleting a sales invoice cleanly cascades all linked returns, vouchers, stock movements, and items", async () => {
+    // 1. Create invoice with return
+    const invRes = await app.inject({
+      method: "POST",
+      url: "/api/v1/invoices/sales",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        partyId: customerAId,
+        invoiceDate: "2026-10-12",
+        warehouseId: warehouseAId,
+        paymentMode: "CREDIT",
+        items: [
+          { itemId: itemAId, quantity: 3, unitPrice: 1000, taxRate: 18 },
+        ],
+      },
+    });
+    expect(invRes.statusCode).toBe(201);
+    const inv = JSON.parse(invRes.body);
+
+    const retRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/invoices/sales/${inv.id}/returns`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        returnDate: "2026-10-12",
+        reason: "Customer changed mind",
+        warehouseId: warehouseAId,
+        restoreStock: true,
+        items: [{ salesItemId: inv.items[0].id, quantity: 1 }],
+      },
+    });
+    expect(retRes.statusCode).toBe(201);
+    const retData = JSON.parse(retRes.body);
+
+    // 2. Delete the sales invoice
+    const delRes = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/invoices/sales/${inv.id}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    expect(delRes.statusCode).toBe(200);
+
+    // 3. Verify invoice is deleted
+    const checkInv = await app.inject({
+      method: "GET",
+      url: `/api/v1/invoices/sales/${inv.id}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    expect(checkInv.statusCode).toBe(404);
+
+    // 4. Verify linked return is deleted
+    const checkRet = await app.inject({
+      method: "GET",
+      url: `/api/v1/sales-returns/${retData.id}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    expect(checkRet.statusCode).toBe(404);
+
+    // 5. Verify no orphan vouchers remain for invoice or return
+    const orphanVouchers = await prisma.executeBypassRls((tx) =>
+      tx.voucher.findMany({
+        where: {
+          OR: [
+            { sourceEntityId: inv.id },
+            { sourceEntityId: retData.id },
+          ],
+        },
+      }),
+    );
+    expect(orphanVouchers).toHaveLength(0);
+
+    // 6. Verify no orphan stock transactions remain
+    const orphanStock = await prisma.executeBypassRls((tx) =>
+      tx.stockTransaction.findMany({
+        where: {
+          OR: [
+            { referenceDocId: inv.id },
+            { referenceDocId: retData.id },
+          ],
+        },
+      }),
+    );
+    expect(orphanStock).toHaveLength(0);
+  });
 });

@@ -2996,14 +2996,30 @@ function shapeReceipt(voucher: any) {
     }
   }
 
+  const discountEntry = entries.find(
+    (entry: any) =>
+      moneyNumber(entry.debitAmount) > 0 &&
+      (entry.account?.name === "Discount Allowed" ||
+        entry.account?.name === "Cash Discount Allowed"),
+  );
+  const discount = discountEntry
+    ? moneyNumber(discountEntry.debitAmount)
+    : allocations.reduce(
+        (sum: number, alloc: any) => sum + moneyNumber(alloc.cashDiscount),
+        0,
+      );
+
   return {
     id: voucher.id,
     paymentNumber: voucher.voucherNumber,
+    voucherNumber: voucher.voucherNumber,
     paymentDate: voucher.voucherDate,
+    voucherDate: voucher.voucherDate,
     partyId: partyEntry?.account?.partyId || partyEntry?.account?.party?.id || null,
     partyName: partyEntry?.account?.party?.name || partyEntry?.account?.name || "—",
     totalSettled,
     amountReceived,
+    discount,
     paymentMode,
     paymentModeLabel: paymentModeLabel(paymentMode),
     narration: voucher.narration,
