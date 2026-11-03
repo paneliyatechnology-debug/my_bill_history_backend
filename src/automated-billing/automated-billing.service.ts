@@ -82,7 +82,7 @@ export class AutomatedBillingService {
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
     const skip = (page - 1) * limit;
 
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    return await this.prisma.executeInTenantContext(tenant, async (tx: any) => {
       const where: any = {
         companyId: tenant.companyId,
       };
@@ -145,7 +145,7 @@ export class AutomatedBillingService {
    * Get KPI metrics for dashboard summary cards
    */
   async getSummaryMetrics(tenant: TenantContext): Promise<any> {
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    return await this.prisma.executeInTenantContext(tenant, async (tx: any) => {
       const now = new Date();
       const in7Days = new Date();
       in7Days.setDate(in7Days.getDate() + 7);
@@ -215,7 +215,7 @@ export class AutomatedBillingService {
       throw new BadRequestException("At least one line item is required.");
     }
 
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    return await this.prisma.executeInTenantContext(tenant, async (tx: any) => {
       // 1. Verify party exists
       const party = await tx.party.findFirst({
         where: { id: dto.partyId, companyId: tenant.companyId },
@@ -293,7 +293,7 @@ export class AutomatedBillingService {
    * Get single schedule by ID with full party, lines, and recent runs
    */
   async getScheduleById(id: string, tenant: TenantContext): Promise<any> {
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    return await this.prisma.executeInTenantContext(tenant, async (tx: any) => {
       const schedule = await tx.automatedBillingSchedule.findFirst({
         where: { id, companyId: tenant.companyId },
         include: {
@@ -356,7 +356,7 @@ export class AutomatedBillingService {
     dto: UpdateAutomatedBillingDto,
     tenant: TenantContext,
   ): Promise<any> {
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    return await this.prisma.executeInTenantContext(tenant, async (tx: any) => {
       const existing = await tx.automatedBillingSchedule.findFirst({
         where: { id, companyId: tenant.companyId },
       });
@@ -442,7 +442,7 @@ export class AutomatedBillingService {
    * Pause schedule
    */
   async pauseSchedule(id: string, tenant: TenantContext): Promise<any> {
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    return await this.prisma.executeInTenantContext(tenant, async (tx: any) => {
       const existing = await tx.automatedBillingSchedule.findFirst({
         where: { id, companyId: tenant.companyId },
       });
@@ -464,7 +464,7 @@ export class AutomatedBillingService {
    * Resume paused schedule
    */
   async resumeSchedule(id: string, tenant: TenantContext): Promise<any> {
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    return await this.prisma.executeInTenantContext(tenant, async (tx: any) => {
       const existing = await tx.automatedBillingSchedule.findFirst({
         where: { id, companyId: tenant.companyId },
       });
@@ -499,7 +499,7 @@ export class AutomatedBillingService {
    * Stop schedule permanently (terminal state)
    */
   async stopSchedule(id: string, tenant: TenantContext): Promise<any> {
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    return await this.prisma.executeInTenantContext(tenant, async (tx: any) => {
       const existing = await tx.automatedBillingSchedule.findFirst({
         where: { id, companyId: tenant.companyId },
       });
@@ -527,7 +527,7 @@ export class AutomatedBillingService {
     triggeredBy: "AUTOMATED" | "MANUAL_RUN_NOW" | "MANUAL_RETRY" = "AUTOMATED",
   ): Promise<any> {
     // 1. Fetch schedule outside transaction to prepare invoice payload
-    const schedule = await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    const schedule = await this.prisma.executeInTenantContext(tenant, async (tx: any) => {
       return await tx.automatedBillingSchedule.findFirst({
         where: { id, companyId: tenant.companyId },
         include: {
@@ -587,7 +587,7 @@ export class AutomatedBillingService {
       );
 
       // 3. Record successful run & advance nextRunAt
-      return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      return await this.prisma.executeInTenantContext(tenant, async (tx: any) => {
         const run = await tx.automatedBillingRun.create({
           data: {
             scheduleId: schedule.id,
@@ -643,7 +643,7 @@ export class AutomatedBillingService {
       );
 
       // Record failed run
-      await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      await this.prisma.executeInTenantContext(tenant, async (tx: any) => {
         await tx.automatedBillingRun.create({
           data: {
             scheduleId: schedule.id,
@@ -690,7 +690,7 @@ export class AutomatedBillingService {
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
     const skip = (page - 1) * limit;
 
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    return await this.prisma.executeInTenantContext(tenant, async (tx: any) => {
       const where: any = {
         scheduleId,
         companyId: tenant.companyId,
