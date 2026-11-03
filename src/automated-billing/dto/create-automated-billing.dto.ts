@@ -24,3 +24,4 @@ export interface CreateAutomatedBillingDto {
   termsAndConditions?: string;
   lines: CreateAutomatedBillingLineDto[];
 }
+

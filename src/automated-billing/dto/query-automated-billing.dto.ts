@@ -5,3 +5,4 @@ export interface QueryAutomatedBillingDto {
   page?: string | number;
   limit?: string | number;
 }
+

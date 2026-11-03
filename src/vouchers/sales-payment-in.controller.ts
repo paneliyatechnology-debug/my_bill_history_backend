@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Param,
   Query,
   Body,
@@ -13,6 +14,7 @@ import { Roles } from "../common/decorators/roles.decorator";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { VouchersService } from "./vouchers.service";
 import { ReverseVoucherDto } from "./dto/reverse-voucher.dto";
+import { UpdateReceiptVoucherDto } from "./dto/create-receipt-voucher.dto";
 
 @Controller(["sales/payment-in", "sales/receipts"])
 export class SalesPaymentInController {
@@ -47,6 +49,22 @@ export class SalesPaymentInController {
     @CurrentTenant() tenant: TenantContext,
   ) {
     return await this.vouchersService.getVoucherById(id, tenant);
+  }
+
+  @Put(":id")
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+    UserRole.BRANCH_MANAGER,
+  )
+  async updateReceipt(
+    @Param("id") id: string,
+    @Body() dto: UpdateReceiptVoucherDto,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.vouchersService.updateReceiptVoucher(id, dto, tenant);
   }
 
   @Post(":id/reverse")

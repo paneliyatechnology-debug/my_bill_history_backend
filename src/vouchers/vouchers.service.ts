@@ -20,7 +20,7 @@ import { DatabaseService } from "../database/database.service";
 import { AuditService } from "../audit/audit.service";
 import { CreateVoucherDto } from "./dto/create-voucher.dto";
 import { ReverseVoucherDto } from "./dto/reverse-voucher.dto";
-import { CreateReceiptVoucherDto } from "./dto/create-receipt-voucher.dto";
+import { CreateReceiptVoucherDto, UpdateReceiptVoucherDto } from "./dto/create-receipt-voucher.dto";
 import { CreateExpenseVoucherDto } from "./dto/create-expense-voucher.dto";
 import { CreatePaymentOutVoucherDto } from "./dto/create-payment-out-voucher.dto";
 
@@ -2009,6 +2009,464 @@ export class VouchersService {
       return {
         ...voucher,
         allocations: createdAllocations,
+      };
+    });
+  }
+
+  /**
+   * Updates an existing Payment In (Receipt) voucher atomically
+   * Supports modifying amount, discount, party, date, voucher number, payment mode,
+   * reference number, narration, deposit account, and invoice allocations.
+   */
+  async updateReceiptVoucher(
+    id: string,
+    dto: UpdateReceiptVoucherDto,
+    tenant: TenantContext,
+  ): Promise<any> {
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const existing = await tx.voucher.findFirst({
+        where: { id, companyId: tenant.companyId, voucherType: "RECEIPT" },
+        include: {
+          financialYear: true,
+          journalEntries: {
+            include: { account: { include: { group: true } } },
+            orderBy: { sequenceOrder: "asc" },
+          },
+          allocations: {
+            include: { salesInvoice: true },
+          },
+        },
+      });
+
+      if (!existing) {
+        throw new NotFoundException(`Receipt voucher '${id}' not found.`);
+      }
+
+      if (existing.financialYear?.isLocked) {
+        throw new BadRequestException(
+          `Financial year ${existing.financialYear.name} is locked. Cannot edit vouchers in locked periods.`,
+        );
+      }
+
+      // 1. Revert previous sales invoice allocations
+      for (const alloc of existing.allocations || []) {
+        if (alloc.salesInvoice) {
+          const inv = alloc.salesInvoice;
+          const applied = toMoney(alloc.allocatedAmount).plus(
+            toMoney(alloc.cashDiscount),
+          );
+          let newPaid = toMoney(inv.paidAmount).minus(applied);
+          if (newPaid.lessThan(0)) newPaid = new Decimal(0);
+          const newBalance = toMoney(inv.balanceAmount).plus(applied);
+          const newStatus = newPaid.greaterThan(0) ? "PARTIALLY_PAID" : "ISSUED";
+
+          await tx.salesInvoice.update({
+            where: { id: inv.id },
+            data: {
+              paidAmount: newPaid.toNumber(),
+              balanceAmount: newBalance.toNumber(),
+              status: newStatus as any,
+            },
+          });
+        }
+      }
+
+      // 2. Revert previous account balances
+      for (const entry of existing.journalEntries) {
+        const acc = entry.account;
+        if (!acc) continue;
+        const newBalance = applyTransactionToBalance(
+          acc.group.nature as any,
+          acc.currentBalance.toString(),
+          toMoney(entry.creditAmount),
+          toMoney(entry.debitAmount),
+        );
+
+        await tx.ledgerAccount.update({
+          where: { id: acc.id },
+          data: { currentBalance: newBalance.toNumber() },
+        });
+      }
+
+      // 3. Clear existing allocations and journal entries
+      await tx.paymentAllocation.deleteMany({ where: { voucherId: id } });
+      await tx.journalEntry.deleteMany({ where: { voucherId: id } });
+
+      // 4. Resolve Party (Customer)
+      let partyId = dto.partyId;
+      if (!partyId) {
+        const partyEntry = existing.journalEntries.find(
+          (e) => e.account?.isPartyLedger && e.account?.partyId,
+        );
+        partyId = partyEntry?.account?.partyId || existing.sourceEntityId || undefined;
+      }
+      if (!partyId) {
+        throw new BadRequestException("partyId is required to update receipt.");
+      }
+
+      const party = await tx.party.findFirst({
+        where: { id: partyId, companyId: tenant.companyId },
+        include: { ledgerAccount: true },
+      });
+      if (!party) {
+        throw new NotFoundException(`Party '${partyId}' not found.`);
+      }
+
+      // 5. Resolve Amounts and Dates
+      const amountReceived = toMoney(
+        dto.receivedAmount ?? dto.amount ?? dto.totalAmount ?? existing.totalAmount ?? 0,
+      );
+      if (amountReceived.lessThan(0)) {
+        throw new BadRequestException("Received amount cannot be negative.");
+      }
+
+      const headerDiscount = toMoney(
+        dto.discount ?? dto.discountAmount ?? dto.cashDiscount ?? 0,
+      );
+      if (headerDiscount.lessThan(0)) {
+        throw new BadRequestException("Discount cannot be negative.");
+      }
+
+      if (amountReceived.equals(0) && headerDiscount.equals(0)) {
+        throw new BadRequestException(
+          "Received amount or discount must be greater than zero.",
+        );
+      }
+
+      const rawDate = dto.voucherDate || dto.date;
+      const vDate = rawDate ? new Date(rawDate) : existing.voucherDate;
+      const rawPaymentMode = dto.paymentMode || existing.paymentMode || "CASH";
+      const paymentMode = normalizePaymentMode(rawPaymentMode);
+
+      // 6. Deposit Account (Cash or Bank)
+      let depositAccount: any;
+      const depositAccountId =
+        dto.depositToAccountId ||
+        dto.paidToAccountId ||
+        dto.accountId ||
+        dto.bankAccountId;
+
+      if (depositAccountId) {
+        depositAccount = await tx.ledgerAccount.findFirst({
+          where: { id: depositAccountId, companyId: tenant.companyId },
+          include: { group: true },
+        });
+      } else {
+        const isBank = paymentMode !== "CASH";
+        if (isBank) {
+          depositAccount = await tx.ledgerAccount.findFirst({
+            where: { companyId: tenant.companyId, isBankLedger: true },
+            include: { group: true },
+          });
+        }
+        if (!depositAccount) {
+          depositAccount = await tx.ledgerAccount.findFirst({
+            where: { companyId: tenant.companyId, name: "Cash Account" },
+            include: { group: true },
+          });
+        }
+        if (!depositAccount) {
+          depositAccount = await tx.ledgerAccount.findFirst({
+            where: { companyId: tenant.companyId, isCashLedger: true },
+            include: { group: true },
+          });
+        }
+      }
+
+      if (!depositAccount) {
+        throw new NotFoundException(
+          "Deposit (Cash/Bank) account not found in this company.",
+        );
+      }
+
+      // 7. Customer Account
+      let customerAccount = party.ledgerAccount;
+      if (!customerAccount) {
+        customerAccount = await tx.ledgerAccount.findFirst({
+          where: { companyId: tenant.companyId, partyId: party.id },
+          include: { group: true },
+        });
+      }
+      if (!customerAccount) {
+        const sundryDebtors = await tx.ledgerGroup.findFirst({
+          where: { companyId: tenant.companyId, name: "Sundry Debtors" },
+        });
+        customerAccount = await tx.ledgerAccount.create({
+          data: {
+            organizationId: tenant.organizationId,
+            companyId: tenant.companyId,
+            groupId:
+              sundryDebtors?.id ||
+              (await tx.ledgerGroup.findFirst({
+                where: { companyId: tenant.companyId, nature: "ASSET" },
+              }))!.id,
+            name: party.name,
+            isPartyLedger: true,
+            partyId: party.id,
+            openingType: "DR",
+            currentBalance: 0,
+          },
+          include: { group: true },
+        });
+      }
+
+      // 8. New Allocations
+      let totalSettled = new Decimal(0);
+      let totalRowDiscount = new Decimal(0);
+      const invoiceUpdates: Array<{
+        invoice: any;
+        settled: Decimal;
+        discount: Decimal;
+      }> = [];
+
+      const seenInvoices = new Set<string>();
+      for (const alloc of dto.allocations || []) {
+        const invId = alloc.invoiceId || alloc.salesInvoiceId;
+        if (!invId) continue;
+        if (seenInvoices.has(invId)) {
+          throw new BadRequestException(
+            "The same sales invoice cannot be settled twice on one receipt.",
+          );
+        }
+        seenInvoices.add(invId);
+        const inv = await tx.salesInvoice.findFirst({
+          where: { id: invId, companyId: tenant.companyId },
+        });
+        if (!inv) {
+          throw new NotFoundException(`Sales invoice '${invId}' not found.`);
+        }
+        if (inv.partyId !== party.id) {
+          throw new BadRequestException(
+            `Invoice '${inv.invoiceNumber}' belongs to a different party.`,
+          );
+        }
+        const rowCash = toMoney(alloc.settledAmount ?? alloc.amount ?? 0);
+        const rowDisc = toMoney(
+          alloc.cashDiscountGiven ?? alloc.cashDiscount ?? 0,
+        );
+        const allocTotal = rowCash.plus(rowDisc);
+        if (allocTotal.lessThanOrEqualTo(0)) continue;
+        const invBalance = toMoney(inv.balanceAmount);
+
+        if (allocTotal.greaterThan(invBalance)) {
+          throw new BadRequestException(
+            `Settlement amount of ₹${allocTotal.toString()} exceeds pending balance of ₹${invBalance.toString()} on invoice #${inv.invoiceNumber}.`,
+          );
+        }
+
+        totalSettled = totalSettled.plus(rowCash);
+        totalRowDiscount = totalRowDiscount.plus(rowDisc);
+        invoiceUpdates.push({
+          invoice: inv,
+          settled: rowCash,
+          discount: rowDisc,
+        });
+      }
+
+      if (invoiceUpdates.length > 0 && totalSettled.greaterThan(amountReceived)) {
+        throw new BadRequestException(
+          `Sum of allocated invoice amounts (₹${totalSettled.toString()}) cannot exceed amount received (₹${amountReceived.toString()}).`,
+        );
+      }
+
+      const totalDiscount = headerDiscount.greaterThan(totalRowDiscount)
+        ? headerDiscount
+        : totalRowDiscount;
+
+      // 9. Build Balanced Double-Entry Journal Lines
+      const voucherLines: Array<{
+        accountId: string;
+        debitAmount: number;
+        creditAmount: number;
+        lineNarration: string;
+      }> = [];
+
+      // DR Deposit Account (Cash / Bank) for Received Amount
+      if (amountReceived.greaterThan(0)) {
+        voucherLines.push({
+          accountId: depositAccount.id,
+          debitAmount: amountReceived.toNumber(),
+          creditAmount: 0,
+          lineNarration: `Receipt from ${party.name}`,
+        });
+      }
+
+      // DR Discount Allowed for Cash Discount if any
+      if (totalDiscount.greaterThan(0)) {
+        let discountAcc = await tx.ledgerAccount.findFirst({
+          where: { companyId: tenant.companyId, name: "Discount Allowed" },
+        });
+        if (!discountAcc) {
+          discountAcc = await tx.ledgerAccount.findFirst({
+            where: {
+              companyId: tenant.companyId,
+              name: { contains: "Discount", mode: "insensitive" },
+            },
+          });
+        }
+        if (discountAcc) {
+          voucherLines.push({
+            accountId: discountAcc.id,
+            debitAmount: totalDiscount.toNumber(),
+            creditAmount: 0,
+            lineNarration: "Cash discount allowed on bill settlement",
+          });
+        }
+      }
+
+      // CR Customer Ledger for Total Settlement (received + discount)
+      const totalCustomerCredit = amountReceived.plus(totalDiscount);
+      voucherLines.push({
+        accountId: customerAccount.id,
+        debitAmount: 0,
+        creditAmount: totalCustomerCredit.toNumber(),
+        lineNarration: `Receipt settlement against bills`,
+      });
+
+      const validation = validateJournalLines(voucherLines);
+      if (!validation.isValid) {
+        throw new BadRequestException(validation.errors.join("; "));
+      }
+
+      // 10. Update Voucher Record
+      const voucherNumber =
+        dto.voucherNumber || dto.paymentNumber || dto.receiptNumber
+          ? String(
+              dto.voucherNumber || dto.paymentNumber || dto.receiptNumber,
+            ).trim()
+          : existing.voucherNumber;
+
+      const referenceNo =
+        dto.referenceNo !== undefined
+          ? dto.referenceNo
+          : dto.paymentReference !== undefined
+            ? dto.paymentReference
+            : dto.chequeNumber !== undefined
+              ? dto.chequeNumber
+              : existing.referenceNo;
+
+      const narration =
+        dto.narration !== undefined
+          ? dto.narration
+          : dto.notes !== undefined
+            ? dto.notes
+            : existing.narration;
+
+      const updatedVoucher = await tx.voucher.update({
+        where: { id: existing.id },
+        data: {
+          voucherNumber,
+          voucherDate: vDate,
+          referenceNo: referenceNo || null,
+          paymentMode,
+          narration: narration || `Receipt from ${party.name}`,
+          narrationGujarati:
+            dto.narrationGujarati !== undefined
+              ? dto.narrationGujarati
+              : existing.narrationGujarati,
+          totalAmount: totalCustomerCredit.toNumber(),
+          isCancelled: false,
+          sourceEntityId: party.id,
+        },
+      });
+
+      // Insert Journal Entries & Update Account Balances
+      for (let i = 0; i < voucherLines.length; i++) {
+        const vl = voucherLines[i];
+        await tx.journalEntry.create({
+          data: {
+            voucherId: updatedVoucher.id,
+            accountId: vl.accountId,
+            debitAmount: vl.debitAmount,
+            creditAmount: vl.creditAmount,
+            lineNarration: vl.lineNarration,
+            sequenceOrder: i + 1,
+          },
+        });
+
+        const acc = await tx.ledgerAccount.findUnique({
+          where: { id: vl.accountId },
+          include: { group: true },
+        });
+        if (acc) {
+          const newBal = applyTransactionToBalance(
+            acc.group.nature as any,
+            acc.currentBalance.toString(),
+            toMoney(vl.debitAmount),
+            toMoney(vl.creditAmount),
+          );
+          await tx.ledgerAccount.update({
+            where: { id: acc.id },
+            data: { currentBalance: newBal.toNumber() },
+          });
+        }
+      }
+
+      // 11. Create PaymentAllocation records and update sales invoice balances
+      const createdAllocations: any[] = [];
+      for (const item of invoiceUpdates) {
+        const allocRecord = await tx.paymentAllocation.create({
+          data: {
+            voucherId: updatedVoucher.id,
+            invoiceId: item.invoice.id,
+            allocatedAmount: item.settled.toNumber(),
+            cashDiscount: item.discount.toNumber(),
+            allocationDate: vDate,
+          },
+        });
+        createdAllocations.push(allocRecord);
+
+        const totalApplied = item.settled.plus(item.discount);
+        const newPaid = toMoney(item.invoice.paidAmount).plus(totalApplied);
+        const newBalance = toMoney(item.invoice.balanceAmount).minus(
+          totalApplied,
+        );
+        const newStatus = newBalance.isZero() ? "PAID" : "PARTIALLY_PAID";
+
+        await tx.salesInvoice.update({
+          where: { id: item.invoice.id },
+          data: {
+            paidAmount: newPaid.toNumber(),
+            balanceAmount: newBalance.toNumber(),
+            status: newStatus as any,
+          },
+        });
+      }
+
+      // 12. Audit Log
+      await this.audit.record(
+        {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          userId: tenant.userId || "00000000-0000-0000-0000-000000000000",
+          action: "UPDATE_RECEIPT_VOUCHER",
+          entityName: "Voucher",
+          entityId: updatedVoucher.id,
+          newState: {
+            voucherNumber,
+            totalAmount: totalCustomerCredit.toNumber(),
+            partyId: party.id,
+            paymentMode,
+          },
+        },
+        tx,
+      );
+
+      return {
+        success: true,
+        type: "Payment In",
+        id: updatedVoucher.id,
+        voucherNumber: updatedVoucher.voucherNumber,
+        voucherDate: updatedVoucher.voucherDate,
+        party: { id: party.id, name: party.name },
+        amount: amountReceived.toNumber(),
+        discount: totalDiscount.toNumber(),
+        totalAmount: totalCustomerCredit.toNumber(),
+        paymentMode: updatedVoucher.paymentMode,
+        referenceNo: updatedVoucher.referenceNo,
+        narration: updatedVoucher.narration,
+        allocations: createdAllocations,
+        message: "Received payment updated successfully.",
       };
     });
   }

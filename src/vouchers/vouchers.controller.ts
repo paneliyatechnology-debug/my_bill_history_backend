@@ -54,6 +54,22 @@ export class VouchersController {
     return await this.vouchersService.createReceiptVoucher(dto, tenant);
   }
 
+  @Put(["receipt/:id", "payment-in/:id", "receipts/:id", "payments-in/:id"])
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+    UserRole.BRANCH_MANAGER,
+  )
+  async updateReceiptVoucher(
+    @Param("id") id: string,
+    @Body() dto: any,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.vouchersService.updateReceiptVoucher(id, dto, tenant);
+  }
+
   @Post("expense")
   @HttpCode(HttpStatus.CREATED)
   @Roles(

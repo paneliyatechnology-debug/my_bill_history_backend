@@ -77,7 +77,7 @@ export class DashboardController {
   async updateTransaction(
     @CurrentTenant() tenant: TenantContext,
     @Param("id") id: string,
-    @Body() dto: { narration?: string; referenceNo?: string; notes?: string },
+    @Body() dto: any,
   ) {
     return await this.dashboardService.updateTransaction(tenant, id, dto);
   }

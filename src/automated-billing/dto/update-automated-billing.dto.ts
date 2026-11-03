@@ -15,3 +15,4 @@ export interface UpdateAutomatedBillingDto {
   termsAndConditions?: string;
   lines?: CreateAutomatedBillingLineDto[];
 }
+

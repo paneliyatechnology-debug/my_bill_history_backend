@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from "@nes
 import { TenantContext } from "@billing/shared-types";
 import { DatabaseService } from "../database/database.service";
 import { ReportsService } from "../reports/reports.service";
+import { VouchersService } from "../vouchers/vouchers.service";
 import { buildInvoiceUrls } from "../invoice-print/invoice-url.helper";
 
 export interface DashboardTransaction {
@@ -22,6 +23,7 @@ export class DashboardService {
   constructor(
     private readonly prisma: DatabaseService,
     private readonly reportsService: ReportsService,
+    private readonly vouchersService: VouchersService,
   ) {}
 
   async getSummary(tenant: TenantContext, query?: any) {
@@ -1254,22 +1256,59 @@ export class DashboardService {
   }
 
   /**
-   * Update notes / reference or status for any transaction by ID
+   * Update transaction by ID with full editing capability
+   * Supports Payment In (Receipt), Payment Out, Sales Invoice, Delivery Challan, etc.
    */
   async updateTransaction(
     tenant: TenantContext,
     id: string,
-    dto: { narration?: string; referenceNo?: string; notes?: string },
+    dto: any,
   ) {
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
-      // 1. Try Sales Invoice
-      const sales = await tx.salesInvoice.findFirst({
-        where: { id, companyId: tenant.companyId },
+    // 1. Try Voucher (Payment In / Receipt, Payment Out, Expense, etc.)
+    const voucher = await this.prisma.voucher.findFirst({
+      where: { id, companyId: tenant.companyId },
+    });
+    if (voucher) {
+      if (voucher.voucherType === "RECEIPT") {
+        return await this.vouchersService.updateReceiptVoucher(id, dto, tenant);
+      }
+      if (voucher.voucherType === "PAYMENT") {
+        return await this.vouchersService.updatePaymentOutVoucher(id, dto, tenant);
+      }
+
+      // General voucher (Expense, Journal, Contra)
+      return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+        const updated = await tx.voucher.update({
+          where: { id },
+          data: {
+            narration: dto.narration ?? dto.notes ?? voucher.narration,
+            referenceNo: dto.referenceNo ?? dto.paymentReference ?? voucher.referenceNo,
+            voucherNumber: dto.voucherNumber ?? dto.paymentNumber ?? voucher.voucherNumber,
+            voucherDate: dto.voucherDate || dto.date ? new Date(dto.voucherDate || dto.date) : voucher.voucherDate,
+            paymentMode: dto.paymentMode ?? voucher.paymentMode,
+          },
+        });
+        return {
+          success: true,
+          type: voucher.voucherType,
+          id,
+          updated,
+          message: `${voucher.voucherType} updated successfully.`,
+        };
       });
-      if (sales) {
+    }
+
+    // 2. Try Sales Invoice
+    const sales = await this.prisma.salesInvoice.findFirst({
+      where: { id, companyId: tenant.companyId },
+    });
+    if (sales) {
+      return await this.prisma.executeInTenantContext(tenant, async (tx) => {
         const updated = await tx.salesInvoice.update({
           where: { id },
-          data: { notes: dto.notes ?? dto.narration ?? sales.notes },
+          data: {
+            notes: dto.notes ?? dto.narration ?? sales.notes,
+          },
         });
         return {
           success: true,
@@ -1278,37 +1317,18 @@ export class DashboardService {
           updated,
           message: "Sales invoice updated successfully.",
         };
-      }
-
-      // 2. Try Voucher (Expense, Payment In, Payment Out)
-      const voucher = await tx.voucher.findFirst({
-        where: { id, companyId: tenant.companyId },
       });
-      if (voucher) {
-        const updated = await tx.voucher.update({
-          where: { id },
-          data: {
-            narration: dto.narration ?? voucher.narration,
-            referenceNo: dto.referenceNo ?? voucher.referenceNo,
-          },
-        });
-        return {
-          success: true,
-          type: "Voucher",
-          id,
-          updated,
-          message: "Voucher updated successfully.",
-        };
-      }
+    }
 
-      // 3. Try Delivery Challan
-      const challan = await tx.deliveryChallan.findFirst({
-        where: { id, companyId: tenant.companyId },
-      });
-      if (challan) {
+    // 3. Try Delivery Challan
+    const challan = await this.prisma.deliveryChallan.findFirst({
+      where: { id, companyId: tenant.companyId },
+    });
+    if (challan) {
+      return await this.prisma.executeInTenantContext(tenant, async (tx) => {
         const updated = await tx.deliveryChallan.update({
           where: { id },
-          data: { notes: dto.notes ?? challan.notes },
+          data: { notes: dto.notes ?? dto.narration ?? challan.notes },
         });
         return {
           success: true,
@@ -1317,9 +1337,9 @@ export class DashboardService {
           updated,
           message: "Delivery challan updated successfully.",
         };
-      }
+      });
+    }
 
-      throw new Error(`Transaction with ID ${id} not found.`);
-    });
+    throw new NotFoundException(`Transaction with ID ${id} not found.`);
   }
 }

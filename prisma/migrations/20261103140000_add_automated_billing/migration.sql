@@ -167,3 +167,4 @@ BEGIN
         GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE automated_billing_runs TO billing_app;
     END IF;
 END $$;
+
