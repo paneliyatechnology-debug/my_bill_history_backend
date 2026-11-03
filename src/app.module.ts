@@ -36,6 +36,7 @@ import { DashboardModule } from "./dashboard/dashboard.module";
 import { InvoicePrintModule } from "./invoice-print/invoice-print.module";
 import { SharedLedgerModule } from "./shared-ledger/shared-ledger.module";
 import { SmsMarketingModule } from "./sms-marketing/sms-marketing.module";
+import { AutomatedBillingModule } from "./automated-billing/automated-billing.module";
 
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 
@@ -83,6 +84,7 @@ import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
     ImportsModule,
     SharedLedgerModule,
     SmsMarketingModule,
+    AutomatedBillingModule,
     HealthModule,
   ],
   providers: [

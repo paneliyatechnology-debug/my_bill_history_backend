@@ -175,6 +175,7 @@ model Company {
   partyAppointments        PartyAppointment[]
   sharedLedgerConnections  SharedLedgerConnection[]
   smsCampaigns             SmsCampaign[]
+  automatedBillingSchedules AutomatedBillingSchedule[]
 
   @@unique([gstin, organizationId])
   @@index([organizationId])
@@ -571,6 +572,7 @@ model Party {
   notes            PartyNote[]
   appointments     PartyAppointment[]
   sharedLedgerConnections SharedLedgerConnection[]
+  automatedBillingSchedules AutomatedBillingSchedule[]
 
   @@index([organizationId, companyId])
   @@index([phone])
@@ -700,6 +702,7 @@ model Item {
   bomInputs           BomItem[]
   stockTransferItems  StockTransferItem[]
   deliveryChallanItems DeliveryChallanItem[]
+  automatedBillingLines AutomatedBillingLine[]
 
   @@unique([companyId, sku])
   @@index([organizationId, companyId])
@@ -893,6 +896,7 @@ model SalesInvoice {
   allocations          PaymentAllocation[]
   eInvoiceRecord       EInvoiceRecord?
   eWayBillRecord       EWayBillRecord?
+  automatedBillingRuns AutomatedBillingRun[]
 
   @@unique([companyId, financialYearId, invoiceNumber])
   @@index([organizationId, companyId, invoiceDate])
@@ -1922,6 +1926,101 @@ model SmsCampaignRecipient {
   @@index([organizationId, companyId])
   @@index([partyId])
   @@map("sms_campaign_recipients")
+}
+
+model AutomatedBillingSchedule {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  organizationId      String                 @map("organization_id") @db.Uuid
+  companyId           String                 @map("company_id") @db.Uuid
+  branchId            String?                @map("branch_id") @db.Uuid
+  scheduleName        String                 @map("schedule_name") @db.VarChar(255)
+  partyId             String                 @map("party_id") @db.Uuid
+  status              String                 @default("ACTIVE") @db.VarChar(50) // ACTIVE, PAUSED, STOPPED, COMPLETED
+  startDate           DateTime               @map("start_date")
+  endDate             DateTime?              @map("end_date")
+  frequency           String                 @db.VarChar(50) // DAILY, WEEKLY, MONTHLY, YEARLY
+  interval            Int                    @default(1)
+  dayOfWeek           Int?                   @map("day_of_week")
+  dayOfMonth          Int?                   @map("day_of_month")
+  nextRunAt           DateTime?              @map("next_run_at")
+  lastRunAt           DateTime?              @map("last_run_at")
+  lastRunStatus       String?                @map("last_run_status") @db.VarChar(50)
+  paymentTerms        String?                @map("payment_terms") @db.VarChar(100)
+  dueDays             Int                    @default(0) @map("due_days")
+  notes               String?                @db.Text
+  termsAndConditions  String?                @map("terms_and_conditions") @db.Text
+  estimatedTotal      Decimal                @default(0) @map("estimated_total") @db.Decimal(15, 2)
+  totalRunsCount      Int                    @default(0) @map("total_runs_count")
+  successfulRunsCount Int                    @default(0) @map("successful_runs_count")
+  failedRunsCount     Int                    @default(0) @map("failed_runs_count")
+  createdBy           String?                @map("created_by") @db.Uuid
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+
+  party               Party                  @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  company             Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lines               AutomatedBillingLine[]
+  runs                AutomatedBillingRun[]
+
+  @@index([organizationId, companyId])
+  @@index([partyId])
+  @@index([status])
+  @@index([nextRunAt])
+  @@map("automated_billing_schedules")
+}
+
+model AutomatedBillingLine {
+  id              String                   @id @default(uuid()) @db.Uuid
+  scheduleId      String                   @map("schedule_id") @db.Uuid
+  itemId          String?                  @map("item_id") @db.Uuid
+  description     String                   @db.VarChar(255)
+  hsnCode         String?                  @map("hsn_code") @db.VarChar(20)
+  quantity        Decimal                  @default(1) @db.Decimal(12, 4)
+  unit            String?                  @db.VarChar(20)
+  rate            Decimal                  @default(0) @db.Decimal(15, 2)
+  discountPercent Decimal                  @default(0) @map("discount_percent") @db.Decimal(5, 2)
+  discountAmount  Decimal                  @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  taxRate         Decimal                  @default(0) @map("tax_rate") @db.Decimal(5, 2)
+  taxableAmount   Decimal                  @default(0) @map("taxable_amount") @db.Decimal(15, 2)
+  totalAmount     Decimal                  @default(0) @map("total_amount") @db.Decimal(15, 2)
+  sortOrder       Int                      @default(0) @map("sort_order")
+  createdAt       DateTime                 @default(now()) @map("created_at")
+
+  schedule        AutomatedBillingSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  item            Item?                    @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([scheduleId])
+  @@index([itemId])
+  @@map("automated_billing_lines")
+}
+
+model AutomatedBillingRun {
+  id             String                   @id @default(uuid()) @db.Uuid
+  scheduleId     String                   @map("schedule_id") @db.Uuid
+  organizationId String                   @map("organization_id") @db.Uuid
+  companyId      String                   @map("company_id") @db.Uuid
+  occurrenceKey  String                   @map("occurrence_key") @db.VarChar(100)
+  scheduledFor   DateTime                 @map("scheduled_for")
+  status         String                   @default("SUCCESS") @db.VarChar(50) // SUCCESS, FAILED, PENDING
+  attemptCount   Int                      @default(1) @map("attempt_count")
+  invoiceId      String?                  @map("invoice_id") @db.Uuid
+  invoiceNumber  String?                  @map("invoice_number") @db.VarChar(100)
+  grandTotal     Decimal?                 @map("grand_total") @db.Decimal(15, 2)
+  errorCode      String?                  @map("error_code") @db.VarChar(100)
+  errorMessage   String?                  @map("error_message") @db.Text
+  triggeredBy    String                   @default("AUTOMATED") @map("triggered_by") @db.VarChar(50) // AUTOMATED, MANUAL_RUN_NOW, MANUAL_RETRY
+  startedAt      DateTime                 @default(now()) @map("started_at")
+  completedAt    DateTime?                @map("completed_at")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+
+  schedule       AutomatedBillingSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  invoice        SalesInvoice?            @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@unique([scheduleId, occurrenceKey])
+  @@index([organizationId, companyId])
+  @@index([invoiceId])
+  @@index([scheduledFor])
+  @@map("automated_billing_runs")
 }
 
 
