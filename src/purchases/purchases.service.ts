@@ -845,6 +845,65 @@ export class PurchasesService {
       });
 
       if (!invoice) {
+        const voucher = await tx.voucher.findFirst({
+          where: {
+            companyId: tenant.companyId,
+            sourceEntityId: id,
+          },
+          include: {
+            journalEntries: {
+              include: { account: true },
+            },
+          },
+        });
+        if (voucher) {
+          const stockTxs = await tx.stockTransaction.findMany({
+            where: {
+              companyId: tenant.companyId,
+              referenceDocId: id,
+            },
+            include: { item: true },
+          });
+          const branch = await tx.branch.findFirst({
+            where: { companyId: tenant.companyId },
+          });
+          const vendorName = voucher.narration?.replace(/^Purchase from\s+/i, "")?.replace(/\s*\(Invoice:.*?\)$/i, "") || "Supplier";
+          return {
+            id,
+            companyId: tenant.companyId,
+            vendorInvoiceNumber: voucher.referenceNo || voucher.voucherNumber,
+            invoiceDate: voucher.voucherDate.toISOString(),
+            placeOfSupply: "24",
+            itcEligibility: "INPUTS",
+            taxableAmount: Number(voucher.totalAmount),
+            cgstAmount: 0,
+            sgstAmount: 0,
+            igstAmount: 0,
+            roundOff: 0,
+            grandTotal: Number(voucher.totalAmount),
+            paidAmount: Number(voucher.totalAmount),
+            balanceAmount: 0,
+            party: {
+              id: "historical-party",
+              name: vendorName,
+              stateCode: "24",
+            },
+            branch,
+            items: stockTxs.map((st) => ({
+              id: st.id,
+              invoiceId: id,
+              itemId: st.itemId,
+              hsnCode: st.item?.hsnCode || "9999",
+              quantity: Math.abs(Number(st.quantity)),
+              unitPrice: Number(st.valuationRate),
+              taxableAmount: Number(st.totalValuation),
+              totalAmount: Number(st.totalValuation),
+              taxRate: 0,
+              item: st.item,
+            })),
+            returns: [],
+          };
+        }
         throw new NotFoundException(`Purchase invoice with ID ${id} not found.`);
       }
 
