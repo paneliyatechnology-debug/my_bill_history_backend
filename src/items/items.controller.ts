@@ -82,6 +82,16 @@ export class ItemsController {
   }
 
   @Roles(UserRole.COMPANY_ADMIN, UserRole.ACCOUNTANT)
+  @Patch(":id")
+  async patchUpdate(
+    @CurrentTenant() ctx: TenantContext,
+    @Param("id") id: string,
+    @Body() dto: UpdateItemDto,
+  ) {
+    return this.itemsService.update(ctx, id, dto);
+  }
+
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.ACCOUNTANT)
   @Post(":id/adjust-stock")
   async adjustStock(
     @CurrentTenant() ctx: TenantContext,

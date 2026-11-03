@@ -1686,6 +1686,52 @@ export class PurchasesService {
       });
 
       if (!purchaseReturn) {
+        const voucher = await tx.voucher.findFirst({
+          where: {
+            companyId: tenant.companyId,
+            sourceEntityId: id,
+          },
+        });
+        if (voucher) {
+          const stockTxs = await tx.stockTransaction.findMany({
+            where: {
+              companyId: tenant.companyId,
+              referenceDocId: id,
+            },
+            include: { item: true },
+          });
+          const branch = await tx.branch.findFirst({
+            where: { companyId: tenant.companyId },
+          });
+          const partyName = voucher.narration?.replace(/^Debit note\s+[^\s]+\s+for return against bill\s+/i, "") || "Supplier";
+          return {
+            id,
+            companyId: tenant.companyId,
+            purchaseInvoiceId: null as string | null,
+            returnNumber: voucher.referenceNo || voucher.voucherNumber,
+            returnDate: voucher.voucherDate.toISOString(),
+            reason: voucher.narration || "Purchase Return",
+            taxableAmount: Number(voucher.totalAmount),
+            cgstAmount: 0,
+            sgstAmount: 0,
+            igstAmount: 0,
+            grandTotal: Number(voucher.totalAmount),
+            party: {
+              id: "historical-party",
+              name: partyName,
+              stateCode: "24",
+            },
+            branch,
+            items: stockTxs.map((st) => ({
+              id: st.id,
+              quantity: Math.abs(Number(st.quantity)),
+              unitPrice: Number(st.valuationRate),
+              taxableAmount: Number(st.totalValuation),
+              totalAmount: Number(st.totalValuation),
+              item: st.item,
+            })),
+          };
+        }
         throw new NotFoundException(`Purchase return with ID ${id} not found.`);
       }
 
@@ -1807,7 +1853,11 @@ export class PurchasesService {
     await this.deletePurchaseReturn(id, tenant);
 
     // 2. Re-create with the updated items and preserve returnNumber
-    const purchaseId = dto.purchaseInvoiceId || existing.purchaseInvoiceId;
+    const purchaseId =
+      dto.purchaseInvoiceId ||
+      (existing as any).purchaseInvoiceId ||
+      (existing as any).purchaseInvoice?.id ||
+      "";
     return await this.createPurchaseReturn(
       purchaseId,
       {
