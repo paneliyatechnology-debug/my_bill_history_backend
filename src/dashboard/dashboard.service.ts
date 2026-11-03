@@ -189,6 +189,11 @@ export class DashboardService {
       limit?: number;
       sortBy?: "date" | "amount";
       sortOrder?: "asc" | "desc";
+      itemId?: string;
+      sku?: string;
+      itemCode?: string;
+      item?: string;
+      itemWise?: boolean | string;
     },
   ) {
     const page = Math.max(1, Number(query?.page) || 1);
@@ -211,33 +216,92 @@ export class DashboardService {
       }
       const hasDateFilter = Boolean(query?.startDate || query?.endDate);
 
+      // Item filter setup (itemId, sku, itemCode, or item search)
+      const targetItemId =
+        query?.itemId ||
+        (query?.itemWise &&
+        String(query.itemWise) !== "true" &&
+        String(query.itemWise) !== "false"
+          ? String(query.itemWise).trim()
+          : undefined);
+      const targetSku = query?.sku || query?.itemCode;
+      const targetItemSearch = query?.item;
+
+      const hasItemFilter = Boolean(targetItemId || targetSku || targetItemSearch);
+
+      let itemClause: any = null;
+      if (targetItemId) {
+        itemClause = {
+          OR: [
+            { itemId: targetItemId },
+            { item: { sku: { equals: targetItemId, mode: "insensitive" } } },
+            { item: { name: { contains: targetItemId, mode: "insensitive" } } },
+          ],
+        };
+      } else if (targetSku) {
+        itemClause = {
+          item: { sku: { equals: targetSku, mode: "insensitive" } },
+        };
+      } else if (targetItemSearch) {
+        itemClause = {
+          OR: [
+            { itemId: targetItemSearch },
+            { item: { sku: { equals: targetItemSearch, mode: "insensitive" } } },
+            { item: { name: { contains: targetItemSearch, mode: "insensitive" } } },
+          ],
+        };
+      }
+
+      const itemInclude = {
+        include: {
+          item: {
+            select: {
+              id: true,
+              name: true,
+              sku: true,
+              hsnCode: true,
+              primaryUom: { select: { id: true, name: true, symbol: true } },
+            },
+          },
+        },
+      };
+
       // 1. Sales Invoices
       const salesWhere: any = {
         companyId: tenant.companyId,
         status: { not: "CANCELLED" },
       };
       if (hasDateFilter) salesWhere.invoiceDate = dateFilter;
+      if (itemClause) salesWhere.items = { some: itemClause };
 
       const salesPromise = tx.salesInvoice.findMany({
         where: salesWhere,
         orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
-        include: { party: { select: { id: true, name: true, phone: true } } },
+        include: {
+          party: { select: { id: true, name: true, phone: true } },
+          items: itemInclude,
+        },
         take: 300,
       });
 
       // 2. Purchase Invoices
       const purchaseWhere: any = { companyId: tenant.companyId };
       if (hasDateFilter) purchaseWhere.invoiceDate = dateFilter;
+      if (itemClause) purchaseWhere.items = { some: itemClause };
 
       const purchasePromise = tx.purchaseInvoice.findMany({
         where: purchaseWhere,
         orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
-        include: { party: { select: { id: true, name: true, phone: true } } },
+        include: {
+          party: { select: { id: true, name: true, phone: true } },
+          items: itemInclude,
+        },
         take: 300,
       });
 
       // 3. Vouchers (Payment In, Payment Out, Expenses, Journal, Contra)
       // Exclude auto-generated invoice accounting vouchers (SALES & PURCHASE)
+      // Vouchers are omitted if item-specific filter is requested
       const voucherWhere: any = {
         companyId: tenant.companyId,
         isCancelled: false,
@@ -249,36 +313,38 @@ export class DashboardService {
       };
       if (hasDateFilter) voucherWhere.voucherDate = dateFilter;
 
-      const voucherPromise = tx.voucher.findMany({
-        where: voucherWhere,
-        orderBy: [{ voucherDate: "desc" }, { createdAt: "desc" }],
-        include: {
-          journalEntries: {
+      const voucherPromise = hasItemFilter
+        ? Promise.resolve([])
+        : tx.voucher.findMany({
+            where: voucherWhere,
+            orderBy: [{ voucherDate: "desc" }, { createdAt: "desc" }],
             include: {
-              account: {
-                select: {
-                  id: true,
-                  name: true,
-                  partyId: true,
-                  isPartyLedger: true,
-                  isCashLedger: true,
-                  isBankLedger: true,
-                  party: { select: { id: true, name: true, phone: true } },
-                  group: { select: { id: true, name: true, nature: true } },
+              journalEntries: {
+                include: {
+                  account: {
+                    select: {
+                      id: true,
+                      name: true,
+                      partyId: true,
+                      isPartyLedger: true,
+                      isCashLedger: true,
+                      isBankLedger: true,
+                      party: { select: { id: true, name: true, phone: true } },
+                      group: { select: { id: true, name: true, nature: true } },
+                    },
+                  },
+                },
+                orderBy: { sequenceOrder: "asc" },
+              },
+              allocations: {
+                include: {
+                  salesInvoice: { select: { id: true, invoiceNumber: true, party: { select: { id: true, name: true } } } },
+                  purchaseInvoice: { select: { id: true, vendorInvoiceNumber: true, party: { select: { id: true, name: true } } } },
                 },
               },
             },
-            orderBy: { sequenceOrder: "asc" },
-          },
-          allocations: {
-            include: {
-              salesInvoice: { select: { id: true, invoiceNumber: true, party: { select: { id: true, name: true } } } },
-              purchaseInvoice: { select: { id: true, vendorInvoiceNumber: true, party: { select: { id: true, name: true } } } },
-            },
-          },
-        },
-        take: 300,
-      });
+            take: 300,
+          });
 
       // 4. Delivery Challans
       const challanWhere: any = {
@@ -286,33 +352,113 @@ export class DashboardService {
         status: { not: "CANCELLED" },
       };
       if (hasDateFilter) challanWhere.challanDate = dateFilter;
+      if (itemClause) challanWhere.items = { some: itemClause };
 
       const challanPromise = tx.deliveryChallan.findMany({
         where: challanWhere,
         orderBy: [{ challanDate: "desc" }, { createdAt: "desc" }],
-        include: { party: { select: { id: true, name: true, phone: true } } },
+        include: {
+          party: { select: { id: true, name: true, phone: true } },
+          items: itemInclude,
+        },
         take: 100,
       });
 
       // 5. Sales Returns (Credit Notes)
       const salesReturnWhere: any = { companyId: tenant.companyId };
       if (hasDateFilter) salesReturnWhere.returnDate = dateFilter;
+      if (itemClause) {
+        salesReturnWhere.items = {
+          some: {
+            OR: [
+              ...(targetItemId ? [{ itemId: targetItemId }] : []),
+              { salesItem: itemClause },
+            ],
+          },
+        };
+      }
 
       const salesReturnPromise = tx.salesReturn.findMany({
         where: salesReturnWhere,
         orderBy: [{ returnDate: "desc" }, { createdAt: "desc" }],
-        include: { party: { select: { id: true, name: true, phone: true } } },
+        include: {
+          party: { select: { id: true, name: true, phone: true } },
+          items: {
+            include: {
+              item: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true,
+                  hsnCode: true,
+                  primaryUom: { select: { id: true, name: true, symbol: true } },
+                },
+              },
+              salesItem: {
+                include: {
+                  item: {
+                    select: {
+                      id: true,
+                      name: true,
+                      sku: true,
+                      hsnCode: true,
+                      primaryUom: { select: { id: true, name: true, symbol: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
         take: 100,
       });
 
       // 6. Purchase Returns (Debit Notes)
       const purchaseReturnWhere: any = { companyId: tenant.companyId };
       if (hasDateFilter) purchaseReturnWhere.returnDate = dateFilter;
+      if (itemClause) {
+        purchaseReturnWhere.items = {
+          some: {
+            OR: [
+              ...(targetItemId ? [{ itemId: targetItemId }] : []),
+              { purchaseItem: itemClause },
+            ],
+          },
+        };
+      }
 
       const purchaseReturnPromise = tx.purchaseReturn.findMany({
         where: purchaseReturnWhere,
         orderBy: [{ returnDate: "desc" }, { createdAt: "desc" }],
-        include: { party: { select: { id: true, name: true, phone: true } } },
+        include: {
+          party: { select: { id: true, name: true, phone: true } },
+          items: {
+            include: {
+              item: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true,
+                  hsnCode: true,
+                  primaryUom: { select: { id: true, name: true, symbol: true } },
+                },
+              },
+              purchaseItem: {
+                include: {
+                  item: {
+                    select: {
+                      id: true,
+                      name: true,
+                      sku: true,
+                      hsnCode: true,
+                      primaryUom: { select: { id: true, name: true, symbol: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
         take: 100,
       });
 
@@ -327,12 +473,46 @@ export class DashboardService {
 
       const allItems: any[] = [];
 
+      const mapLineItem = (it: any) => {
+        const itemObj = it.item || it.salesItem?.item || it.purchaseItem?.item;
+        return {
+          id: it.id,
+          itemId: it.itemId || itemObj?.id,
+          name: itemObj?.name || it.description || "-",
+          itemName: itemObj?.name || it.description || "-",
+          sku: itemObj?.sku || null,
+          hsnCode: it.hsnCode || itemObj?.hsnCode || null,
+          quantity: Number(it.quantity || 0),
+          unitPrice: Number(it.unitPrice || 0),
+          totalAmount: Number(it.totalAmount || 0),
+          unit: itemObj?.primaryUom?.shortName || itemObj?.primaryUom?.name || "BOX",
+        };
+      };
+
+      const findMatchingLine = (lines: any[]) => {
+        if (!hasItemFilter) return lines[0] || null;
+        return lines.find((it: any) => {
+          if (targetItemId && (it.itemId === targetItemId || it.sku?.toLowerCase() === targetItemId.toLowerCase() || it.name?.toLowerCase().includes(targetItemId.toLowerCase()))) {
+            return true;
+          }
+          if (targetSku && it.sku?.toLowerCase() === targetSku.toLowerCase()) {
+            return true;
+          }
+          if (targetItemSearch && (it.name?.toLowerCase().includes(targetItemSearch.toLowerCase()) || it.sku?.toLowerCase().includes(targetItemSearch.toLowerCase()))) {
+            return true;
+          }
+          return false;
+        }) || lines[0] || null;
+      };
+
       // Map Sales Invoices
       for (const s of sales) {
         const d = s.invoiceDate || s.createdAt;
         const grand = Number(s.grandTotal || 0);
         const paid = Number(s.paidAmount || 0);
         const unpaid = Math.max(0, grand - paid);
+        const lineItems = (s.items || []).map(mapLineItem);
+        const matchingLine = findMatchingLine(lineItems);
 
         allItems.push({
           id: s.id,
@@ -353,6 +533,17 @@ export class DashboardService {
           link: `/sales/invoices/${s.id}`,
           ...buildInvoiceUrls(s.id),
           hasSharedLedgerBadge: Boolean(s.partyId),
+          items: lineItems,
+          itemDetails: lineItems,
+          ...(matchingLine ? {
+            itemId: matchingLine.itemId,
+            itemName: matchingLine.name,
+            itemSku: matchingLine.sku,
+            itemQuantity: matchingLine.quantity,
+            itemUnitPrice: matchingLine.unitPrice,
+            itemTotalAmount: matchingLine.totalAmount,
+            unit: matchingLine.unit,
+          } : {}),
         });
       }
 
@@ -362,6 +553,8 @@ export class DashboardService {
         const grand = Number(p.grandTotal || 0);
         const paid = Number(p.paidAmount || 0);
         const unpaid = Math.max(0, grand - paid);
+        const lineItems = (p.items || []).map(mapLineItem);
+        const matchingLine = findMatchingLine(lineItems);
 
         allItems.push({
           id: p.id,
@@ -381,6 +574,17 @@ export class DashboardService {
           rawCreatedAt: p.createdAt ? new Date(p.createdAt).getTime() : 0,
           link: `/purchases/${p.id}`,
           hasSharedLedgerBadge: Boolean(p.partyId),
+          items: lineItems,
+          itemDetails: lineItems,
+          ...(matchingLine ? {
+            itemId: matchingLine.itemId,
+            itemName: matchingLine.name,
+            itemSku: matchingLine.sku,
+            itemQuantity: matchingLine.quantity,
+            itemUnitPrice: matchingLine.unitPrice,
+            itemTotalAmount: matchingLine.totalAmount,
+            unit: matchingLine.unit,
+          } : {}),
         });
       }
 
@@ -491,6 +695,8 @@ export class DashboardService {
           referenceNo: v.referenceNo || null,
           narration: v.narration || null,
           hasSharedLedgerBadge: Boolean(partyId),
+          items: [],
+          itemDetails: [],
         });
       }
 
@@ -498,6 +704,8 @@ export class DashboardService {
       for (const c of challans) {
         const d = c.challanDate || c.createdAt;
         const amt = Number(c.totalAmount || 0);
+        const lineItems = (c.items || []).map(mapLineItem);
+        const matchingLine = findMatchingLine(lineItems);
 
         allItems.push({
           id: c.id,
@@ -517,6 +725,17 @@ export class DashboardService {
           rawCreatedAt: c.createdAt ? new Date(c.createdAt).getTime() : 0,
           link: `/sales/delivery-challan`,
           hasSharedLedgerBadge: Boolean(c.partyId),
+          items: lineItems,
+          itemDetails: lineItems,
+          ...(matchingLine ? {
+            itemId: matchingLine.itemId,
+            itemName: matchingLine.name,
+            itemSku: matchingLine.sku,
+            itemQuantity: matchingLine.quantity,
+            itemUnitPrice: matchingLine.unitPrice,
+            itemTotalAmount: matchingLine.totalAmount,
+            unit: matchingLine.unit,
+          } : {}),
         });
       }
 
@@ -524,6 +743,8 @@ export class DashboardService {
       for (const sr of salesReturns) {
         const d = sr.returnDate || sr.createdAt;
         const amt = Number(sr.grandTotal || 0);
+        const lineItems = (sr.items || []).map(mapLineItem);
+        const matchingLine = findMatchingLine(lineItems);
 
         allItems.push({
           id: sr.id,
@@ -543,6 +764,17 @@ export class DashboardService {
           rawCreatedAt: sr.createdAt ? new Date(sr.createdAt).getTime() : 0,
           link: `/sales/sales-returns/${sr.id}`,
           hasSharedLedgerBadge: Boolean(sr.partyId),
+          items: lineItems,
+          itemDetails: lineItems,
+          ...(matchingLine ? {
+            itemId: matchingLine.itemId,
+            itemName: matchingLine.name,
+            itemSku: matchingLine.sku,
+            itemQuantity: matchingLine.quantity,
+            itemUnitPrice: matchingLine.unitPrice,
+            itemTotalAmount: matchingLine.totalAmount,
+            unit: matchingLine.unit,
+          } : {}),
         });
       }
 
@@ -550,6 +782,8 @@ export class DashboardService {
       for (const pr of purchaseReturns) {
         const d = pr.returnDate || pr.createdAt;
         const amt = Number(pr.grandTotal || 0);
+        const lineItems = (pr.items || []).map(mapLineItem);
+        const matchingLine = findMatchingLine(lineItems);
 
         allItems.push({
           id: pr.id,
@@ -569,6 +803,17 @@ export class DashboardService {
           rawCreatedAt: pr.createdAt ? new Date(pr.createdAt).getTime() : 0,
           link: `/purchases/returns/${pr.id}`,
           hasSharedLedgerBadge: Boolean(pr.partyId),
+          items: lineItems,
+          itemDetails: lineItems,
+          ...(matchingLine ? {
+            itemId: matchingLine.itemId,
+            itemName: matchingLine.name,
+            itemSku: matchingLine.sku,
+            itemQuantity: matchingLine.quantity,
+            itemUnitPrice: matchingLine.unitPrice,
+            itemTotalAmount: matchingLine.totalAmount,
+            unit: matchingLine.unit,
+          } : {}),
         });
       }
 
@@ -582,7 +827,11 @@ export class DashboardService {
             it.partyName.toLowerCase().includes(s) ||
             it.type.toLowerCase().includes(s) ||
             String(it.amount).includes(s) ||
-            (it.id && it.id.toLowerCase().includes(s)),
+            (it.id && it.id.toLowerCase().includes(s)) ||
+            (it.items && it.items.some((itItem: any) =>
+              (itItem.name && itItem.name.toLowerCase().includes(s)) ||
+              (itItem.sku && itItem.sku.toLowerCase().includes(s))
+            )),
         );
       }
 

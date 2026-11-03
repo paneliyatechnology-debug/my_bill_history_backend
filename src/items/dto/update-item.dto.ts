@@ -4,6 +4,7 @@ export interface UpdateItemDto {
   type?: ItemType;
   name?: string;
   nameGujarati?: string;
+  description?: string | null;
   sku?: string;
   barcode?: string;
   hsnCode?: string;

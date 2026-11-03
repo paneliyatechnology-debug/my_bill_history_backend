@@ -4,6 +4,7 @@ export interface CreateItemDto {
   type: ItemType; // PRODUCT | SERVICE
   name: string;
   nameGujarati?: string;
+  description?: string;
   sku?: string;
   barcode?: string;
   hsnCode: string; // 2, 4, 6, 8 digit HSN or 6-digit SAC (99xxxx)

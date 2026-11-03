@@ -240,6 +240,7 @@ export class ItemsService {
           type,
           name,
           nameGujarati: dto.nameGujarati?.trim() || null,
+          description: dto.description?.trim() || null,
           sku,
           barcode,
           hsnCode,
@@ -422,6 +423,7 @@ export class ItemsService {
         where.OR = [
           { name: { contains: search, mode: "insensitive" } },
           { nameGujarati: { contains: search, mode: "insensitive" } },
+          { description: { contains: search, mode: "insensitive" } },
           { sku: { contains: search, mode: "insensitive" } },
           { barcode: { contains: search, mode: "insensitive" } },
           { hsnCode: { contains: search, mode: "insensitive" } },
@@ -459,9 +461,28 @@ export class ItemsService {
         );
         const { stockTransactions, ...rest } = it;
         const firstBatch = it.batches?.[0];
+
+        const salesPrice = Number(it.retailPrice || 0);
+        const purchasePrice = Number(it.purchaseRate || 0);
+        const unit = it.primaryUom?.symbol || it.primaryUom?.name || "BOX";
+        const unitName = it.primaryUom?.name || it.primaryUom?.symbol || "BOX";
+        const categoryName = it.category?.name || null;
+        const description = it.description || null;
+
         return {
           ...rest,
+          description,
           currentStock,
+          stock: currentStock,
+          stockQuantity: currentStock,
+          salesPrice,
+          salePrice: salesPrice,
+          purchasePrice,
+          purchaseRate: purchasePrice,
+          retailPrice: salesPrice,
+          unit,
+          unitName,
+          categoryName,
           openingBatchNumber: firstBatch?.batchNumber || null,
           openingMfgDate: firstBatch?.mfgDate || null,
           openingExpiryDate: firstBatch?.expiryDate || null,
@@ -508,9 +529,27 @@ export class ItemsService {
         0,
       );
       const { stockTransactions, ...rest } = item;
+      const salesPrice = Number(item.retailPrice || 0);
+      const purchasePrice = Number(item.purchaseRate || 0);
+      const unit = item.primaryUom?.symbol || item.primaryUom?.name || "BOX";
+      const unitName = item.primaryUom?.name || item.primaryUom?.symbol || "BOX";
+      const categoryName = item.category?.name || null;
+      const description = item.description || null;
+
       return {
         ...rest,
+        description,
         currentStock,
+        stock: currentStock,
+        stockQuantity: currentStock,
+        salesPrice,
+        salePrice: salesPrice,
+        purchasePrice,
+        purchaseRate: purchasePrice,
+        retailPrice: salesPrice,
+        unit,
+        unitName,
+        categoryName,
       };
     });
   }
@@ -601,6 +640,10 @@ export class ItemsService {
             dto.nameGujarati !== undefined
               ? dto.nameGujarati?.trim() || null
               : existing.nameGujarati,
+          description:
+            dto.description !== undefined
+              ? (dto.description ? dto.description.trim() : null)
+              : existing.description,
           sku:
             dto.sku !== undefined
               ? dto.sku
@@ -1149,6 +1192,333 @@ export class ItemsService {
         messageGujarati: `સ્ટોક સફળતાપૂર્વક ${isAdd ? "ઉમેરવામાં આવ્યો" : "ઘટાડવામાં આવ્યો"} (${qty}).`,
         currentStock,
         transaction: stockTx,
+      };
+    });
+  }
+
+  async getStockDetails(
+    ctx: TenantContext,
+    id: string,
+    query?: { startDate?: string; endDate?: string },
+  ) {
+    return this.prisma.executeInTenantContext(ctx, async (tx) => {
+      const item = await tx.item.findFirst({
+        where: { id, companyId: ctx.companyId },
+        include: { primaryUom: true },
+      });
+      if (!item) {
+        throw new NotFoundException({
+          statusCode: 404,
+          message: `Item with ID '${id}' not found.`,
+        });
+      }
+
+      const allTransactions = await tx.stockTransaction.findMany({
+        where: {
+          itemId: id,
+          companyId: ctx.companyId,
+        },
+        orderBy: { transactionDate: "asc" },
+      });
+
+      const allDocIds = Array.from(
+        new Set(
+          allTransactions
+            .map((t) => t.referenceDocId)
+            .filter((d): d is string => Boolean(d && d !== id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(d)))
+        )
+      );
+
+      const salesInvoiceIds = allTransactions
+        .filter((t) => (t.referenceDocType === "SALES_INVOICE" || t.transactionType === StockTransactionType.SALES_DISPATCH) && t.referenceDocId && t.referenceDocId !== id)
+        .map((t) => t.referenceDocId);
+      const purchaseInvoiceIds = allTransactions
+        .filter((t) => (t.referenceDocType === "PURCHASE_INVOICE" || t.transactionType === StockTransactionType.PURCHASE_RECEIPT) && t.referenceDocId && t.referenceDocId !== id)
+        .map((t) => t.referenceDocId);
+      const salesReturnIds = allTransactions
+        .filter((t) => (t.referenceDocType === "SALES_RETURN" || t.transactionType === StockTransactionType.SALES_RETURN) && t.referenceDocId && t.referenceDocId !== id)
+        .map((t) => t.referenceDocId);
+      const purchaseReturnIds = allTransactions
+        .filter((t) => (t.referenceDocType === "PURCHASE_RETURN" || t.transactionType === StockTransactionType.PURCHASE_RETURN) && t.referenceDocId && t.referenceDocId !== id)
+        .map((t) => t.referenceDocId);
+
+      const [salesInvoices, purchaseInvoices, salesReturns, purchaseReturns, vouchers, auditLogs] = await Promise.all([
+        salesInvoiceIds.length > 0
+          ? tx.salesInvoice.findMany({
+              where: { id: { in: salesInvoiceIds }, companyId: ctx.companyId },
+              select: { id: true, invoiceNumber: true },
+            })
+          : [],
+        purchaseInvoiceIds.length > 0
+          ? tx.purchaseInvoice.findMany({
+              where: { id: { in: purchaseInvoiceIds }, companyId: ctx.companyId },
+              select: { id: true, vendorInvoiceNumber: true },
+            })
+          : [],
+        salesReturnIds.length > 0
+          ? tx.salesReturn.findMany({
+              where: { id: { in: salesReturnIds }, companyId: ctx.companyId },
+              select: { id: true, returnNumber: true },
+            })
+          : [],
+        purchaseReturnIds.length > 0
+          ? tx.purchaseReturn.findMany({
+              where: { id: { in: purchaseReturnIds }, companyId: ctx.companyId },
+              select: { id: true, returnNumber: true },
+            })
+          : [],
+        allDocIds.length > 0
+          ? tx.voucher.findMany({
+              where: { sourceEntityId: { in: allDocIds }, companyId: ctx.companyId },
+              select: { sourceEntityId: true, referenceNo: true, voucherNumber: true },
+            })
+          : [],
+        allDocIds.length > 0
+          ? tx.auditLog.findMany({
+              where: { entityId: { in: allDocIds }, companyId: ctx.companyId },
+              select: { entityId: true, newState: true },
+            })
+          : [],
+      ]);
+
+      const salesMap = new Map<string, string>();
+      for (const s of salesInvoices) salesMap.set(s.id, s.invoiceNumber);
+
+      const purchaseMap = new Map<string, string>();
+      for (const p of purchaseInvoices) purchaseMap.set(p.id, p.vendorInvoiceNumber);
+
+      const salesReturnMap = new Map<string, string>();
+      for (const r of salesReturns) salesReturnMap.set(r.id, r.returnNumber);
+
+      const purchaseReturnMap = new Map<string, string>();
+      for (const r of purchaseReturns) purchaseReturnMap.set(r.id, r.returnNumber);
+
+      const voucherMap = new Map<string, string>();
+      for (const v of vouchers) {
+        if (v.sourceEntityId) {
+          const num = v.referenceNo || v.voucherNumber;
+          if (num) voucherMap.set(v.sourceEntityId, num);
+        }
+      }
+
+      const auditMap = new Map<string, string>();
+      for (const a of auditLogs) {
+        if (a.entityId && a.newState && typeof a.newState === "object") {
+          const state = a.newState as Record<string, any>;
+          const num = state.invoiceNumber || state.returnNumber || state.vendorInvoiceNumber || state.voucherNumber;
+          if (num) auditMap.set(a.entityId, String(num));
+        }
+      }
+
+      let runningStock = 0;
+      const computed = allTransactions.map((t) => {
+        const qty = Number(t.quantity);
+        runningStock += qty;
+
+        let txTypeLabel = "Stock Adjustment";
+        if (t.transactionType === StockTransactionType.OPENING) txTypeLabel = "Opening Stock";
+        else if (t.transactionType === StockTransactionType.PURCHASE_RECEIPT) txTypeLabel = "Purchase Invoices";
+        else if (t.transactionType === StockTransactionType.SALES_DISPATCH) txTypeLabel = "Sales Invoices";
+        else if (t.transactionType === StockTransactionType.SALES_RETURN) txTypeLabel = "Sales Return";
+        else if (t.transactionType === StockTransactionType.PURCHASE_RETURN) txTypeLabel = "Purchase Return";
+        else if (t.transactionType === StockTransactionType.STOCK_ADJUSTMENT_PLUS) txTypeLabel = "Add Stock";
+        else if (t.transactionType === StockTransactionType.STOCK_ADJUSTMENT_MINUS) txTypeLabel = "Reduce Stock";
+
+        let invoiceNum = "-";
+        let docLink = "";
+        const docId = t.referenceDocId;
+        const isValidDocId = Boolean(docId && docId !== id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(docId));
+
+        const isSales = t.referenceDocType === "SALES_INVOICE" || t.transactionType === StockTransactionType.SALES_DISPATCH;
+        const isPurchase = t.referenceDocType === "PURCHASE_INVOICE" || t.transactionType === StockTransactionType.PURCHASE_RECEIPT;
+        const isSalesReturn = t.referenceDocType === "SALES_RETURN" || t.transactionType === StockTransactionType.SALES_RETURN;
+        const isPurchaseReturn = t.referenceDocType === "PURCHASE_RETURN" || t.transactionType === StockTransactionType.PURCHASE_RETURN;
+        const isDeliveryChallan = t.referenceDocType === "DELIVERY_CHALLAN";
+
+        if (isValidDocId && docId) {
+          if (isSales) {
+            invoiceNum = salesMap.get(docId) || voucherMap.get(docId) || auditMap.get(docId) || `INV-${docId.slice(0, 8).toUpperCase()}`;
+            docLink = `/sales/invoices/${docId}`;
+          } else if (isPurchase) {
+            invoiceNum = purchaseMap.get(docId) || voucherMap.get(docId) || auditMap.get(docId) || `PUR-${docId.slice(0, 8).toUpperCase()}`;
+            docLink = `/purchases/${docId}`;
+          } else if (isSalesReturn) {
+            invoiceNum = salesReturnMap.get(docId) || voucherMap.get(docId) || auditMap.get(docId) || `SR-${docId.slice(0, 8).toUpperCase()}`;
+            docLink = `/sales/returns/${docId}`;
+          } else if (isPurchaseReturn) {
+            invoiceNum = purchaseReturnMap.get(docId) || voucherMap.get(docId) || auditMap.get(docId) || `DN-${docId.slice(0, 8).toUpperCase()}`;
+            docLink = `/purchases/returns/${docId}`;
+          } else if (isDeliveryChallan) {
+            invoiceNum = voucherMap.get(docId) || auditMap.get(docId) || `DC-${docId.slice(0, 8).toUpperCase()}`;
+            docLink = `/sales/delivery-challans/${docId}`;
+          }
+        }
+
+        return {
+          id: t.id,
+          date: t.transactionDate,
+          transactionType: txTypeLabel,
+          rawType: t.transactionType,
+          quantity: qty,
+          invoiceNumber: invoiceNum,
+          invoiceId: t.referenceDocId || null,
+          docLink,
+          closingStock: runningStock,
+          valuationRate: Number(t.valuationRate),
+          totalValuation: Number(t.totalValuation),
+        };
+      });
+
+      let filtered = computed;
+      if (query?.startDate) {
+        const start = new Date(query.startDate);
+        filtered = filtered.filter((r) => new Date(r.date) >= start);
+      }
+      if (query?.endDate) {
+        const end = new Date(query.endDate);
+        end.setHours(23, 59, 59, 999);
+        filtered = filtered.filter((r) => new Date(r.date) <= end);
+      }
+
+      return {
+        item: {
+          id: item.id,
+          name: item.name,
+          sku: item.sku,
+          uom: item.primaryUom?.uqcCode || item.primaryUom?.symbol || "PCS",
+          currentStock: runningStock,
+        },
+        transactions: [...filtered].reverse(),
+      };
+    });
+  }
+
+  async getPartyReport(
+    ctx: TenantContext,
+    id: string,
+    query?: { startDate?: string; endDate?: string },
+  ) {
+    return this.prisma.executeInTenantContext(ctx, async (tx) => {
+      const item = await tx.item.findFirst({
+        where: { id, companyId: ctx.companyId },
+        include: { primaryUom: true },
+      });
+      if (!item) {
+        throw new NotFoundException({
+          statusCode: 404,
+          message: `Item with ID '${id}' not found.`,
+        });
+      }
+
+      const salesDateFilter: any = {};
+      const purchaseDateFilter: any = {};
+      if (query?.startDate || query?.endDate) {
+        if (query.startDate) {
+          salesDateFilter.gte = new Date(query.startDate);
+          purchaseDateFilter.gte = new Date(query.startDate);
+        }
+        if (query.endDate) {
+          const end = new Date(query.endDate);
+          end.setHours(23, 59, 59, 999);
+          salesDateFilter.lte = end;
+          purchaseDateFilter.lte = end;
+        }
+      }
+
+      const [salesItems, purchaseItems] = await Promise.all([
+        tx.salesInvoiceItem.findMany({
+          where: {
+            itemId: id,
+            invoice: {
+              companyId: ctx.companyId,
+              ...(Object.keys(salesDateFilter).length > 0
+                ? { invoiceDate: salesDateFilter }
+                : {}),
+            },
+          },
+          include: {
+            invoice: {
+              select: {
+                id: true,
+                partyId: true,
+                party: { select: { id: true, name: true } },
+              },
+            },
+          },
+        }),
+        tx.purchaseInvoiceItem.findMany({
+          where: {
+            itemId: id,
+            invoice: {
+              companyId: ctx.companyId,
+              ...(Object.keys(purchaseDateFilter).length > 0
+                ? { invoiceDate: purchaseDateFilter }
+                : {}),
+            },
+          },
+          include: {
+            invoice: {
+              select: {
+                id: true,
+                partyId: true,
+                party: { select: { id: true, name: true } },
+              },
+            },
+          },
+        }),
+      ]);
+
+      const partyMap = new Map<
+        string,
+        {
+          partyId: string;
+          partyName: string;
+          salesQuantity: number;
+          salesAmount: number;
+          purchaseQuantity: number;
+          purchaseAmount: number;
+        }
+      >();
+
+      for (const si of salesItems) {
+        const partyId = si.invoice.partyId || "unknown";
+        const partyName = si.invoice.party?.name || "Direct Customer";
+        const cur = partyMap.get(partyId) || {
+          partyId,
+          partyName,
+          salesQuantity: 0,
+          salesAmount: 0,
+          purchaseQuantity: 0,
+          purchaseAmount: 0,
+        };
+        cur.salesQuantity += Number(si.quantity) || 0;
+        cur.salesAmount += Number(si.totalAmount) || 0;
+        partyMap.set(partyId, cur);
+      }
+
+      for (const pi of purchaseItems) {
+        const partyId = pi.invoice.partyId || "unknown";
+        const partyName = pi.invoice.party?.name || "Direct Supplier";
+        const cur = partyMap.get(partyId) || {
+          partyId,
+          partyName,
+          salesQuantity: 0,
+          salesAmount: 0,
+          purchaseQuantity: 0,
+          purchaseAmount: 0,
+        };
+        cur.purchaseQuantity += Number(pi.quantity) || 0;
+        cur.purchaseAmount += Number(pi.totalAmount) || 0;
+        partyMap.set(partyId, cur);
+      }
+
+      return {
+        item: {
+          id: item.id,
+          name: item.name,
+          uom: item.primaryUom?.uqcCode || item.primaryUom?.symbol || "PCS",
+        },
+        parties: Array.from(partyMap.values()),
       };
     });
   }

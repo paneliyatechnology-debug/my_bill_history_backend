@@ -48,6 +48,24 @@ export class ItemsController {
     return this.itemsService.findAll(ctx, query);
   }
 
+  @Get(":id/stock-details")
+  async getStockDetails(
+    @CurrentTenant() ctx: TenantContext,
+    @Param("id") id: string,
+    @Query() query: { startDate?: string; endDate?: string },
+  ) {
+    return this.itemsService.getStockDetails(ctx, id, query);
+  }
+
+  @Get(":id/party-report")
+  async getPartyReport(
+    @CurrentTenant() ctx: TenantContext,
+    @Param("id") id: string,
+    @Query() query: { startDate?: string; endDate?: string },
+  ) {
+    return this.itemsService.getPartyReport(ctx, id, query);
+  }
+
   @Get(":id")
   async findOne(@CurrentTenant() ctx: TenantContext, @Param("id") id: string) {
     return this.itemsService.findOne(ctx, id);

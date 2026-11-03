@@ -1163,6 +1163,77 @@ export class InvoicesService {
       });
 
       if (!invoice) {
+        const voucher = await tx.voucher.findFirst({
+          where: {
+            companyId: tenant.companyId,
+            sourceEntityId: id,
+          },
+          include: {
+            journalEntries: {
+              include: { account: true },
+            },
+          },
+        });
+        if (voucher) {
+          const stockTxs = await tx.stockTransaction.findMany({
+            where: {
+              companyId: tenant.companyId,
+              referenceDocId: id,
+            },
+            include: { item: true },
+          });
+          const branch = await tx.branch.findFirst({
+            where: { companyId: tenant.companyId },
+          });
+          const finYear = await tx.financialYear.findFirst({
+            where: { id: voucher.financialYearId },
+          });
+          const partyName = voucher.narration?.replace(/^Sales Bill No\.\s+[^\s]+\s+to\s+/i, "") || "Walk-in Retail Cash Customer";
+          return {
+            id,
+            companyId: tenant.companyId,
+            invoiceNumber: voucher.referenceNo || voucher.voucherNumber,
+            invoiceDate: voucher.voucherDate.toISOString(),
+            status: "PAID",
+            paymentMode: voucher.paymentMode || "CASH",
+            placeOfSupply: "24",
+            isB2B: false,
+            taxableAmount: Number(voucher.totalAmount),
+            cgstAmount: 0,
+            sgstAmount: 0,
+            igstAmount: 0,
+            roundOff: 0,
+            grandTotal: Number(voucher.totalAmount),
+            paidAmount: Number(voucher.totalAmount),
+            balanceAmount: 0,
+            outstandingBalance: 0,
+            branch,
+            financialYear: finYear,
+            party: {
+              id: "historical-party",
+              name: partyName,
+              stateCode: "24",
+            },
+            items: stockTxs.map((st) => ({
+              id: st.id,
+              invoiceId: id,
+              itemId: st.itemId,
+              description: st.item?.name || "Product",
+              hsnCode: st.item?.hsnCode || "9999",
+              quantity: Math.abs(Number(st.quantity)),
+              unitPrice: Number(st.valuationRate),
+              taxRate: 0,
+              taxableAmount: Number(st.totalValuation),
+              cgstAmount: 0,
+              sgstAmount: 0,
+              igstAmount: 0,
+              totalAmount: Number(st.totalValuation),
+              item: st.item,
+            })),
+            voucher,
+            ...buildInvoiceUrls(id),
+          };
+        }
         throw new NotFoundException(`Sales invoice ${id} not found.`);
       }
 

@@ -663,6 +663,7 @@ model Item {
   type                ItemType        @default(PRODUCT)
   name                String          @db.VarChar(255)
   nameGujarati        String?         @map("name_gujarati") @db.VarChar(255)
+  description         String?         @db.Text
   sku                 String?         @db.VarChar(100)
   barcode             String?         @db.VarChar(100)
   hsnCode             String          @map("hsn_code") @db.VarChar(10)
