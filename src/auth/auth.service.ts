@@ -41,6 +41,66 @@ export class AuthService {
     private readonly sessionEvents: SessionEventsService,
   ) {}
 
+  getRefreshSecret(): string {
+    return (
+      this.configService.get<string>("JWT_REFRESH_SECRET") ||
+      `${this.configService.get<string>("JWT_SECRET", "dev-super-secure-jwt-secret-key-at-least-32-chars-long-123456")}-refresh-key`
+    );
+  }
+
+  async generateTokenPair(payload: {
+    sub: string;
+    userId: string;
+    organizationId: string;
+    companyId: string;
+    branchId?: string;
+    financialYearId?: string;
+    email: string;
+    phone: string;
+    role: string;
+    preferredLang?: string;
+    isSupportSession?: boolean;
+  }) {
+    const accessSecret = this.configService.get<string>(
+      "JWT_SECRET",
+      "dev-super-secure-jwt-secret-key-at-least-32-chars-long-123456",
+    );
+    const refreshSecret = this.getRefreshSecret();
+
+    const accessTokenExpiresIn = 86400; // 24 hours
+    const refreshTokenExpiresIn = 604800; // 7 days
+
+    const accessToken = await this.jwtService.signAsync(
+      {
+        ...payload,
+        tokenType: "access",
+      },
+      { secret: accessSecret, expiresIn: accessTokenExpiresIn },
+    );
+
+    const refreshToken = await this.jwtService.signAsync(
+      {
+        sub: payload.sub,
+        userId: payload.userId,
+        organizationId: payload.organizationId,
+        companyId: payload.companyId,
+        branchId: payload.branchId,
+        financialYearId: payload.financialYearId,
+        role: payload.role,
+        tokenType: "refresh",
+      },
+      { secret: refreshSecret, expiresIn: refreshTokenExpiresIn },
+    );
+
+    return {
+      accessToken,
+      refreshToken,
+      tokenType: "Bearer",
+      expiresIn: accessTokenExpiresIn,
+      refreshTokenExpiresIn,
+    };
+  }
+
   getSessionStream(token?: string, tenantId?: string, organizationId?: string) {
     let resolvedTenantId = tenantId;
     let resolvedOrgId = organizationId;
@@ -234,12 +294,10 @@ export class AuthService {
       preferredLang: result.user.preferredLang,
     };
 
-    const accessToken = await this.jwtService.signAsync(tokenPayload);
+    const tokens = await this.generateTokenPair(tokenPayload);
 
     return {
-      accessToken,
-      tokenType: "Bearer",
-      expiresIn: 86400,
+      ...tokens,
       user: {
         id: result.user.id,
         fullName: result.user.fullName,
@@ -421,12 +479,10 @@ export class AuthService {
       preferredLang: user.preferredLang,
     };
 
-    const accessToken = await this.jwtService.signAsync(tokenPayload);
+    const tokens = await this.generateTokenPair(tokenPayload);
 
     return {
-      accessToken,
-      tokenType: "Bearer",
-      expiresIn: 86400,
+      ...tokens,
       user: {
         id: user.id,
         fullName: user.fullName,
@@ -649,6 +705,179 @@ export class AuthService {
       success: true,
       message: "Logged out successfully. All active support sessions revoked.",
     };
+  }
+
+  /**
+   * Refreshes access token and rotates refresh token using a valid refresh token.
+   */
+  async refreshToken(
+    rawRefreshToken: string,
+    requestedCompanyId?: string,
+    requestedBranchId?: string,
+  ) {
+    if (!rawRefreshToken || typeof rawRefreshToken !== "string" || !rawRefreshToken.trim()) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: "Refresh token is required.",
+        messageGujarati: "રિફ્રેશ ટોકન જરૂરી છે.",
+      });
+    }
+
+    const refreshSecret = this.getRefreshSecret();
+    let decoded: any;
+    try {
+      decoded = await this.jwtService.verifyAsync(rawRefreshToken.trim(), {
+        secret: refreshSecret,
+      });
+    } catch {
+      throw new UnauthorizedException({
+        statusCode: 401,
+        message: "Invalid or expired refresh token. Please sign in again.",
+        messageGujarati: "રિફ્રેશ ટોકન અમાન્ય અથવા એક્સપાયર થયેલ છે. કૃપા કરીને ફરી લોગિન કરો.",
+      });
+    }
+
+    if (!decoded || decoded.tokenType !== "refresh") {
+      throw new UnauthorizedException({
+        statusCode: 401,
+        message: "The provided token is not a valid refresh token.",
+        messageGujarati: "આપેલ ટોકન માન્ય રિફ્રેશ ટોકન નથી.",
+      });
+    }
+
+    const userId = decoded.userId || decoded.sub;
+    if (!userId) {
+      throw new UnauthorizedException({
+        statusCode: 401,
+        message: "Invalid token subject.",
+        messageGujarati: "અમાન્ય ટોકન સબ્જેક્ટ.",
+      });
+    }
+
+    return this.prisma.executeBypassRls(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        include: {
+          organization: true,
+          branchAssignments: { include: { branch: true } },
+        },
+      });
+
+      if (!user) {
+        throw new UnauthorizedException({
+          statusCode: 401,
+          message: "User account no longer exists.",
+          messageGujarati: "યુઝર એકાઉન્ટ ઉપલબ્ધ નથી.",
+        });
+      }
+
+      if (!user.isActive) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          message: "User account has been deactivated. Contact your administrator.",
+          messageGujarati: "યુઝર એકાઉન્ટ નિષ્ક્રિય કરેલ છે.",
+        });
+      }
+
+      // Resolve Company
+      const targetCompanyId = requestedCompanyId || decoded.companyId;
+      let company = targetCompanyId
+        ? await tx.company.findFirst({
+            where: { id: targetCompanyId, organizationId: user.organizationId },
+          })
+        : null;
+
+      if (!company) {
+        company = await tx.company.findFirst({
+          where: { organizationId: user.organizationId },
+          orderBy: { createdAt: "asc" },
+        });
+      }
+
+      if (!company) {
+        throw new NotFoundException({
+          statusCode: 404,
+          message: "No active company found for this organization.",
+          messageGujarati: "આ સંસ્થા માટે કોઈ કંપની મળી નથી.",
+        });
+      }
+
+      // Resolve Branch
+      const targetBranchId = requestedBranchId || decoded.branchId;
+      let branch: any = null;
+      if (targetBranchId) {
+        branch = await tx.branch.findFirst({
+          where: { id: targetBranchId, companyId: company.id },
+        });
+      }
+
+      if (!branch) {
+        const assigned = user.branchAssignments?.find(
+          (a) => a.branch?.companyId === company.id,
+        );
+        branch =
+          assigned?.branch ||
+          (await tx.branch.findFirst({
+            where: { companyId: company.id },
+            orderBy: [{ isMainBranch: "desc" }, { createdAt: "asc" }],
+          }));
+      }
+
+      // Resolve Active Financial Year
+      const fy = await tx.financialYear.findFirst({
+        where: { companyId: company.id, isCurrent: true },
+      });
+
+      const tokenPayload = {
+        sub: user.id,
+        userId: user.id,
+        organizationId: user.organizationId,
+        companyId: company.id,
+        branchId: branch?.id || undefined,
+        financialYearId: fy?.id || undefined,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        preferredLang: user.preferredLang,
+      };
+
+      const tokens = await this.generateTokenPair(tokenPayload);
+
+      await this.audit.record({
+        organizationId: user.organizationId,
+        companyId: company.id,
+        userId: user.id,
+        action: "AUTH_REFRESH_TOKEN",
+        entityName: "User",
+        entityId: user.id,
+        newState: {
+          companyId: company.id,
+          branchId: branch?.id || null,
+        },
+      });
+
+      return {
+        ...tokens,
+        user: {
+          id: user.id,
+          fullName: user.fullName,
+          email: user.email,
+          phone: user.phone,
+          role: user.role,
+          preferredLang: user.preferredLang,
+        },
+        defaultContext: {
+          organizationId: user.organizationId,
+          organizationName: user.organization.name,
+          companyId: company.id,
+          companyName: company.tradeName,
+          branchId: branch?.id,
+          branchName: branch?.name,
+          financialYearId: fy?.id,
+          financialYear: fy?.name,
+        },
+      };
+    });
   }
 
   async sendPublicOtp(input: {

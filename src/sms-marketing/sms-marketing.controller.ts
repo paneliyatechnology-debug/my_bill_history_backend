@@ -121,3 +121,4 @@ export class SmsMarketingController {
     return this.smsService.updatePartyGreetingSettings(ctx, partyData);
   }
 }
+

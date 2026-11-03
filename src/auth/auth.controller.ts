@@ -18,6 +18,7 @@ import { AuthService } from "./auth.service";
 import { SessionEventPayload } from "./session-events.service";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
+import { RefreshTokenDto } from "./dto/refresh-token.dto";
 import { SwitchContextDto } from "./dto/switch-context.dto";
 import { Public } from "../common/decorators/public.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
@@ -46,6 +47,35 @@ export class AuthController {
     const ip = req.ip || req.headers["x-forwarded-for"]?.toString();
     const userAgent = req.headers["user-agent"] || undefined;
     return this.authService.login(dto, ip, userAgent);
+  }
+
+  @Public()
+  @Throttle({
+    default: { limit: process.env.NODE_ENV === "production" ? 30 : 1000, ttl: 60000 },
+  })
+  @Post(["refresh-token", "refresh"])
+  @HttpCode(HttpStatus.OK)
+  async refreshToken(@Body() dto: RefreshTokenDto, @Req() req: FastifyRequest) {
+    const authHeader = req.headers.authorization;
+    const headerToken = authHeader?.startsWith("Bearer ")
+      ? authHeader.substring(7)
+      : undefined;
+    const xRefreshToken = req.headers["x-refresh-token"]?.toString();
+    const token = dto?.refreshToken || (dto as any)?.refresh_token || headerToken || xRefreshToken;
+
+    if (!token || typeof token !== "string" || !token.trim()) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: "Refresh token is required.",
+        messageGujarati: "રિફ્રેશ ટોકન જરૂરી છે.",
+      });
+    }
+
+    return this.authService.refreshToken(
+      token.trim(),
+      dto?.companyId,
+      dto?.branchId,
+    );
   }
 
   @Get("me")

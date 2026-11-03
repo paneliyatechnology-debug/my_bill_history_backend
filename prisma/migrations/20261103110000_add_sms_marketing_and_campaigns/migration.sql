@@ -101,3 +101,4 @@ BEGIN
         GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE sms_campaign_recipients TO billing_app;
     END IF;
 END $$;
+

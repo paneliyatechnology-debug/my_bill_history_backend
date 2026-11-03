@@ -10,3 +10,4 @@ import { SmsMarketingService } from "./sms-marketing.service";
   exports: [SmsMarketingService],
 })
 export class SmsMarketingModule {}
+

@@ -62,12 +62,20 @@ export class JwtAuthGuard implements CanActivate {
         "dev-super-secure-jwt-secret-key-at-least-32-chars-long-123456",
       );
       const payload = await this.jwtService.verifyAsync(token, { secret });
+      if (payload?.tokenType === "refresh") {
+        throw new UnauthorizedException({
+          statusCode: 401,
+          message: "Refresh token cannot be used as an access token on protected endpoints.",
+          messageGujarati: "રિફ્રેશ ટોકનનો ઉપયોગ ઍક્સેસ ટોકન તરીકે કરી શકાતો નથી.",
+        });
+      }
       request.user = {
         ...payload,
         id: payload.id || payload.userId || payload.sub,
       };
       return true;
-    } catch {
+    } catch (err: any) {
+      if (err instanceof UnauthorizedException) throw err;
       throw new UnauthorizedException({
         statusCode: 401,
         message: "Invalid or expired authorization token.",
