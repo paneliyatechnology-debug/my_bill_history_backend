@@ -1048,7 +1048,55 @@ export class InvoicesService {
         companyId: tenant.companyId,
       };
 
-      if (query.partyId) where.partyId = query.partyId;
+      if (query.partyId) {
+        const rawPartyId =
+          typeof query.partyId === "string"
+            ? query.partyId.trim()
+            : String(query.partyId || "").trim();
+        const uuidRegex =
+          /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+        // If partyId is empty, undefined/null string, or not a valid UUID format,
+        // return blank response instead of throwing a database syntax error.
+        if (
+          !rawPartyId ||
+          rawPartyId === "null" ||
+          rawPartyId === "undefined" ||
+          !uuidRegex.test(rawPartyId)
+        ) {
+          return {
+            items: [],
+            data: [],
+            total: 0,
+            page,
+            limit,
+            totalPages: 0,
+          };
+        }
+
+        // Proactively verify party existence for the tenant company.
+        // If party is not found, return blank response instead of error.
+        const partyExists = await tx.party.findFirst({
+          where: {
+            id: rawPartyId,
+            companyId: tenant.companyId,
+          },
+          select: { id: true },
+        });
+
+        if (!partyExists) {
+          return {
+            items: [],
+            data: [],
+            total: 0,
+            page,
+            limit,
+            totalPages: 0,
+          };
+        }
+
+        where.partyId = rawPartyId;
+      }
       if (query.status) where.status = query.status;
       if (query.category) where.category = query.category;
       if (query.startDate || query.endDate) {
@@ -1077,11 +1125,14 @@ export class InvoicesService {
         tx.salesInvoice.count({ where }),
       ]);
 
+      const mappedItems = items.map((inv) => ({
+        ...inv,
+        ...buildInvoiceUrls(inv.id),
+      }));
+
       return {
-        items: items.map((inv) => ({
-          ...inv,
-          ...buildInvoiceUrls(inv.id),
-        })),
+        items: mappedItems,
+        data: mappedItems,
         total,
         page,
         limit,

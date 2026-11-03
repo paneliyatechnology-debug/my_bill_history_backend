@@ -714,7 +714,49 @@ export class PurchasesService {
       };
 
       if (dto.partyId) {
-        where.partyId = dto.partyId;
+        const rawPartyId =
+          typeof dto.partyId === "string"
+            ? dto.partyId.trim()
+            : String(dto.partyId || "").trim();
+        const uuidRegex =
+          /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+        if (
+          !rawPartyId ||
+          rawPartyId === "null" ||
+          rawPartyId === "undefined" ||
+          !uuidRegex.test(rawPartyId)
+        ) {
+          return {
+            items: [],
+            data: [],
+            total: 0,
+            page: 1,
+            limit: dto.limit ? Number(dto.limit) : 50,
+            totalPages: 0,
+          };
+        }
+
+        const partyExists = await tx.party.findFirst({
+          where: {
+            id: rawPartyId,
+            companyId: tenant.companyId,
+          },
+          select: { id: true },
+        });
+
+        if (!partyExists) {
+          return {
+            items: [],
+            data: [],
+            total: 0,
+            page: 1,
+            limit: dto.limit ? Number(dto.limit) : 50,
+            totalPages: 0,
+          };
+        }
+
+        where.partyId = rawPartyId;
       }
       if (dto.search && dto.search.trim() !== "") {
         where.OR = [
@@ -1444,7 +1486,49 @@ export class PurchasesService {
       };
 
       if (dto.partyId) {
-        where.partyId = dto.partyId;
+        const rawPartyId =
+          typeof dto.partyId === "string"
+            ? dto.partyId.trim()
+            : String(dto.partyId || "").trim();
+        const uuidRegex =
+          /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+        if (
+          !rawPartyId ||
+          rawPartyId === "null" ||
+          rawPartyId === "undefined" ||
+          !uuidRegex.test(rawPartyId)
+        ) {
+          return {
+            items: [],
+            data: [],
+            total: 0,
+            page: 1,
+            limit: dto.limit ? Number(dto.limit) : 50,
+            totalPages: 0,
+          };
+        }
+
+        const partyExists = await tx.party.findFirst({
+          where: {
+            id: rawPartyId,
+            companyId: tenant.companyId,
+          },
+          select: { id: true },
+        });
+
+        if (!partyExists) {
+          return {
+            items: [],
+            data: [],
+            total: 0,
+            page: 1,
+            limit: dto.limit ? Number(dto.limit) : 50,
+            totalPages: 0,
+          };
+        }
+
+        where.partyId = rawPartyId;
       }
       if (dto.purchaseInvoiceId) {
         where.purchaseInvoiceId = dto.purchaseInvoiceId;

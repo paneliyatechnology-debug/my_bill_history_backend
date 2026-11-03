@@ -1971,4 +1971,42 @@ describe("Phase 5: Sales Billing, POS Engine & Stock Ledger (Integration)", () =
       expect(Array.isArray(itemStockData.movements)).toBe(true);
     });
   });
+
+  // --- REQUIREMENT 16: Party Query Graceful Handling (Missing & Invalid Party ID) ---
+  describe("16. Party Query Graceful Handling (Missing & Invalid Party ID)", () => {
+    it("should return blank response (items: [], data: [], total: 0) when partyId does not exist", async () => {
+      const nonExistentPartyId = "f19262a3-26e7-4097-8c1b-c4082e43266a";
+      const res = await app.inject({
+        method: "GET",
+        url: `/api/v1/sales/invoices?partyId=${nonExistentPartyId}&limit=100`,
+        headers: { authorization: `Bearer ${tenantAToken}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(Array.isArray(data.items)).toBe(true);
+      expect(data.items.length).toBe(0);
+      expect(Array.isArray(data.data)).toBe(true);
+      expect(data.data.length).toBe(0);
+      expect(data.total).toBe(0);
+      expect(data.page).toBe(1);
+      expect(data.limit).toBe(100);
+      expect(data.totalPages).toBe(0);
+    });
+
+    it("should return blank response when partyId is invalid or malformed without 500 error", async () => {
+      const invalidPartyId = "invalid-not-a-uuid";
+      const res = await app.inject({
+        method: "GET",
+        url: `/api/v1/sales/invoices?partyId=${invalidPartyId}&limit=100`,
+        headers: { authorization: `Bearer ${tenantAToken}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(Array.isArray(data.items)).toBe(true);
+      expect(data.items.length).toBe(0);
+      expect(data.total).toBe(0);
+    });
+  });
 });
