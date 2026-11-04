@@ -169,6 +169,15 @@ export const STANDARD_SME_ACCOUNTS: TemplateLedgerAccount[] = [
     openingType: "DR",
   },
 
+  // Staff / Employee Advances (Current Assets)
+  {
+    name: "Staff Advances",
+    nameGujarati: "કર્મચારી એડવાન્સ",
+    groupName: "Current Assets",
+    code: "1050",
+    openingType: "DR",
+  },
+
   // Sales (Income)
   {
     name: "General Sales Account",

@@ -11,6 +11,7 @@ import {
   VoucherType,
   PartyType,
   AccountNature,
+  StockTransactionType,
 } from "@billing/shared-types";
 import {
   Decimal,
@@ -421,9 +422,9 @@ export class ReportsService {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
       const invoiceDate: { gte?: Date; lte?: Date } = {};
       if (query.fromDate)
-        invoiceDate.gte = new Date(`${query.fromDate}T00:00:00.000Z`);
+        invoiceDate.gte = parseStartOfDay(query.fromDate);
       if (query.toDate)
-        invoiceDate.lte = new Date(`${query.toDate}T00:00:00.000Z`);
+        invoiceDate.lte = parseEndOfDay(query.toDate);
       const invoices = await tx.purchaseInvoice.findMany({
         where: {
           companyId: tenant.companyId,
@@ -528,9 +529,9 @@ export class ReportsService {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
       const invoiceDate: { gte?: Date; lte?: Date } = {};
       if (query.fromDate)
-        invoiceDate.gte = new Date(`${query.fromDate}T00:00:00.000Z`);
+        invoiceDate.gte = parseStartOfDay(query.fromDate);
       if (query.toDate)
-        invoiceDate.lte = new Date(`${query.toDate}T00:00:00.000Z`);
+        invoiceDate.lte = parseEndOfDay(query.toDate);
       const invoices = await tx.purchaseInvoice.findMany({
         where: {
           companyId: tenant.companyId,
@@ -648,9 +649,9 @@ export class ReportsService {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
       const invoiceDate: { gte?: Date; lte?: Date } = {};
       if (query.fromDate)
-        invoiceDate.gte = new Date(`${query.fromDate}T00:00:00.000Z`);
+        invoiceDate.gte = parseStartOfDay(query.fromDate);
       if (query.toDate)
-        invoiceDate.lte = new Date(`${query.toDate}T00:00:00.000Z`);
+        invoiceDate.lte = parseEndOfDay(query.toDate);
       const invoices = await tx.salesInvoice.findMany({
         where: {
           companyId: tenant.companyId,
@@ -856,6 +857,7 @@ export class ReportsService {
           totalPages: Math.ceil(totalCount / limit),
         },
         summary: {
+          totalVouchers: totalCount,
           totalReceipts: totalReceipts.toFixed(2),
           totalPayments: totalPayments.toFixed(2),
           totalContra: totalContra.toFixed(2),
@@ -1467,10 +1469,8 @@ export class ReportsService {
         });
       }
 
-      const fromDate = query.fromDate
-        ? new Date(query.fromDate)
-        : new Date("2020-01-01");
-      const toDate = query.toDate ? new Date(query.toDate) : new Date();
+      const fromDate = parseStartOfDay(query.fromDate) || new Date("2020-01-01T00:00:00.000Z");
+      const toDate = parseEndOfDay(query.toDate) || new Date();
 
       if (!partyLedgerAccount) {
         const isSupplier = party.type === PartyType.SUPPLIER;
@@ -1505,7 +1505,7 @@ export class ReportsService {
       const accountId = partyLedgerAccount.id;
 
       // 1. Calculate opening balance as of fromDate
-      // All journal entries before fromDate
+      // All valid journal entries before fromDate
       const priorEntries = await tx.journalEntry.findMany({
         where: {
           accountId,
@@ -1635,10 +1635,8 @@ export class ReportsService {
         );
       }
 
-      const fromDate = query.fromDate
-        ? new Date(query.fromDate)
-        : new Date("2020-01-01");
-      const toDate = query.toDate ? new Date(query.toDate) : new Date();
+      const fromDate = parseStartOfDay(query.fromDate) || new Date("2020-01-01T00:00:00.000Z");
+      const toDate = parseEndOfDay(query.toDate) || new Date();
 
       // Opening balance prior to fromDate
       const priorEntries = await tx.journalEntry.findMany({
@@ -1756,6 +1754,9 @@ export class ReportsService {
     tenant: TenantContext,
   ): Promise<any> {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const fromDate = parseStartOfDay(query.fromDate);
+      const toDate = parseEndOfDay(query.toDate);
+
       const accounts = await tx.ledgerAccount.findMany({
         where: {
           companyId: tenant.companyId,
@@ -1766,15 +1767,11 @@ export class ReportsService {
           journalEntries: {
             where: {
               voucher: {
-                ...(query.fromDate || query.toDate
+                ...(fromDate || toDate
                   ? {
                       voucherDate: {
-                        ...(query.fromDate
-                          ? { gte: new Date(query.fromDate) }
-                          : {}),
-                        ...(query.toDate
-                          ? { lte: new Date(query.toDate) }
-                          : {}),
+                        ...(fromDate ? { gte: fromDate } : {}),
+                        ...(toDate ? { lte: toDate } : {}),
                       },
                     }
                   : {}),
@@ -1793,7 +1790,52 @@ export class ReportsService {
         ],
       });
 
+      // Prior entries before fromDate for opening balance calculation if fromDate is provided
+      const priorMap = new Map<string, { dr: Decimal; cr: Decimal }>();
+      if (fromDate) {
+        const priorEntries = await tx.journalEntry.findMany({
+          where: {
+            account: { companyId: tenant.companyId },
+            voucher: {
+              companyId: tenant.companyId,
+              voucherDate: { lt: fromDate },
+            },
+          },
+          select: {
+            accountId: true,
+            debitAmount: true,
+            creditAmount: true,
+          },
+        });
+        for (const pe of priorEntries) {
+          if (!priorMap.has(pe.accountId)) {
+            priorMap.set(pe.accountId, { dr: new Decimal(0), cr: new Decimal(0) });
+          }
+          const p = priorMap.get(pe.accountId)!;
+          p.dr = p.dr.plus(toMoney(pe.debitAmount));
+          p.cr = p.cr.plus(toMoney(pe.creditAmount));
+        }
+      }
+
       const trialBalanceItems = accounts.map((acc) => {
+        let opBal = toMoney(acc.openingBalance);
+        if (acc.openingType === "CR") {
+          opBal = opBal.negated();
+        }
+
+        const prior = priorMap.get(acc.id);
+        if (prior) {
+          opBal = opBal.plus(prior.dr).minus(prior.cr);
+        }
+
+        let opDr = new Decimal(0);
+        let opCr = new Decimal(0);
+        if (opBal.isPositive()) {
+          opDr = opBal;
+        } else if (opBal.isNegative()) {
+          opCr = opBal.abs();
+        }
+
         let periodDr = new Decimal(0);
         let periodCr = new Decimal(0);
 
@@ -1802,8 +1844,8 @@ export class ReportsService {
           periodCr = periodCr.plus(toMoney(je.creditAmount));
         }
 
-        // Net account balance
-        const netBal = periodDr.minus(periodCr);
+        // Net account balance including opening balance
+        const netBal = opBal.plus(periodDr).minus(periodCr);
         let closingDr = new Decimal(0);
         let closingCr = new Decimal(0);
 
@@ -1820,8 +1862,8 @@ export class ReportsService {
           accountCode: acc.code,
           nature: acc.group.nature as any,
           groupName: acc.group.name,
-          openingDebit: "0.00",
-          openingCredit: "0.00",
+          openingDebit: opDr.toFixed(2),
+          openingCredit: opCr.toFixed(2),
           periodDebit: periodDr.toFixed(2),
           periodCredit: periodCr.toFixed(2),
           closingDebit: closingDr.toFixed(2),
@@ -1853,6 +1895,9 @@ export class ReportsService {
     tenant: TenantContext,
   ): Promise<any> {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const fromDate = parseStartOfDay(query.fromDate);
+      const toDate = parseEndOfDay(query.toDate);
+
       const accounts = await tx.ledgerAccount.findMany({
         where: {
           companyId: tenant.companyId,
@@ -1866,15 +1911,11 @@ export class ReportsService {
           journalEntries: {
             where: {
               voucher: {
-                ...(query.fromDate || query.toDate
+                ...(fromDate || toDate
                   ? {
                       voucherDate: {
-                        ...(query.fromDate
-                          ? { gte: new Date(query.fromDate) }
-                          : {}),
-                        ...(query.toDate
-                          ? { lte: new Date(query.toDate) }
-                          : {}),
+                        ...(fromDate ? { gte: fromDate } : {}),
+                        ...(toDate ? { lte: toDate } : {}),
                       },
                     }
                   : {}),
@@ -1904,12 +1945,24 @@ export class ReportsService {
           cr = cr.plus(toMoney(je.creditAmount));
         }
 
-        const isDirect =
-          acc.group.name.toLowerCase().includes("direct") ||
-          acc.group.name.toLowerCase().includes("sales") ||
-          acc.group.name.toLowerCase().includes("purchase");
+        const groupNameLower = (acc.group?.name || "").trim().toLowerCase();
+        const accNameLower = (acc.name || "").trim().toLowerCase();
 
+        let isDirect = false;
         if (acc.group.nature === AccountNature.INCOME) {
+          // Direct Income groups: exact canonical groups or explicitly direct income
+          const isExplicitIndirect =
+            groupNameLower.startsWith("indirect") ||
+            groupNameLower.includes("indirect") ||
+            groupNameLower === "other income";
+
+          isDirect =
+            !isExplicitIndirect &&
+            (groupNameLower === "direct income" ||
+              groupNameLower === "sales accounts" ||
+              groupNameLower === "trading income" ||
+              groupNameLower.startsWith("direct"));
+
           // Income accounts have normal Credit balance (Credit - Debit)
           const net = cr.minus(dr);
           if (isDirect) {
@@ -1925,6 +1978,32 @@ export class ReportsService {
             isDirect,
           });
         } else {
+          // Direct Expense groups: genuine procurement & inward freight costs.
+          // Separate operating/financial overhead (bank charges, salaries, rent, utilities) into indirect expenses.
+          const isExplicitIndirect =
+            groupNameLower.startsWith("indirect") ||
+            groupNameLower.includes("indirect") ||
+            groupNameLower === "administrative expenses" ||
+            groupNameLower === "operating expenses" ||
+            accNameLower.includes("bank fee") ||
+            accNameLower.includes("bank charge") ||
+            accNameLower.includes("salary") ||
+            accNameLower.includes("salaries") ||
+            (accNameLower.includes("wages") && !accNameLower.includes("direct wages")) ||
+            accNameLower.includes("rent") ||
+            accNameLower.includes("utility") ||
+            accNameLower.includes("utilities") ||
+            accNameLower.includes("office") ||
+            accNameLower.includes("administrative");
+
+          isDirect =
+            !isExplicitIndirect &&
+            (groupNameLower === "direct expenses" ||
+              groupNameLower === "purchase accounts" ||
+              groupNameLower === "trading expenses" ||
+              groupNameLower === "subcontracting expenses" ||
+              groupNameLower.startsWith("direct"));
+
           // Expense accounts have normal Debit balance (Debit - Credit)
           const net = dr.minus(cr);
           if (isDirect) {
@@ -1957,7 +2036,53 @@ export class ReportsService {
       const closingStockValuation = toMoney(
         stockSummary.totals.grandStockValuation,
       );
-      const cogs = Decimal.max(0, directExpenses.minus(closingStockValuation));
+
+      // Opening Stock Valuation:
+      // Includes stock transactions with transactionType = OPENING or referenceDocType IN ['OPENING_STOCK', 'OPENING_BALANCE'],
+      // or prior to fromDate
+      const openingTx = await tx.stockTransaction.findMany({
+        where: {
+          companyId: tenant.companyId,
+          OR: [
+            { transactionType: StockTransactionType.OPENING },
+            { referenceDocType: { in: ["OPENING_STOCK", "OPENING_BALANCE"] } },
+            ...(fromDate ? [{ transactionDate: { lt: fromDate } }] : []),
+          ],
+        },
+        select: {
+          quantity: true,
+          totalValuation: true,
+        },
+      });
+
+      let openingStockValuation = new Decimal(0);
+      for (const st of openingTx) {
+        const val = toMoney(st.totalValuation).abs();
+        openingStockValuation = openingStockValuation.plus(
+          toDecimal(st.quantity).isNegative() ? val.negated() : val,
+        );
+      }
+
+      // Check for negative inventory warning
+      let negativeStockUnits = new Decimal(0);
+      let hasNegativeInventoryWarning = false;
+      if (stockSummary.items && Array.isArray(stockSummary.items)) {
+        for (const itm of stockSummary.items) {
+          const qty = toDecimal(
+            itm.currentStockQuantity || itm.currentStock || 0,
+          );
+          if (qty.isNegative()) {
+            negativeStockUnits = negativeStockUnits.plus(qty);
+            hasNegativeInventoryWarning = true;
+          }
+        }
+      }
+
+      // Periodic SME Cost of Goods Sold = Opening Stock + Direct Expenses (Purchases) - Closing Stock
+      const cogs = Decimal.max(
+        0,
+        openingStockValuation.plus(directExpenses).minus(closingStockValuation),
+      );
       const tradingGrossProfit = directIncome.minus(cogs);
       const tradingNetProfit = tradingGrossProfit
         .plus(indirectIncome)
@@ -1985,11 +2110,17 @@ export class ReportsService {
         },
         netProfit: pnl.netProfit,
         isNetLoss: pnl.isNetLoss,
+        costOfGoodsSold: cogs.toFixed(2),
+        closingStockValuation: closingStockValuation.toFixed(2),
         tradingAccount: {
+          openingStockValuation: openingStockValuation.toFixed(2),
           closingStockValuation: closingStockValuation.toFixed(2),
           costOfGoodsSold: cogs.toFixed(2),
           tradingGrossProfit: tradingGrossProfit.toFixed(2),
           tradingNetProfit: tradingNetProfit.toFixed(2),
+          hasNegativeInventoryWarning,
+          negativeInventoryQuantity: negativeStockUnits.toFixed(4),
+          isProvisional: hasNegativeInventoryWarning,
         },
       };
     });
@@ -2006,6 +2137,8 @@ export class ReportsService {
       // 1. Get Net Profit/Loss from P&L
       const pnl = await this.getProfitAndLoss(query, tenant);
       const netProfitOrLoss = pnl.summary.netProfit;
+
+      const asOfDate = parseEndOfDay(query.asOfDate);
 
       // 2. Fetch Balance Sheet accounts (Asset, Liability, Equity)
       const accounts = await tx.ledgerAccount.findMany({
@@ -2027,9 +2160,7 @@ export class ReportsService {
           journalEntries: {
             where: {
               voucher: {
-                ...(query.asOfDate
-                  ? { voucherDate: { lte: new Date(query.asOfDate) } }
-                  : {}),
+                ...(asOfDate ? { voucherDate: { lte: asOfDate } } : {}),
               },
             },
             select: {
@@ -2050,6 +2181,11 @@ export class ReportsService {
       const equityAccounts = [];
 
       for (const acc of accounts) {
+        let opBal = toMoney(acc.openingBalance);
+        if (acc.openingType === "CR") {
+          opBal = opBal.negated();
+        }
+
         let dr = new Decimal(0);
         let cr = new Decimal(0);
         for (const je of acc.journalEntries) {
@@ -2057,8 +2193,11 @@ export class ReportsService {
           cr = cr.plus(toMoney(je.creditAmount));
         }
 
+        // Net account balance including opening balance (DR is positive, CR is negative)
+        const netDrCr = opBal.plus(dr).minus(cr);
+
         if (acc.group.nature === AccountNature.ASSET) {
-          const bal = dr.minus(cr);
+          const bal = netDrCr;
           totalAssets = totalAssets.plus(bal);
           assetAccounts.push({
             id: acc.id,
@@ -2067,7 +2206,7 @@ export class ReportsService {
             amount: bal.toFixed(2),
           });
         } else if (acc.group.nature === AccountNature.LIABILITY) {
-          const bal = cr.minus(dr);
+          const bal = netDrCr.negated();
           totalLiabilities = totalLiabilities.plus(bal);
           liabilityAccounts.push({
             id: acc.id,
@@ -2076,7 +2215,7 @@ export class ReportsService {
             amount: bal.toFixed(2),
           });
         } else if (acc.group.nature === AccountNature.EQUITY) {
-          const bal = cr.minus(dr);
+          const bal = netDrCr.negated();
           totalEquity = totalEquity.plus(bal);
           equityAccounts.push({
             id: acc.id,
@@ -2162,6 +2301,7 @@ export class ReportsService {
       const vouchers = await tx.voucher.findMany({
         where: {
           companyId: tenant.companyId,
+          isCancelled: false,
           voucherDate: targetDate,
         },
         include: {
@@ -2173,6 +2313,7 @@ export class ReportsService {
                   nameGujarati: true,
                   isCashLedger: true,
                   isBankLedger: true,
+                  isPartyLedger: true,
                 },
               },
             },
@@ -2185,26 +2326,75 @@ export class ReportsService {
       let totalJama = new Decimal(0);
 
       const entries = vouchers.map((v) => {
-        let drAmt = new Decimal(0);
-        let crAmt = new Decimal(0);
+        const partyLine = v.journalEntries.find((je) => je.account.isPartyLedger);
+        const nonCashLine = v.journalEntries.find(
+          (je) => !je.account.isCashLedger && !je.account.isBankLedger,
+        );
+        const partyName =
+          partyLine?.account.name ||
+          nonCashLine?.account.name ||
+          v.narration ||
+          "General Account";
 
-        for (const je of v.journalEntries) {
-          drAmt = drAmt.plus(toMoney(je.debitAmount));
-          crAmt = crAmt.plus(toMoney(je.creditAmount));
+        let moneyIn = new Decimal(0);
+        let moneyOut = new Decimal(0);
+
+        if (v.voucherType === VoucherType.RECEIPT) {
+          moneyIn = toMoney(v.totalAmount);
+          totalJama = totalJama.plus(moneyIn);
+        } else if (v.voucherType === VoucherType.PAYMENT) {
+          moneyOut = toMoney(v.totalAmount);
+          totalUdhar = totalUdhar.plus(moneyOut);
+        } else if (v.voucherType === VoucherType.CONTRA) {
+          const cashLine = v.journalEntries.find((je) => je.account.isCashLedger);
+          if (cashLine) {
+            const dr = toMoney(cashLine.debitAmount);
+            const cr = toMoney(cashLine.creditAmount);
+            if (dr.gt(0)) {
+              moneyIn = dr;
+              totalJama = totalJama.plus(moneyIn);
+            } else if (cr.gt(0)) {
+              moneyOut = cr;
+              totalUdhar = totalUdhar.plus(moneyOut);
+            }
+          }
+        } else if (v.voucherType === VoucherType.SALES) {
+          moneyIn = toMoney(v.totalAmount);
+          totalJama = totalJama.plus(moneyIn);
+        } else if (v.voucherType === VoucherType.PURCHASE) {
+          moneyOut = toMoney(v.totalAmount);
+          totalUdhar = totalUdhar.plus(moneyOut);
+        } else {
+          // General / Journal voucher: check cash movement
+          const cashLine = v.journalEntries.find((je) => je.account.isCashLedger);
+          if (cashLine) {
+            const dr = toMoney(cashLine.debitAmount);
+            const cr = toMoney(cashLine.creditAmount);
+            if (dr.gt(0)) {
+              moneyIn = dr;
+              totalJama = totalJama.plus(moneyIn);
+            } else if (cr.gt(0)) {
+              moneyOut = cr;
+              totalUdhar = totalUdhar.plus(moneyOut);
+            }
+          }
         }
 
-        totalUdhar = totalUdhar.plus(drAmt);
-        totalJama = totalJama.plus(crAmt);
+        const isJama = moneyIn.gt(0) || v.voucherType === VoucherType.RECEIPT;
 
         return {
+          id: v.id,
+          voucherId: v.id,
+          date: v.voucherDate.toISOString().split("T")[0],
           voucherNumber: v.voucherNumber,
           voucherType: v.voucherType,
           totalAmount: toMoney(v.totalAmount).toFixed(2),
-          narration: v.narration,
+          partyName,
+          narration: v.narration || partyName,
           narrationGujarati: v.narrationGujarati,
-          debit: drAmt.toFixed(2),
-          credit: crAmt.toFixed(2),
-          type: v.voucherType === VoucherType.RECEIPT ? "JAMA" : "UDHAR",
+          debit: moneyOut.toFixed(2),
+          credit: moneyIn.toFixed(2),
+          type: isJama ? "JAMA" : "UDHAR",
         };
       });
 
@@ -2254,8 +2444,8 @@ export class ReportsService {
             where: {
               companyId: tenant.companyId,
               ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
-              ...(query.asOfDate
-                ? { transactionDate: { lte: new Date(query.asOfDate) } }
+              ...((query.asOfDate || (query as any).toDate)
+                ? { transactionDate: { lte: parseEndOfDay(query.asOfDate || (query as any).toDate) } }
                 : {}),
             },
             select: {
@@ -2337,11 +2527,9 @@ export class ReportsService {
     tenant: TenantContext,
   ): Promise<any> {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
-      if (!query.itemId) {
-        const fromDate = query.fromDate
-          ? new Date(query.fromDate)
-          : new Date("2020-01-01");
-        const toDate = query.toDate ? new Date(query.toDate) : new Date();
+      if (!query.itemId || query.itemId === "all" || query.itemId.trim() === "") {
+        const fromDate = parseStartOfDay(query.fromDate) || new Date("2020-01-01T00:00:00.000Z");
+        const toDate = parseEndOfDay(query.toDate) || new Date();
 
         const periodTx = await tx.stockTransaction.findMany({
           where: {
@@ -2359,12 +2547,20 @@ export class ReportsService {
           take: 100,
         });
 
+        let totalInward = new Decimal(0);
+        let totalOutward = new Decimal(0);
+        for (const t of periodTx) {
+          const q = toDecimal(t.quantity);
+          if (q.isPositive()) totalInward = totalInward.plus(q);
+          else totalOutward = totalOutward.plus(q.abs());
+        }
+
         return {
           openingStock: 0,
           openingValuation: 0,
           closingStock: 0,
-          totalInward: 0,
-          totalOutward: 0,
+          totalInward: totalInward.toFixed(4),
+          totalOutward: totalOutward.toFixed(4),
           transactions: periodTx.map((t) => ({
             id: t.id,
             date: t.transactionDate,
@@ -2388,10 +2584,8 @@ export class ReportsService {
         throw new NotFoundException(`Item with ID ${query.itemId} not found.`);
       }
 
-      const fromDate = query.fromDate
-        ? new Date(query.fromDate)
-        : new Date("2020-01-01");
-      const toDate = query.toDate ? new Date(query.toDate) : new Date();
+      const fromDate = parseStartOfDay(query.fromDate) || new Date("2020-01-01T00:00:00.000Z");
+      const toDate = parseEndOfDay(query.toDate) || new Date();
 
       // Opening stock prior to fromDate
       const priorTx = await tx.stockTransaction.findMany({
@@ -2925,18 +3119,16 @@ export class ReportsService {
         throw new NotFoundException(`Company ${tenant.companyId} not found.`);
       }
 
-      let fromDate: Date | null = query.fromDate
-        ? new Date(query.fromDate)
-        : null;
-      let toDate: Date | null = query.toDate ? new Date(query.toDate) : null;
+      let fromDate: Date | null = parseStartOfDay(query.fromDate) || null;
+      let toDate: Date | null = parseEndOfDay(query.toDate) || null;
 
       if (!fromDate && !toDate && query.financialYearId) {
         const fy = await tx.financialYear.findUnique({
           where: { id: query.financialYearId },
         });
         if (fy) {
-          fromDate = new Date(fy.startDate);
-          toDate = new Date(fy.endDate);
+          fromDate = parseStartOfDay(fy.startDate as any) || new Date(fy.startDate);
+          toDate = parseEndOfDay(fy.endDate as any) || new Date(fy.endDate);
         }
       }
 
@@ -2970,6 +3162,7 @@ export class ReportsService {
             accountId: { in: Array.from(cashBankIds) },
             voucher: {
               companyId: tenant.companyId,
+              isCancelled: false,
               voucherDate: { lt: fromDate },
             },
           },
@@ -2988,6 +3181,7 @@ export class ReportsService {
       // 3. Query all Vouchers affecting Cash/Bank in the period
       const voucherWhere: any = {
         companyId: tenant.companyId,
+        isCancelled: false,
         journalEntries: {
           some: {
             accountId: { in: Array.from(cashBankIds) },
@@ -3456,18 +3650,20 @@ export class ReportsService {
 
       const items = invoices.map((inv) => {
         const invTotal = toMoney(inv.grandTotal);
+        const taxable = toMoney(inv.taxableAmount);
         let cogs = new Decimal(0);
         for (const it of inv.items) {
           const qty = toMoney(it.quantity);
           const cost = toMoney(it.item?.purchaseRate || 0);
           cogs = cogs.plus(qty.times(cost));
         }
-        const grossProfit = invTotal.minus(cogs);
-        const marginPct = invTotal.gt(0)
-          ? grossProfit.dividedBy(invTotal).times(100).toFixed(2)
+        // Gross Profit is Net Sales (Taxable Amount) minus Cost of Goods Sold
+        const grossProfit = taxable.minus(cogs);
+        const marginPct = taxable.gt(0)
+          ? grossProfit.dividedBy(taxable).times(100).toFixed(2)
           : "0.00";
 
-        totalRevenue = totalRevenue.plus(invTotal);
+        totalRevenue = totalRevenue.plus(taxable);
         totalCogs = totalCogs.plus(cogs);
         totalGrossProfit = totalGrossProfit.plus(grossProfit);
 

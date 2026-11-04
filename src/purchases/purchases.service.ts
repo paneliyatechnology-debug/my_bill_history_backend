@@ -23,6 +23,8 @@ import {
 } from "@billing/accounting-core";
 import { DatabaseService } from "../database/database.service";
 import { AuditService } from "../audit/audit.service";
+import { NotificationsService } from "../notifications/notifications.service";
+import { NotificationType } from "@prisma/client";
 import { Prisma, ItemType } from "@billing/database";
 import { CreatePurchaseInvoiceDto } from "./dto/create-purchase-invoice.dto";
 import { QueryPurchasesDto } from "./dto/query-purchases.dto";
@@ -50,6 +52,7 @@ export class PurchasesService {
   constructor(
     private readonly prisma: DatabaseService,
     private readonly audit: AuditService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -1909,7 +1912,7 @@ export class PurchasesService {
 
     const replayKey = (idempotencyKey || dto.referenceNo || "").trim();
     try {
-      return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const result: any = await this.prisma.executeInTenantContext(tenant, async (tx) => {
         if (replayKey) {
           const lockKey = `purchase_pay_key_${tenant.companyId}_${replayKey}`;
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey})::bigint)`;
@@ -2182,8 +2185,47 @@ export class PurchasesService {
             balanceAmount: true,
           },
         });
-        return { replayed: false, voucher, allocations: createdAllocations, bills: updatedBills };
+        return {
+          replayed: false,
+          voucher,
+          allocations: createdAllocations,
+          bills: updatedBills,
+          supplierName: bills[0]?.party?.name || "Supplier",
+        };
       });
+
+      // Post-commit notification dispatch
+      if (!result.replayed && result.voucher) {
+        try {
+          const supplierName = result.supplierName || "Supplier";
+          const payAmountNum = Number(result.voucher.totalAmount);
+          const billRef = (result.bills || []).map((b: any) => b.vendorInvoiceNumber).join(", ");
+          await this.notificationsService.createNotification({
+            organizationId: tenant.organizationId,
+            companyId: tenant.companyId,
+            type: NotificationType.PAYMENT_SENT,
+            title: "Payment Sent",
+            message: `Payment Sent: ₹${payAmountNum.toLocaleString("en-IN", { minimumFractionDigits: 2 })} paid to ${supplierName}${billRef ? ` against Purchase Bill ${billRef}` : ""}.`,
+            entityType: "PURCHASE_PAYMENT",
+            entityId: result.voucher.id,
+            data: {
+              amount: payAmountNum,
+              currency: "INR",
+              partyName: supplierName,
+              paymentDate: dto.paymentDate || new Date().toISOString().split("T")[0],
+              paymentMode: dto.paymentMode || "CASH",
+              referenceNumber: billRef,
+              voucherId: result.voucher.id,
+              action: "OPEN_PAYMENT",
+            },
+            deepLink: `/purchases/payment-out/${result.voucher.id}`,
+          });
+        } catch (notifErr: any) {
+          this.logger.error(`Notification dispatch failed post-commit: ${notifErr.message}`);
+        }
+      }
+
+      return result;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         throw new ConflictException(

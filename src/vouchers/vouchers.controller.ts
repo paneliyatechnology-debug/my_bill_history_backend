@@ -8,6 +8,7 @@ import {
   Body,
   Param,
   Query,
+  Headers,
   HttpCode,
   HttpStatus,
   BadRequestException,
@@ -19,8 +20,9 @@ import { VouchersService } from "./vouchers.service";
 import { CreateVoucherDto } from "./dto/create-voucher.dto";
 import { ReverseVoucherDto } from "./dto/reverse-voucher.dto";
 import { CreatePaymentOutVoucherDto } from "./dto/create-payment-out-voucher.dto";
+import { CreateStaffPaymentDto } from "./dto/create-staff-payment.dto";
 
-@Controller(["vouchers", "payments"])
+@Controller(["vouchers", "payments", "accounting/vouchers"])
 export class VouchersController {
   constructor(private readonly vouchersService: VouchersService) {}
 
@@ -218,6 +220,80 @@ export class VouchersController {
     @CurrentTenant() tenant: TenantContext,
   ) {
     return await this.vouchersService.reverseVoucher(id, dto, tenant);
+  }
+
+  @Post(["staff-payment", "staff-payments", "salary-payment", "salary-payments"])
+  @HttpCode(HttpStatus.CREATED)
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+    UserRole.BRANCH_MANAGER,
+  )
+  async createStaffPayment(
+    @Body() dto: CreateStaffPaymentDto,
+    @CurrentTenant() tenant: TenantContext,
+    @Headers("idempotency-key") idempotencyKey?: string,
+    @Headers("x-idempotency-key") idempotencyKeyAlt?: string,
+  ) {
+    return await this.vouchersService.createStaffPaymentVoucher(
+      dto,
+      tenant,
+      idempotencyKey || idempotencyKeyAlt,
+    );
+  }
+
+  @Get(["staff-payments", "staff-payment", "salary-payments"])
+  async listStaffPayments(
+    @Query() query: any,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.vouchersService.listStaffPayments(tenant, query);
+  }
+
+  @Post([
+    "staff-payment/:id/cancel",
+    "staff-payments/:id/cancel",
+    "salary-payment/:id/cancel",
+    "staff-payment/:id/reverse",
+  ])
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+  )
+  async cancelStaffPayment(
+    @Param("id") id: string,
+    @Body() body: any,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.vouchersService.cancelStaffPayment(
+      id,
+      tenant,
+      body?.reason,
+    );
+  }
+
+  @Delete(["staff-payment/:id", "staff-payments/:id", "salary-payment/:id"])
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+  )
+  async deleteStaffPayment(
+    @Param("id") id: string,
+    @Query() query: any,
+    @Body() body: any,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.vouchersService.cancelStaffPayment(
+      id,
+      tenant,
+      query?.reason || body?.reason,
+    );
   }
 
   @Patch(":id")

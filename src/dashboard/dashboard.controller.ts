@@ -13,6 +13,7 @@ import { TenantContext, UserRole } from "@billing/shared-types";
 import { Roles } from "../common/decorators/roles.decorator";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { DashboardService } from "./dashboard.service";
+import { NotificationsService } from "../notifications/notifications.service";
 
 @Controller("dashboard")
 @Roles(
@@ -26,7 +27,27 @@ import { DashboardService } from "./dashboard.service";
   UserRole.SALESMAN,
 )
 export class DashboardController {
-  constructor(private readonly dashboardService: DashboardService) {}
+  constructor(
+    private readonly dashboardService: DashboardService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
+
+  @Get(["recent-activity", "activities"])
+  async getRecentActivity(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("limit") limit?: number,
+  ) {
+    return await this.notificationsService.getRecentActivity(tenant, limit);
+  }
+
+  @Get(["upcoming-dues", "due-invoices", "due-bills"])
+  async getUpcomingDues(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("days") days?: number,
+    @Query("type") type?: "ALL" | "SALES" | "PURCHASES",
+  ) {
+    return await this.dashboardService.getUpcomingDues(tenant, days, type);
+  }
 
   @Get(["summary", "financial-summary"])
   async getSummary(

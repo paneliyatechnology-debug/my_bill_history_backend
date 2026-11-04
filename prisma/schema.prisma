@@ -88,6 +88,9 @@ model Organization {
   tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   companies Company[]
   users     User[]
+  notifications             Notification[]
+  notificationDevices       NotificationDevice[]
+  notificationPreferences   NotificationPreference[]
 
   @@index([tenantId])
   @@map("organizations")
@@ -176,6 +179,10 @@ model Company {
   sharedLedgerConnections  SharedLedgerConnection[]
   smsCampaigns             SmsCampaign[]
   automatedBillingSchedules AutomatedBillingSchedule[]
+  staffPayments            StaffPayment[]
+  notifications            Notification[]
+  notificationPreferences  NotificationPreference[]
+  scheduledReminderLogs    ScheduledReminderLog[]
 
   @@unique([gstin, organizationId])
   @@index([organizationId])
@@ -334,6 +341,9 @@ model User {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   auditLogs      AuditLog[]
   branchAssignments UserBranchAssignment[]
+  notifications             Notification[]
+  notificationDevices       NotificationDevice[]
+  notificationPreferences   NotificationPreference[]
 
   @@index([organizationId])
   @@map("users")
@@ -449,6 +459,7 @@ model LedgerAccount {
   group          LedgerGroup     @relation(fields: [groupId], references: [id], onDelete: Restrict)
   party          Party?          @relation(fields: [partyId], references: [id], onDelete: SetNull)
   journalEntries JournalEntry[]
+  staffPayments  StaffPayment[]  @relation("PaidFromAccount")
 
   @@unique([companyId, name])
   @@index([organizationId, companyId])
@@ -479,6 +490,7 @@ model Voucher {
   financialYear   FinancialYear   @relation(fields: [financialYearId], references: [id], onDelete: Restrict)
   journalEntries  JournalEntry[]
   allocations     PaymentAllocation[]
+  staffPayment    StaffPayment?
 
   @@unique([companyId, financialYearId, voucherType, voucherNumber])
   @@index([organizationId, companyId, voucherDate])
@@ -1026,6 +1038,7 @@ model PurchaseInvoice {
   partyId              String           @map("party_id") @db.Uuid
   vendorInvoiceNumber  String           @map("vendor_invoice_number") @db.VarChar(100)
   invoiceDate          DateTime         @map("invoice_date") @db.Date
+  dueDate              DateTime?        @map("due_date") @db.Date
   placeOfSupply        String           @map("place_of_supply") @db.Char(2)
   taxableAmount        Decimal          @map("taxable_amount") @db.Decimal(15, 2)
   cgstAmount           Decimal          @default(0.00) @map("cgst_amount") @db.Decimal(15, 2)
@@ -2023,6 +2036,194 @@ model AutomatedBillingRun {
   @@index([scheduledFor])
   @@map("automated_billing_runs")
 }
+
+model StaffPayment {
+  id                String         @id @default(uuid()) @db.Uuid
+  organizationId    String         @map("organization_id") @db.Uuid
+  companyId         String         @map("company_id") @db.Uuid
+  staffId           String         @map("staff_id") @db.VarChar(100)
+  staffName         String         @map("staff_name") @db.VarChar(200)
+  paymentType       String         @map("payment_type") @db.VarChar(30) // "SALARY", "ADVANCE", "BONUS", "DEDUCTION"
+  amount            Decimal        @map("amount") @db.Decimal(15, 2)
+  paymentMode       String         @map("payment_mode") @db.VarChar(30) // "CASH", "BANK_TRANSFER", "UPI", "CHEQUE"
+  paymentDate       DateTime       @map("payment_date") @db.Date
+  paidFromAccountId String?        @map("paid_from_account_id") @db.Uuid
+  voucherId         String?        @unique @map("voucher_id") @db.Uuid
+  note              String?        @db.Text
+  idempotencyKey    String?        @unique @map("idempotency_key") @db.VarChar(120)
+  isCancelled       Boolean        @default(false) @map("is_cancelled")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  company           Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  voucher           Voucher?       @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+  paidFromAccount   LedgerAccount? @relation("PaidFromAccount", fields: [paidFromAccountId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, companyId, paymentDate])
+  @@index([staffId])
+  @@map("staff_payments")
+}
+
+// =========================================================================
+// NOTIFICATION & ALERT SUBSYSTEM
+// =========================================================================
+
+enum NotificationType {
+  PAYMENT_RECEIVED
+  PAYMENT_SENT
+  INVOICE_DUE_REMINDER
+  PURCHASE_DUE_REMINDER
+  OVERDUE_INVOICE
+  SALARY_PAID
+  PAYMENT_REVERSED
+  OTHER
+}
+
+enum DevicePlatform {
+  WEB
+  ANDROID
+  IOS
+}
+
+enum PushProvider {
+  WEB_PUSH
+  FCM
+  APNS
+}
+
+enum NotificationChannel {
+  IN_APP
+  WEB_PUSH
+  FCM
+  APNS
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model Notification {
+  id              String           @id @default(uuid()) @db.Uuid
+  organizationId  String           @map("organization_id") @db.Uuid
+  companyId       String           @map("company_id") @db.Uuid
+  recipientUserId String           @map("recipient_user_id") @db.Uuid
+  type            NotificationType
+  title           String           @db.VarChar(255)
+  message         String           @db.Text
+  entityType      String           @map("entity_type") @db.VarChar(50)
+  entityId        String           @map("entity_id") @db.Uuid
+  data            Json?
+  readAt          DateTime?        @map("read_at")
+  dismissedAt     DateTime?        @map("dismissed_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  recipientUser   User             @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+  deliveries      NotificationDelivery[]
+
+  @@index([organizationId, companyId, recipientUserId, readAt, createdAt])
+  @@index([companyId, entityType, entityId])
+  @@index([recipientUserId, createdAt])
+  @@map("notifications")
+}
+
+model NotificationDevice {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  companyId      String?         @map("company_id") @db.Uuid
+  userId         String          @map("user_id") @db.Uuid
+  platform       DevicePlatform
+  provider       PushProvider
+  token          String?         @db.Text
+  endpoint       String?         @db.Text
+  p256dhKey      String?         @map("p256dh_key") @db.Text
+  authKey        String?         @map("auth_key") @db.Text
+  deviceId       String?         @map("device_id") @db.VarChar(255)
+  appVersion     String?         @map("app_version") @db.VarChar(50)
+  isActive       Boolean         @default(true) @map("is_active")
+  lastSeenAt     DateTime        @default(now()) @map("last_seen_at")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries     NotificationDelivery[]
+
+  @@index([userId, isActive])
+  @@index([organizationId, userId])
+  @@map("notification_devices")
+}
+
+model NotificationDelivery {
+  id                String              @id @default(uuid()) @db.Uuid
+  notificationId    String              @map("notification_id") @db.Uuid
+  channel           NotificationChannel
+  deviceId          String?             @map("device_id") @db.Uuid
+  status            DeliveryStatus      @default(PENDING)
+  attemptCount      Int                 @default(0) @map("attempt_count")
+  nextAttemptAt     DateTime?           @map("next_attempt_at")
+  sentAt            DateTime?           @map("sent_at")
+  lastErrorCode     String?             @map("last_error_code") @db.VarChar(100)
+  lastErrorMessage  String?             @map("last_error_message") @db.Text
+  providerMessageId String?             @map("provider_message_id") @db.VarChar(255)
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  notification      Notification        @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  device            NotificationDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([notificationId, status])
+  @@map("notification_deliveries")
+}
+
+model NotificationPreference {
+  id                 String       @id @default(uuid()) @db.Uuid
+  organizationId     String       @map("organization_id") @db.Uuid
+  companyId          String       @map("company_id") @db.Uuid
+  userId             String       @map("user_id") @db.Uuid
+  paymentReceived    Boolean      @default(true) @map("payment_received")
+  paymentSent        Boolean      @default(true) @map("payment_sent")
+  invoiceDueReminder Boolean      @default(true) @map("invoice_due_reminder")
+  purchaseDueReminder Boolean     @default(true) @map("purchase_due_reminder")
+  overdueReminder    Boolean      @default(true) @map("overdue_reminder")
+  pushEnabled        Boolean      @default(true) @map("push_enabled")
+  inAppEnabled       Boolean      @default(true) @map("in_app_enabled")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  company            Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+  @@map("notification_preferences")
+}
+
+model ScheduledReminderLog {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @map("organization_id") @db.Uuid
+  companyId         String   @map("company_id") @db.Uuid
+  entityType        String   @map("entity_type") @db.VarChar(50)
+  entityId          String   @map("entity_id") @db.Uuid
+  reminderType      String   @map("reminder_type") @db.VarChar(50)
+  dueDate           DateTime @map("due_date") @db.Date
+  status            String   @default("SENT") @db.VarChar(30)
+  outstandingAmount Decimal  @map("outstanding_amount") @db.Decimal(15, 2)
+  notificationId    String?  @map("notification_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, entityType, entityId, reminderType, dueDate])
+  @@index([companyId, entityType, entityId])
+  @@map("scheduled_reminder_logs")
+}
+
+
 
 
 

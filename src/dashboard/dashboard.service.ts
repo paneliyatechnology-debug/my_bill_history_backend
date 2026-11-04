@@ -30,6 +30,165 @@ export class DashboardService {
     return await this.reportsService.getFinancialSummary(tenant, query);
   }
 
+  /**
+   * Retrieves upcoming and overdue invoices due within the given horizon (default: next 3 days).
+   * Supports filtering by SALES, PURCHASES, or ALL.
+   */
+  async getUpcomingDues(
+    tenant: TenantContext,
+    daysAhead: number = 3,
+    typeFilter: "ALL" | "SALES" | "PURCHASES" = "ALL",
+  ) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const targetDays = Number(daysAhead) > 0 ? Number(daysAhead) : 3;
+    const horizonDate = new Date(today);
+    horizonDate.setDate(today.getDate() + targetDays);
+    horizonDate.setHours(23, 59, 59, 999);
+
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const dues: any[] = [];
+      let totalOverdueAmount = 0;
+      let totalDueSoonAmount = 0;
+
+      // 1. Sales Invoices (Receivables / Collections)
+      if (typeFilter === "ALL" || typeFilter === "SALES") {
+        const salesInvoices = await tx.salesInvoice.findMany({
+          where: {
+            companyId: tenant.companyId,
+            balanceAmount: { gt: 0 },
+            status: { notIn: ["CANCELLED", "DRAFT", "PAID"] },
+            dueDate: { not: null, lte: horizonDate },
+          },
+          include: {
+            party: {
+              select: { id: true, name: true, phone: true },
+            },
+          },
+          orderBy: [{ dueDate: "asc" }, { invoiceDate: "asc" }],
+        });
+
+        for (const inv of salesInvoices) {
+          if (!inv.dueDate) continue;
+          const dueDate = new Date(inv.dueDate);
+          dueDate.setHours(0, 0, 0, 0);
+
+          const diffTime = dueDate.getTime() - today.getTime();
+          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+          let urgencyStatus: "OVERDUE" | "DUE_TODAY" | "DUE_SOON";
+          if (diffDays < 0) {
+            urgencyStatus = "OVERDUE";
+            totalOverdueAmount += Number(inv.balanceAmount);
+          } else if (diffDays === 0) {
+            urgencyStatus = "DUE_TODAY";
+            totalDueSoonAmount += Number(inv.balanceAmount);
+          } else {
+            urgencyStatus = "DUE_SOON";
+            totalDueSoonAmount += Number(inv.balanceAmount);
+          }
+
+          dues.push({
+            id: inv.id,
+            invoiceNumber: inv.invoiceNumber,
+            invoiceDate: inv.invoiceDate.toISOString().split("T")[0],
+            dueDate: dueDate.toISOString().split("T")[0],
+            hasExplicitDueDate: true,
+            daysRemaining: diffDays,
+            urgencyStatus,
+            partyId: inv.party?.id,
+            partyName: inv.party?.name || "Customer",
+            partyPhone: inv.party?.phone || "",
+            grandTotal: Number(inv.grandTotal),
+            paidAmount: Number(inv.paidAmount),
+            balanceAmount: Number(inv.balanceAmount),
+            type: "SALES_INVOICE",
+            deepLink: `/sales/invoices/${inv.id}`,
+            actionLink: `/sales/payment-in/new?partyId=${inv.party?.id || ""}&invoiceId=${inv.id}`,
+            actionLabel: "Collect Payment",
+          });
+        }
+      }
+
+      // 2. Purchase Invoices (Payables / Supplier Bills)
+      if (typeFilter === "ALL" || typeFilter === "PURCHASES") {
+        const purchaseInvoices = await tx.purchaseInvoice.findMany({
+          where: {
+            companyId: tenant.companyId,
+            balanceAmount: { gt: 0 },
+            dueDate: { not: null, lte: horizonDate },
+          },
+          include: {
+            party: {
+              select: { id: true, name: true, phone: true },
+            },
+          },
+          orderBy: [{ dueDate: "asc" }, { invoiceDate: "asc" }],
+        });
+
+        for (const bill of purchaseInvoices) {
+          if (!bill.dueDate) continue;
+          const dueDate = new Date(bill.dueDate);
+          dueDate.setHours(0, 0, 0, 0);
+
+          const diffTime = dueDate.getTime() - today.getTime();
+          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+          let urgencyStatus: "OVERDUE" | "DUE_TODAY" | "DUE_SOON";
+          if (diffDays < 0) {
+            urgencyStatus = "OVERDUE";
+            totalOverdueAmount += Number(bill.balanceAmount);
+          } else if (diffDays === 0) {
+            urgencyStatus = "DUE_TODAY";
+            totalDueSoonAmount += Number(bill.balanceAmount);
+          } else {
+            urgencyStatus = "DUE_SOON";
+            totalDueSoonAmount += Number(bill.balanceAmount);
+          }
+
+          dues.push({
+            id: bill.id,
+            invoiceNumber: bill.vendorInvoiceNumber || "Bill",
+            invoiceDate: bill.invoiceDate.toISOString().split("T")[0],
+            dueDate: dueDate.toISOString().split("T")[0],
+            hasExplicitDueDate: true,
+            daysRemaining: diffDays,
+            urgencyStatus,
+            partyId: bill.party?.id,
+            partyName: bill.party?.name || "Supplier",
+            partyPhone: bill.party?.phone || "",
+            grandTotal: Number(bill.grandTotal),
+            paidAmount: Number(bill.paidAmount),
+            balanceAmount: Number(bill.balanceAmount),
+            type: "PURCHASE_INVOICE",
+            deepLink: `/purchases/${bill.id}`,
+            actionLink: `/purchases/payment-out/new?partyId=${bill.party?.id || ""}&billId=${bill.id}`,
+            actionLabel: "Pay Bill",
+          });
+        }
+      }
+
+      // Sort by urgency: most overdue first (negative diffDays), then due today, then upcoming
+      dues.sort((a, b) => a.daysRemaining - b.daysRemaining);
+
+      const salesDues = dues.filter((d) => d.type === "SALES_INVOICE");
+      const purchaseDues = dues.filter((d) => d.type === "PURCHASE_INVOICE");
+
+      return {
+        dues,
+        totalSalesDueAmount: salesDues.reduce((sum, d) => sum + d.balanceAmount, 0),
+        totalPurchaseDueAmount: purchaseDues.reduce((sum, d) => sum + d.balanceAmount, 0),
+        salesCount: salesDues.length,
+        purchaseCount: purchaseDues.length,
+        totalOverdueAmount,
+        totalDueSoonAmount,
+        totalDueAmount: totalOverdueAmount + totalDueSoonAmount,
+        count: dues.length,
+      };
+    });
+  }
+
   async getLatestTransactions(
     tenant: TenantContext,
     limit: number = 5,

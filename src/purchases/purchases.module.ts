@@ -4,6 +4,7 @@ import { PurchaseReturnsController } from "./purchase-returns.controller";
 import { PurchasesService } from "./purchases.service";
 import { DatabaseModule } from "../database/database.module";
 import { AuditModule } from "../audit/audit.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { PurchaseScansController } from "./scanner/purchase-scans.controller";
 import { PurchaseScannerService } from "./scanner/services/purchase-scanner.service";
 import { BillStorageService } from "./scanner/services/bill-storage.service";
@@ -15,7 +16,7 @@ import { LocalDocumentOcrProvider } from "./scanner/providers/local-document-ocr
 import { OcrProviderFactory } from "./scanner/providers/ocr-provider.factory";
 
 @Module({
-  imports: [DatabaseModule, AuditModule],
+  imports: [DatabaseModule, AuditModule, NotificationsModule],
   controllers: [
     PurchasesController,
     PurchaseReturnsController,

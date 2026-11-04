@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   Injectable,
   ConflictException,
@@ -23,6 +24,9 @@ import { ReverseVoucherDto } from "./dto/reverse-voucher.dto";
 import { CreateReceiptVoucherDto, UpdateReceiptVoucherDto } from "./dto/create-receipt-voucher.dto";
 import { CreateExpenseVoucherDto } from "./dto/create-expense-voucher.dto";
 import { CreatePaymentOutVoucherDto } from "./dto/create-payment-out-voucher.dto";
+import { CreateStaffPaymentDto } from "./dto/create-staff-payment.dto";
+import { NotificationsService } from "../notifications/notifications.service";
+import { NotificationType } from "@prisma/client";
 
 @Injectable()
 export class VouchersService {
@@ -31,6 +35,7 @@ export class VouchersService {
   constructor(
     private readonly prisma: DatabaseService,
     private readonly audit: AuditService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -228,7 +233,7 @@ export class VouchersService {
       throw new BadRequestException("Reversal reason is required.");
     }
 
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    const result: any = await this.prisma.executeInTenantContext(tenant, async (tx) => {
       const original = await tx.voucher.findFirst({
         where: { id, companyId: tenant.companyId },
         include: {
@@ -433,6 +438,30 @@ export class VouchersService {
         },
       };
     });
+
+    // Post-commit notification dispatch
+    try {
+      await this.notificationsService.createNotification({
+        organizationId: tenant.organizationId,
+        companyId: tenant.companyId,
+        type: NotificationType.PAYMENT_REVERSED,
+        title: "Voucher Reversal",
+        message: `Voucher #${result.reversalVoucher.voucherNumber} posted reversing Voucher #${id}. Reason: ${dto.reason}.`,
+        entityType: "VOUCHER",
+        entityId: result.reversalVoucher.id,
+        data: {
+          originalVoucherId: id,
+          reversalVoucherId: result.reversalVoucher.id,
+          reason: dto.reason,
+          action: "OPEN_VOUCHERS",
+        },
+        deepLink: `/accounting/vouchers`,
+      });
+    } catch (notifErr: any) {
+      this.logger.error(`Notification dispatch failed post-commit: ${notifErr.message}`);
+    }
+
+    return result;
   }
 
   /**
@@ -859,7 +888,7 @@ export class VouchersService {
       throw new BadRequestException("Amount paid or discount must be greater than zero.");
     }
 
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    const result: any = await this.prisma.executeInTenantContext(tenant, async (tx) => {
       // 1. Validate Party (Supplier)
       const party = await tx.party.findFirst({
         where: { id: dto.partyId, companyId: tenant.companyId },
@@ -1220,9 +1249,41 @@ export class VouchersService {
 
       return {
         ...voucher,
+        partyName: party.name,
         allocations: createdAllocations,
       };
     });
+
+    // Post-commit notification dispatch
+    try {
+      const payAmountNum = Number(result.totalAmount || dto.amount);
+      const supplierName = result.partyName || "Supplier";
+      await this.notificationsService.createNotification({
+        organizationId: tenant.organizationId,
+        companyId: tenant.companyId,
+        type: NotificationType.PAYMENT_SENT,
+        title: "Payment Sent",
+        message: `Payment Sent: ₹${payAmountNum.toLocaleString("en-IN", { minimumFractionDigits: 2 })} paid to ${supplierName}. Voucher #${result.voucherNumber}.`,
+        entityType: "PURCHASE_PAYMENT",
+        entityId: result.id,
+        data: {
+          amount: payAmountNum,
+          currency: "INR",
+          partyId: dto.partyId,
+          partyName: supplierName,
+          voucherNumber: result.voucherNumber,
+          paymentDate: dto.voucherDate,
+          paymentMode: dto.paymentMode || "CASH",
+          referenceNumber: dto.referenceNo,
+          action: "OPEN_PAYMENT",
+        },
+        deepLink: `/purchases/payment-out/${result.id}`,
+      });
+    } catch (notifErr: any) {
+      this.logger.error(`Notification dispatch failed post-commit: ${notifErr.message}`);
+    }
+
+    return result;
   }
 
   /**
@@ -1347,6 +1408,8 @@ export class VouchersService {
       throw new BadRequestException("Amount paid or discount must be greater than zero.");
     }
 
+    // Find existing voucher and validate
+    const existingVoucherCheck = true;
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
       const existing = await tx.voucher.findFirst({
         where: { id, companyId: tenant.companyId, voucherType: "PAYMENT" },
@@ -1698,7 +1761,7 @@ export class VouchersService {
       );
     }
 
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    const result: any = await this.prisma.executeInTenantContext(tenant, async (tx) => {
       // 1. Validate Party
       const party = await tx.party.findFirst({
         where: { id: dto.partyId, companyId: tenant.companyId },
@@ -2008,9 +2071,43 @@ export class VouchersService {
 
       return {
         ...voucher,
+        partyName: party.name,
+        partyId: party.id,
         allocations: createdAllocations,
       };
     });
+
+    // Post-commit notification dispatch
+    try {
+      const payAmountNum = Number(result.totalAmount || dto.receivedAmount);
+      const partyName = result.partyName || "Customer";
+      const partyId = result.partyId || dto.partyId;
+      await this.notificationsService.createNotification({
+        organizationId: tenant.organizationId,
+        companyId: tenant.companyId,
+        type: NotificationType.PAYMENT_RECEIVED,
+        title: "Payment Received",
+        message: `Payment Received: ₹${payAmountNum.toLocaleString("en-IN", { minimumFractionDigits: 2 })} received from ${partyName}. Voucher #${result.voucherNumber}.`,
+        entityType: "SALES_PAYMENT",
+        entityId: result.id,
+        data: {
+          amount: payAmountNum,
+          currency: "INR",
+          partyName: partyName,
+          partyId: partyId,
+          voucherNumber: result.voucherNumber,
+          paymentDate: dto.voucherDate,
+          paymentMode: paymentMode,
+          referenceNumber: dto.paymentReference,
+          action: "OPEN_PAYMENT",
+        },
+        deepLink: `/sales/payment-in/${result.id}`,
+      });
+    } catch (notifErr: any) {
+      this.logger.error(`Notification dispatch failed post-commit: ${notifErr.message}`);
+    }
+
+    return result;
   }
 
   /**
@@ -2492,7 +2589,7 @@ export class VouchersService {
       ? new Date(dto.voucherDate)
       : new Date();
 
-    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+    const result: any = await this.prisma.executeInTenantContext(tenant, async (tx) => {
       // 1. Verify Financial Year
       const fy = await tx.financialYear.findFirst({
         where: { id: tenant.financialYearId, companyId: tenant.companyId },
@@ -2673,6 +2770,32 @@ export class VouchersService {
 
       return voucher;
     });
+
+    // Post-commit notification dispatch
+    try {
+      const amt = Number(result.totalAmount);
+      await this.notificationsService.createNotification({
+        organizationId: tenant.organizationId,
+        companyId: tenant.companyId,
+        type: NotificationType.PAYMENT_SENT,
+        title: "Expense Payment",
+        message: `Expense Payment: ₹${amt.toLocaleString("en-IN", { minimumFractionDigits: 2 })} recorded for ${result.narration || "Expense"}. Voucher #${result.voucherNumber}.`,
+        entityType: "EXPENSE_VOUCHER",
+        entityId: result.id,
+        data: {
+          amount: amt,
+          currency: "INR",
+          voucherNumber: result.voucherNumber,
+          paymentDate: dto.voucherDate,
+          action: "OPEN_EXPENSE",
+        },
+        deepLink: `/expenses/${result.id}`,
+      });
+    } catch (notifErr: any) {
+      this.logger.error(`Notification dispatch failed post-commit: ${notifErr.message}`);
+    }
+
+    return result;
   }
 
   /**
@@ -2898,6 +3021,632 @@ export class VouchersService {
       );
 
       return updatedVoucher;
+    });
+  }
+
+  /**
+   * Posts a staff payment (Salary, Advance, Bonus, Deduction) with strict double-entry accounting.
+   * Atomically debits Expense / Asset account and credits selected Cash or Bank account,
+   * deducting the balance in real-time.
+   */
+  async createStaffPaymentVoucher(
+    dto: CreateStaffPaymentDto,
+    tenant: TenantContext,
+    idempotencyKeyHeader?: string,
+  ): Promise<any> {
+    if (!dto.staffId || dto.staffId.trim() === "") {
+      throw new BadRequestException("Staff ID is required.");
+    }
+    if (!dto.staffName || dto.staffName.trim() === "") {
+      throw new BadRequestException("Staff name is required.");
+    }
+    if (!dto.amount || Number(dto.amount) <= 0) {
+      throw new BadRequestException("Payment amount must be greater than zero.");
+    }
+
+    const paymentAmount = toMoney(dto.amount);
+    const voucherDate = dto.paymentDate ? new Date(dto.paymentDate) : new Date();
+    const paymentMode = dto.paymentMode || "CASH";
+    const idempotencyKey = (dto.idempotencyKey || idempotencyKeyHeader || "").trim();
+
+    const result: any = await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      // 1. Idempotency Guard: if already posted with this key for this company, return cleanly
+      if (idempotencyKey) {
+        const existingPayment = await tx.staffPayment.findFirst({
+          where: {
+            companyId: tenant.companyId,
+            idempotencyKey,
+            isCancelled: false,
+          },
+          include: {
+            voucher: {
+              include: {
+                journalEntries: {
+                  include: { account: true },
+                },
+              },
+            },
+          },
+        });
+        if (existingPayment) {
+          this.logger.log(`Idempotent staff payment replay for key: ${idempotencyKey}`);
+          return {
+            ...existingPayment,
+            message: "Payment already recorded (idempotent replay).",
+          };
+        }
+      }
+
+      // 2. Financial Year & Period Validation
+      const fy = await tx.financialYear.findFirst({
+        where: {
+          companyId: tenant.companyId,
+          ...(tenant.financialYearId ? { id: tenant.financialYearId } : { isCurrent: true }),
+        },
+      });
+      if (!fy) {
+        throw new NotFoundException("Active financial year not found for this company.");
+      }
+
+      const periodCheck = validatePeriodAccess(voucherDate, tenant.companyId, fy);
+      if (!periodCheck.isAllowed) {
+        throw new BadRequestException(periodCheck.reason);
+      }
+
+      // 3. Handle DEDUCTION (Internal payroll offset, no cash/bank outflow)
+      if (dto.paymentType === "DEDUCTION") {
+        const paymentRecord = await tx.staffPayment.create({
+          data: {
+            id: randomUUID(),
+            organizationId: tenant.organizationId,
+            companyId: tenant.companyId,
+            staffId: dto.staffId.trim(),
+            staffName: dto.staffName.trim(),
+            paymentType: "DEDUCTION",
+            amount: paymentAmount.toNumber(),
+            paymentMode,
+            paymentDate: voucherDate,
+            note: dto.note?.trim() || "Salary deduction",
+            idempotencyKey: idempotencyKey || null,
+          },
+        });
+
+        await this.audit.record(
+          {
+            organizationId: tenant.organizationId,
+            companyId: tenant.companyId,
+            userId: tenant.userId || "00000000-0000-0000-0000-000000000000",
+            action: "POST_STAFF_DEDUCTION",
+            entityName: "StaffPayment",
+            entityId: paymentRecord.id,
+            newState: {
+              staffId: dto.staffId,
+              amount: paymentAmount.toNumber(),
+            },
+          },
+          tx,
+        );
+
+        return {
+          ...paymentRecord,
+          voucher: null,
+          message: "Staff deduction recorded successfully without cash/bank deduction.",
+        };
+      }
+
+      // 4. Resolve Payment Account (Cash or Bank Account to Credit)
+      let paymentAccount: any;
+      if (dto.paidFromAccountId) {
+        paymentAccount = await tx.ledgerAccount.findFirst({
+          where: { id: dto.paidFromAccountId, companyId: tenant.companyId },
+          include: { group: true },
+        });
+        if (!paymentAccount) {
+          throw new NotFoundException("Selected payment account not found in this company.");
+        }
+      } else {
+        if (paymentMode === "CASH") {
+          paymentAccount = await tx.ledgerAccount.findFirst({
+            where: { companyId: tenant.companyId, isCashLedger: true, isActive: true },
+            include: { group: true },
+          });
+          if (!paymentAccount) {
+            paymentAccount = await tx.ledgerAccount.findFirst({
+              where: {
+                companyId: tenant.companyId,
+                name: { contains: "Cash", mode: "insensitive" },
+                isActive: true,
+              },
+              include: { group: true },
+            });
+          }
+        } else {
+          // Bank Transfer, UPI, Cheque
+          paymentAccount = await tx.ledgerAccount.findFirst({
+            where: { companyId: tenant.companyId, isBankLedger: true, isActive: true },
+            include: { group: true },
+          });
+          if (!paymentAccount) {
+            paymentAccount = await tx.ledgerAccount.findFirst({
+              where: {
+                companyId: tenant.companyId,
+                name: { contains: "Bank", mode: "insensitive" },
+                isActive: true,
+              },
+              include: { group: true },
+            });
+          }
+        }
+      }
+
+      if (!paymentAccount) {
+        throw new BadRequestException(
+          `No active ${paymentMode === "CASH" ? "Cash" : "Bank"} account found in this company. Please specify or create a valid payment account.`,
+        );
+      }
+      if (!paymentAccount.isActive) {
+        throw new BadRequestException(`Payment account '${paymentAccount.name}' is inactive.`);
+      }
+
+      // 5. Resolve Debit Ledger Account
+      let debitAccount: any;
+      if (dto.paymentType === "ADVANCE") {
+        // Staff Advance is an Asset account under Current Assets
+        debitAccount = await tx.ledgerAccount.findFirst({
+          where: {
+            companyId: tenant.companyId,
+            OR: [
+              { name: { contains: "Staff Advance", mode: "insensitive" } },
+              { name: { contains: "Employee Advance", mode: "insensitive" } },
+              { name: { contains: "Employee Salaries & Advances", mode: "insensitive" } },
+            ],
+            isActive: true,
+          },
+          include: { group: true },
+        });
+
+        if (!debitAccount) {
+          // Find or create Current Assets group
+          let currentAssetsGroup = await tx.ledgerGroup.findFirst({
+            where: { companyId: tenant.companyId, name: "Current Assets" },
+          });
+          if (!currentAssetsGroup) {
+            currentAssetsGroup = await tx.ledgerGroup.findFirst({
+              where: { companyId: tenant.companyId, nature: "ASSET" as any },
+            });
+          }
+          if (!currentAssetsGroup) {
+            currentAssetsGroup = await tx.ledgerGroup.create({
+              data: {
+                organizationId: tenant.organizationId,
+                companyId: tenant.companyId,
+                name: "Current Assets",
+                nameGujarati: "ચાલુ મિલકતો",
+                nature: "ASSET" as any,
+                isSystem: true,
+              },
+            });
+          }
+
+          debitAccount = await tx.ledgerAccount.create({
+            data: {
+              organizationId: tenant.organizationId,
+              companyId: tenant.companyId,
+              groupId: currentAssetsGroup.id,
+              name: "Staff Advances",
+              nameGujarati: "કર્મચારી એડવાન્સ",
+              code: "1050",
+              openingBalance: 0,
+              openingType: "DR",
+              currentBalance: 0,
+              isActive: true,
+            },
+            include: { group: true },
+          });
+        }
+      } else {
+        // SALARY or BONUS is an Expense account (Salary & Wages)
+        debitAccount = await tx.ledgerAccount.findFirst({
+          where: {
+            companyId: tenant.companyId,
+            OR: [
+              { name: { contains: "Salary", mode: "insensitive" } },
+              { code: "5220" },
+            ],
+            isActive: true,
+          },
+          include: { group: true },
+        });
+
+        if (!debitAccount) {
+          let indirectExpenseGroup = await tx.ledgerGroup.findFirst({
+            where: { companyId: tenant.companyId, name: "Indirect Expenses" },
+          });
+          if (!indirectExpenseGroup) {
+            indirectExpenseGroup = await tx.ledgerGroup.findFirst({
+              where: { companyId: tenant.companyId, nature: "EXPENSE" as any },
+            });
+          }
+          if (!indirectExpenseGroup) {
+            indirectExpenseGroup = await tx.ledgerGroup.create({
+              data: {
+                organizationId: tenant.organizationId,
+                companyId: tenant.companyId,
+                name: "Indirect Expenses",
+                nameGujarati: "ઓફિસ અને પરચૂરણ ખર્ચા",
+                nature: "EXPENSE" as any,
+                isSystem: true,
+              },
+            });
+          }
+
+          debitAccount = await tx.ledgerAccount.create({
+            data: {
+              organizationId: tenant.organizationId,
+              companyId: tenant.companyId,
+              groupId: indirectExpenseGroup.id,
+              name: "Salary & Wages",
+              nameGujarati: "પગાર અને વેતન",
+              code: "5220",
+              openingBalance: 0,
+              openingType: "DR",
+              currentBalance: 0,
+              isActive: true,
+            },
+            include: { group: true },
+          });
+        }
+      }
+
+      // 6. Voucher Number Generation
+      const count = await tx.voucher.count({
+        where: {
+          companyId: tenant.companyId,
+          financialYearId: fy.id,
+          voucherType: "PAYMENT" as any,
+        },
+      });
+      const voucherNumber = `PAY-${voucherDate.getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+
+      const paymentId = randomUUID();
+
+      const typeLabel =
+        dto.paymentType === "ADVANCE"
+          ? "Staff Advance"
+          : dto.paymentType === "BONUS"
+          ? "Staff Bonus"
+          : "Staff Salary";
+
+      const narration =
+        dto.note?.trim() ||
+        `${typeLabel} payout to ${dto.staffName.trim()} via ${paymentMode}`;
+
+      // 7. Create Double-Entry Voucher
+      const voucher = await tx.voucher.create({
+        data: {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          financialYearId: fy.id,
+          voucherType: "PAYMENT" as any,
+          voucherNumber,
+          voucherDate,
+          totalAmount: paymentAmount.toNumber(),
+          referenceNo: dto.referenceNo || idempotencyKey || null,
+          paymentMode,
+          narration,
+          sourceDocument: "STAFF_PAYMENT",
+          sourceEntityId: paymentId,
+          isAutoGenerated: false,
+          isCancelled: false,
+          journalEntries: {
+            create: [
+              {
+                accountId: debitAccount.id,
+                debitAmount: paymentAmount.toNumber(),
+                creditAmount: 0,
+                lineNarration: `${typeLabel}: ${dto.staffName.trim()}`,
+                sequenceOrder: 1,
+              },
+              {
+                accountId: paymentAccount.id,
+                debitAmount: 0,
+                creditAmount: paymentAmount.toNumber(),
+                lineNarration: `Paid via ${paymentMode}`,
+                sequenceOrder: 2,
+              },
+            ],
+          },
+        },
+        include: {
+          journalEntries: {
+            include: { account: true },
+          },
+        },
+      });
+
+      // 8. Atomically Update Ledger Account Balances
+      // Debit side increases Expense / Asset
+      const newDebitBalance = applyTransactionToBalance(
+        debitAccount.group.nature as any,
+        debitAccount.currentBalance.toString(),
+        paymentAmount,
+        new Decimal(0),
+      );
+      await tx.ledgerAccount.update({
+        where: { id: debitAccount.id },
+        data: { currentBalance: newDebitBalance.toNumber() },
+      });
+
+      // Credit side decreases Asset (Cash / Bank)
+      const newPaymentBalance = applyTransactionToBalance(
+        paymentAccount.group.nature as any,
+        paymentAccount.currentBalance.toString(),
+        new Decimal(0),
+        paymentAmount,
+      );
+      await tx.ledgerAccount.update({
+        where: { id: paymentAccount.id },
+        data: { currentBalance: newPaymentBalance.toNumber() },
+      });
+
+      // 9. Create Staff Payment Record
+      const paymentRecord = await tx.staffPayment.create({
+        data: {
+          id: paymentId,
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          staffId: dto.staffId.trim(),
+          staffName: dto.staffName.trim(),
+          paymentType: dto.paymentType,
+          amount: paymentAmount.toNumber(),
+          paymentMode,
+          paymentDate: voucherDate,
+          paidFromAccountId: paymentAccount.id,
+          voucherId: voucher.id,
+          note: dto.note?.trim() || null,
+          idempotencyKey: idempotencyKey || null,
+        },
+      });
+
+      // 10. Audit Logging
+      await this.audit.record(
+        {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          userId: tenant.userId || "00000000-0000-0000-0000-000000000000",
+          action: "POST_STAFF_PAYMENT",
+          entityName: "StaffPayment",
+          entityId: paymentRecord.id,
+          newState: {
+            paymentId: paymentRecord.id,
+            voucherId: voucher.id,
+            voucherNumber,
+            staffId: dto.staffId,
+            staffName: dto.staffName,
+            paymentType: dto.paymentType,
+            amount: paymentAmount.toNumber(),
+            paidFromAccountId: paymentAccount.id,
+            paidFromAccountName: paymentAccount.name,
+            newPaymentAccountBalance: newPaymentBalance.toNumber(),
+          },
+        },
+        tx,
+      );
+
+      return {
+        ...paymentRecord,
+        voucher,
+        paidFromAccount: {
+          id: paymentAccount.id,
+          name: paymentAccount.name,
+          currentBalance: newPaymentBalance.toNumber(),
+        },
+        debitAccount: {
+          id: debitAccount.id,
+          name: debitAccount.name,
+          currentBalance: newDebitBalance.toNumber(),
+        },
+        message: `${typeLabel} payment of ₹${paymentAmount.toNumber()} recorded successfully.`,
+      };
+    });
+
+    // Post-commit notification dispatch
+    try {
+      const amt = Number(result.amount);
+      const isSalary = dto.paymentType === "SALARY";
+      await this.notificationsService.createNotification({
+        organizationId: tenant.organizationId,
+        companyId: tenant.companyId,
+        type: isSalary ? NotificationType.SALARY_PAID : NotificationType.PAYMENT_SENT,
+        title: isSalary ? "Salary Disbursed" : "Staff Payment Sent",
+        message: `${isSalary ? "Salary Disbursed" : "Staff Payment"}: ₹${amt.toLocaleString("en-IN", { minimumFractionDigits: 2 })} paid to ${dto.staffName}.`,
+        entityType: "STAFF_PAYMENT",
+        entityId: result.id,
+        data: {
+          amount: amt,
+          currency: "INR",
+          staffName: dto.staffName,
+          staffId: dto.staffId,
+          paymentType: dto.paymentType,
+          paymentMode,
+          voucherNumber: result.voucher?.voucherNumber,
+          action: "OPEN_PAYROLL",
+        },
+        deepLink: `/payroll`,
+      });
+    } catch (notifErr: any) {
+      this.logger.error(`Notification dispatch failed post-commit: ${notifErr.message}`);
+    }
+
+    return result;
+  }
+
+  /**
+   * Cancels or reverses a staff payment, restoring cash/bank and ledger balances atomically
+   */
+  async cancelStaffPayment(
+    paymentId: string,
+    tenant: TenantContext,
+    reason?: string,
+  ): Promise<any> {
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const payment = await tx.staffPayment.findFirst({
+        where: { id: paymentId, companyId: tenant.companyId },
+        include: {
+          voucher: {
+            include: {
+              journalEntries: {
+                include: { account: { include: { group: true } } },
+              },
+            },
+          },
+        },
+      });
+
+      if (!payment) {
+        throw new NotFoundException(`Staff payment record '${paymentId}' not found.`);
+      }
+
+      if (payment.isCancelled) {
+        throw new BadRequestException("Staff payment is already cancelled or reversed.");
+      }
+
+      // 1. Mark payment cancelled
+      await tx.staffPayment.update({
+        where: { id: payment.id },
+        data: { isCancelled: true },
+      });
+
+      // 2. If it has a voucher, reverse it
+      let reversalVoucher: any = null;
+      if (payment.voucherId && payment.voucher) {
+        const v = payment.voucher;
+        if (!v.isCancelled) {
+          await tx.voucher.update({
+            where: { id: v.id },
+            data: { isCancelled: true },
+          });
+
+          // Generate reversal voucher number
+          const count = await tx.voucher.count({
+            where: {
+              companyId: tenant.companyId,
+              financialYearId: v.financialYearId,
+              voucherType: "CONTRA" as any,
+            },
+          });
+          const reversalVoucherNumber = `REV-${v.voucherNumber.replace(/^(PAY|SAL|EXP)-/, "")}-${String(count + 1).padStart(2, "0")}`;
+
+          reversalVoucher = await tx.voucher.create({
+            data: {
+              organizationId: tenant.organizationId,
+              companyId: tenant.companyId,
+              financialYearId: v.financialYearId,
+              voucherType: "CONTRA" as any,
+              voucherNumber: reversalVoucherNumber,
+              voucherDate: new Date(),
+              referenceNo: v.voucherNumber,
+              narration: `Reversal of staff payment voucher ${v.voucherNumber}: ${reason || "User cancellation"}`,
+              totalAmount: v.totalAmount,
+              isAutoGenerated: true,
+              isCancelled: false,
+              sourceDocument: "STAFF_PAYMENT_REVERSAL",
+              sourceEntityId: payment.id,
+            },
+          });
+
+          // Swap debit and credit lines
+          for (const line of v.journalEntries) {
+            const oppDr = line.creditAmount;
+            const oppCr = line.debitAmount;
+
+            await tx.journalEntry.create({
+              data: {
+                voucherId: reversalVoucher.id,
+                accountId: line.accountId,
+                debitAmount: oppDr,
+                creditAmount: oppCr,
+                lineNarration: `Reversal: ${line.lineNarration || ""}`,
+                sequenceOrder: line.sequenceOrder,
+              },
+            });
+
+            // Update balance back
+            const newBal = applyTransactionToBalance(
+              line.account.group.nature as any,
+              line.account.currentBalance.toString(),
+              oppDr,
+              oppCr,
+            );
+            await tx.ledgerAccount.update({
+              where: { id: line.accountId },
+              data: { currentBalance: newBal.toNumber() },
+            });
+          }
+        }
+      }
+
+      // 3. Audit log
+      await this.audit.record(
+        {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          userId: tenant.userId || "00000000-0000-0000-0000-000000000000",
+          action: "CANCEL_STAFF_PAYMENT",
+          entityName: "StaffPayment",
+          entityId: payment.id,
+          previousState: { isCancelled: false },
+          newState: { isCancelled: true, reason },
+        },
+        tx,
+      );
+
+      return {
+        success: true,
+        isCancelled: true,
+        paymentId: payment.id,
+        reversalVoucher,
+        message: "Staff payment cancelled and accounting balances restored.",
+      };
+    });
+  }
+
+  /**
+   * Lists staff payments for a company
+   */
+  async listStaffPayments(tenant: TenantContext, query?: any): Promise<any> {
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const where: any = { companyId: tenant.companyId };
+      if (query?.staffId) where.staffId = query.staffId;
+      if (query?.paymentType) where.paymentType = query.paymentType;
+      if (query?.isCancelled !== undefined) {
+        where.isCancelled = String(query.isCancelled) === "true";
+      }
+
+      const payments = await tx.staffPayment.findMany({
+        where,
+        include: {
+          voucher: {
+            select: {
+              id: true,
+              voucherNumber: true,
+              voucherDate: true,
+              totalAmount: true,
+              isCancelled: true,
+            },
+          },
+          paidFromAccount: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
+          },
+        },
+        orderBy: [{ paymentDate: "desc" }, { createdAt: "desc" }],
+      });
+
+      return { data: payments, total: payments.length };
     });
   }
 }

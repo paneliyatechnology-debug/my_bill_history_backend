@@ -42,6 +42,8 @@ import { QueryStockTransactionsDto } from "./dto/query-stock.dto";
 import { CreateSalesReturnDto } from "./dto/create-sales-return.dto";
 import { QuerySalesReturnsDto } from "./dto/query-sales-returns.dto";
 import { buildInvoiceUrls } from "../invoice-print/invoice-url.helper";
+import { NotificationsService } from "../notifications/notifications.service";
+import { NotificationType } from "@prisma/client";
 
 function parseStartOfDay(dateStr?: string): Date | undefined {
   if (!dateStr) return undefined;
@@ -69,6 +71,7 @@ export class InvoicesService {
     private readonly prisma: DatabaseService,
     private readonly audit: AuditService,
     private readonly ledgersService: LedgersService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -1557,7 +1560,7 @@ export class InvoicesService {
     tenant: TenantContext,
     idempotencyKey?: string,
   ): Promise<any> {
-    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+    const result = await this.prisma.executeInTenantContext(tenant, async (tx) => {
       // Concurrency lock on payments for this specific invoice
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`pay_${invoiceId}`})::bigint)
@@ -1844,10 +1847,43 @@ export class InvoicesService {
 
       return {
         invoice: updatedInvoice,
+        party: invoice.party,
         allocation,
         voucher,
       };
     });
+
+    // Post-commit persistent notification dispatch
+    try {
+      const partyName = (result as any).party?.name || "Customer";
+      const payAmountNum = Number(result.allocation?.allocatedAmount || dto.amount);
+      const balAmountNum = Number(result.invoice?.balanceAmount || 0);
+      await this.notificationsService.createNotification({
+        organizationId: tenant.organizationId,
+        companyId: tenant.companyId,
+        type: NotificationType.PAYMENT_RECEIVED,
+        title: "Payment Received",
+        message: `Payment Received: ₹${payAmountNum.toLocaleString("en-IN", { minimumFractionDigits: 2 })} received from ${partyName} against Invoice ${result.invoice?.invoiceNumber}. Remaining balance: ₹${balAmountNum.toLocaleString("en-IN", { minimumFractionDigits: 2 })}.`,
+        entityType: "SALES_PAYMENT",
+        entityId: result.voucher?.id || result.invoice?.id,
+        data: {
+          amount: payAmountNum,
+          currency: "INR",
+          partyName,
+          paymentDate: dto.paymentDate || new Date().toISOString().split("T")[0],
+          paymentMode: dto.paymentMode || "CASH",
+          referenceNumber: result.invoice?.invoiceNumber,
+          invoiceId: result.invoice?.id,
+          balanceAmount: balAmountNum,
+          action: "OPEN_PAYMENT",
+        },
+        deepLink: `/sales/payment-in/${result.voucher?.id || result.invoice?.id}`,
+      });
+    } catch (notifErr: any) {
+      this.logger.error(`Notification dispatch failed post-commit: ${notifErr.message}`);
+    }
+
+    return result;
   }
 
   /**
@@ -3155,20 +3191,51 @@ export class InvoicesService {
       }
 
       // 10. Credit Note Voucher Posting
-      const salesAccountName = isIntraState
-        ? "General Sales Account"
-        : "Inter-State Sales Account";
-
-      const salesAccount = await tx.ledgerAccount.findFirst({
+      // Reverse the exact sales ledger account credited on the original invoice
+      let salesAccount: any = null;
+      const origVoucher = await tx.voucher.findFirst({
         where: {
           companyId: tenant.companyId,
-          OR: [
-            { name: salesAccountName },
-            { name: { contains: "Sales", mode: "insensitive" } },
-            { code: "4010" },
-          ],
+          sourceEntityId: invoice.id,
+          voucherType: VoucherType.SALES,
+        },
+        include: {
+          journalEntries: {
+            include: {
+              account: { include: { group: true } },
+            },
+            orderBy: { sequenceOrder: "asc" },
+          },
         },
       });
+
+      if (origVoucher) {
+        const origSalesEntry = origVoucher.journalEntries.find(
+          (je: any) =>
+            je.account?.group?.nature === AccountNature.INCOME &&
+            toDecimal(je.creditAmount).gt(0),
+        );
+        if (origSalesEntry) {
+          salesAccount = origSalesEntry.account;
+        }
+      }
+
+      if (!salesAccount) {
+        const salesAccountName = isIntraState
+          ? "General Sales Account"
+          : "Inter-State Sales Account";
+
+        salesAccount = await tx.ledgerAccount.findFirst({
+          where: {
+            companyId: tenant.companyId,
+            OR: [
+              { name: salesAccountName },
+              { name: { contains: "Sales", mode: "insensitive" } },
+              { code: "4010" },
+            ],
+          },
+        });
+      }
 
       const outputCgstAccount = await tx.ledgerAccount.findFirst({
         where: {

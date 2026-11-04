@@ -140,6 +140,34 @@ export class DatabaseService
       `).catch((err) => {
         this.logger.warn(`Notice: party notes/appointments init: ${err.message}`);
       });
+
+      await this.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "staff_payments" (
+            "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+            "organization_id" UUID NOT NULL,
+            "company_id" UUID NOT NULL,
+            "staff_id" VARCHAR(100) NOT NULL,
+            "staff_name" VARCHAR(200) NOT NULL,
+            "payment_type" VARCHAR(30) NOT NULL,
+            "amount" DECIMAL(15,2) NOT NULL,
+            "payment_mode" VARCHAR(30) NOT NULL,
+            "payment_date" DATE NOT NULL,
+            "paid_from_account_id" UUID,
+            "voucher_id" UUID UNIQUE,
+            "note" TEXT,
+            "idempotency_key" VARCHAR(120) UNIQUE,
+            "is_cancelled" BOOLEAN NOT NULL DEFAULT false,
+            "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "staff_payments_pkey" PRIMARY KEY ("id")
+        );
+        CREATE INDEX IF NOT EXISTS "staff_payments_organization_id_company_id_payment_date_idx"
+            ON "staff_payments"("organization_id", "company_id", "payment_date");
+        CREATE INDEX IF NOT EXISTS "staff_payments_staff_id_idx"
+            ON "staff_payments"("staff_id");
+      `).catch((err) => {
+        this.logger.warn(`Notice: staff_payments table init: ${err.message}`);
+      });
     } catch {
       // Allow startup in environments without active DB
     }
