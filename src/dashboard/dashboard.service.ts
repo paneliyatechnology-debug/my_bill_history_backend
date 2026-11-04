@@ -190,6 +190,8 @@ export class DashboardService {
       sortBy?: "date" | "amount";
       sortOrder?: "asc" | "desc";
       itemId?: string;
+      item_id?: string;
+      id?: string;
       sku?: string;
       itemCode?: string;
       item?: string;
@@ -217,27 +219,53 @@ export class DashboardService {
       const hasDateFilter = Boolean(query?.startDate || query?.endDate);
 
       // Item filter setup (itemId, sku, itemCode, or item search)
-      const targetItemId =
+      const rawItemId =
         query?.itemId ||
+        query?.item_id ||
+        query?.id ||
         (query?.itemWise &&
         String(query.itemWise) !== "true" &&
         String(query.itemWise) !== "false"
           ? String(query.itemWise).trim()
           : undefined);
-      const targetSku = query?.sku || query?.itemCode;
+
+      const rawSku = query?.sku || query?.itemCode;
       const targetItemSearch = query?.item;
+
+      const isUuid = (val?: string): boolean =>
+        Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val).trim()));
+
+      // Prioritize itemId. If rawSku is actually a UUID, treat it as itemId as well!
+      let targetItemId: string | undefined = undefined;
+      let targetSku: string | undefined = undefined;
+
+      if (rawItemId) {
+        targetItemId = String(rawItemId).trim();
+      } else if (rawSku && isUuid(rawSku)) {
+        targetItemId = String(rawSku).trim();
+      } else if (rawSku) {
+        targetSku = String(rawSku).trim();
+      }
 
       const hasItemFilter = Boolean(targetItemId || targetSku || targetItemSearch);
 
       let itemClause: any = null;
       if (targetItemId) {
-        itemClause = {
-          OR: [
-            { itemId: targetItemId },
-            { item: { sku: { equals: targetItemId, mode: "insensitive" } } },
-            { item: { name: { contains: targetItemId, mode: "insensitive" } } },
-          ],
-        };
+        if (isUuid(targetItemId)) {
+          itemClause = {
+            OR: [
+              { itemId: targetItemId },
+              { item: { id: targetItemId } },
+            ],
+          };
+        } else {
+          itemClause = {
+            OR: [
+              { item: { sku: { equals: targetItemId, mode: "insensitive" } } },
+              { item: { name: { contains: targetItemId, mode: "insensitive" } } },
+            ],
+          };
+        }
       } else if (targetSku) {
         itemClause = {
           item: { sku: { equals: targetSku, mode: "insensitive" } },
@@ -245,7 +273,7 @@ export class DashboardService {
       } else if (targetItemSearch) {
         itemClause = {
           OR: [
-            { itemId: targetItemSearch },
+            ...(isUuid(targetItemSearch) ? [{ itemId: targetItemSearch }] : []),
             { item: { sku: { equals: targetItemSearch, mode: "insensitive" } } },
             { item: { name: { contains: targetItemSearch, mode: "insensitive" } } },
           ],
@@ -371,7 +399,7 @@ export class DashboardService {
         salesReturnWhere.items = {
           some: {
             OR: [
-              ...(targetItemId ? [{ itemId: targetItemId }] : []),
+              ...(targetItemId && isUuid(targetItemId) ? [{ itemId: targetItemId }] : []),
               { salesItem: itemClause },
             ],
           },
@@ -420,7 +448,7 @@ export class DashboardService {
         purchaseReturnWhere.items = {
           some: {
             OR: [
-              ...(targetItemId ? [{ itemId: targetItemId }] : []),
+              ...(targetItemId && isUuid(targetItemId) ? [{ itemId: targetItemId }] : []),
               { purchaseItem: itemClause },
             ],
           },
@@ -492,8 +520,11 @@ export class DashboardService {
       const findMatchingLine = (lines: any[]) => {
         if (!hasItemFilter) return lines[0] || null;
         return lines.find((it: any) => {
-          if (targetItemId && (it.itemId === targetItemId || it.sku?.toLowerCase() === targetItemId.toLowerCase() || it.name?.toLowerCase().includes(targetItemId.toLowerCase()))) {
-            return true;
+          if (targetItemId) {
+            if (it.itemId === targetItemId) return true;
+            if (!isUuid(targetItemId) && (it.sku?.toLowerCase() === targetItemId.toLowerCase() || it.name?.toLowerCase().includes(targetItemId.toLowerCase()))) {
+              return true;
+            }
           }
           if (targetSku && it.sku?.toLowerCase() === targetSku.toLowerCase()) {
             return true;
