@@ -3364,14 +3364,55 @@ export class InvoicesService {
       }
 
       if (salesAccount && customerAccount) {
-        const voucherCount = await tx.voucher.count({
+        // Concurrency lock for credit note voucher sequence in this company & FY
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(hashtext(${`seq_${tenant.companyId}_${fy.id}_voucher_CREDIT_NOTE`})::bigint)
+        `;
+
+        const existingCreditNoteVouchers = await tx.voucher.findMany({
           where: {
             companyId: tenant.companyId,
             financialYearId: fy.id,
             voucherType: VoucherType.CREDIT_NOTE,
           },
+          select: { voucherNumber: true },
         });
-        const voucherNumber = `V-CN-${returnDate.getFullYear()}-${String(voucherCount + 1).padStart(4, "0")}`;
+
+        const existingVoucherSet = new Set(
+          existingCreditNoteVouchers
+            .map((v) => v.voucherNumber?.trim().toUpperCase())
+            .filter(Boolean) as string[],
+        );
+
+        const vYear = returnDate.getFullYear();
+        const vPrefix = `V-CN-${vYear}-`;
+
+        let maxVSeq = 0;
+        for (const v of existingCreditNoteVouchers) {
+          if (!v.voucherNumber) continue;
+          const raw = v.voucherNumber.trim();
+          if (raw.toUpperCase().startsWith(vPrefix.toUpperCase())) {
+            const num = parseInt(raw.slice(vPrefix.length), 10);
+            if (!isNaN(num) && num > maxVSeq) {
+              maxVSeq = num;
+            }
+          } else {
+            const match = raw.match(/(\d+)$/);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              if (!isNaN(num) && num > maxVSeq) {
+                maxVSeq = num;
+              }
+            }
+          }
+        }
+
+        let nextVSeq = Math.max(maxVSeq + 1, existingCreditNoteVouchers.length + 1);
+        let voucherNumber = `${vPrefix}${String(nextVSeq).padStart(4, "0")}`;
+        while (existingVoucherSet.has(voucherNumber.toUpperCase())) {
+          nextVSeq++;
+          voucherNumber = `${vPrefix}${String(nextVSeq).padStart(4, "0")}`;
+        }
 
         const journalLines: Array<{
           accountId: string;

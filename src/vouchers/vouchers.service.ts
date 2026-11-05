@@ -3299,14 +3299,54 @@ export class VouchersService {
       }
 
       // 6. Voucher Number Generation
-      const count = await tx.voucher.count({
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`seq_${tenant.companyId}_${fy.id}_voucher_PAYMENT_STAFF`})::bigint)
+      `;
+
+      const existingPaymentVouchers = await tx.voucher.findMany({
         where: {
           companyId: tenant.companyId,
           financialYearId: fy.id,
           voucherType: "PAYMENT" as any,
         },
+        select: { voucherNumber: true },
       });
-      const voucherNumber = `PAY-${voucherDate.getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+
+      const existingPaymentSet = new Set(
+        existingPaymentVouchers
+          .map((v) => v.voucherNumber?.trim().toUpperCase())
+          .filter(Boolean) as string[],
+      );
+
+      const payYear = voucherDate.getFullYear();
+      const payPrefix = `PAY-${payYear}-`;
+
+      let maxPaySeq = 0;
+      for (const v of existingPaymentVouchers) {
+        if (!v.voucherNumber) continue;
+        const raw = v.voucherNumber.trim();
+        if (raw.toUpperCase().startsWith(payPrefix.toUpperCase())) {
+          const num = parseInt(raw.slice(payPrefix.length), 10);
+          if (!isNaN(num) && num > maxPaySeq) {
+            maxPaySeq = num;
+          }
+        } else {
+          const match = raw.match(/(\d+)$/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num) && num > maxPaySeq) {
+              maxPaySeq = num;
+            }
+          }
+        }
+      }
+
+      let nextPaySeq = Math.max(maxPaySeq + 1, existingPaymentVouchers.length + 1);
+      let voucherNumber = `${payPrefix}${String(nextPaySeq).padStart(4, "0")}`;
+      while (existingPaymentSet.has(voucherNumber.toUpperCase())) {
+        nextPaySeq++;
+        voucherNumber = `${payPrefix}${String(nextPaySeq).padStart(4, "0")}`;
+      }
 
       const paymentId = randomUUID();
 

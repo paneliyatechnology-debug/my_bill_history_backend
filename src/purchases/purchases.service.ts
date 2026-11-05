@@ -545,14 +545,55 @@ export class PurchasesService {
       }
 
       if (purchaseAccount && supplierAccount) {
-        const voucherCount = await tx.voucher.count({
+        // Concurrency lock for purchase voucher sequence in this company & FY
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(hashtext(${`seq_${tenant.companyId}_${financialYearId}_voucher_PURCHASE`})::bigint)
+        `;
+
+        const existingPurchaseVouchers = await tx.voucher.findMany({
           where: {
             companyId: tenant.companyId,
-            financialYearId: tenant.financialYearId,
+            financialYearId,
             voucherType: VoucherType.PURCHASE,
           },
+          select: { voucherNumber: true },
         });
-        const voucherNumber = `PUR-${new Date().getFullYear()}-${String(voucherCount + 1).padStart(4, "0")}`;
+
+        const existingVoucherSet = new Set(
+          existingPurchaseVouchers
+            .map((v) => v.voucherNumber?.trim().toUpperCase())
+            .filter(Boolean) as string[],
+        );
+
+        const vYear = new Date(invoiceDate).getFullYear();
+        const vPrefix = `PUR-${vYear}-`;
+
+        let maxVSeq = 0;
+        for (const v of existingPurchaseVouchers) {
+          if (!v.voucherNumber) continue;
+          const raw = v.voucherNumber.trim();
+          if (raw.toUpperCase().startsWith(vPrefix.toUpperCase())) {
+            const num = parseInt(raw.slice(vPrefix.length), 10);
+            if (!isNaN(num) && num > maxVSeq) {
+              maxVSeq = num;
+            }
+          } else {
+            const match = raw.match(/(\d+)$/);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              if (!isNaN(num) && num > maxVSeq) {
+                maxVSeq = num;
+              }
+            }
+          }
+        }
+
+        let nextVSeq = Math.max(maxVSeq + 1, existingPurchaseVouchers.length + 1);
+        let voucherNumber = `${vPrefix}${String(nextVSeq).padStart(4, "0")}`;
+        while (existingVoucherSet.has(voucherNumber.toUpperCase())) {
+          nextVSeq++;
+          voucherNumber = `${vPrefix}${String(nextVSeq).padStart(4, "0")}`;
+        }
 
         const journalLines: Array<{
           accountId: string;
@@ -1344,14 +1385,55 @@ export class PurchasesService {
       }
 
       if (purchaseAccount && supplierAccount) {
-        const voucherCount = await tx.voucher.count({
+        // Concurrency lock for debit note voucher sequence in this company & FY
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(hashtext(${`seq_${tenant.companyId}_${fy.id}_voucher_DEBIT_NOTE`})::bigint)
+        `;
+
+        const existingDebitNoteVouchers = await tx.voucher.findMany({
           where: {
             companyId: tenant.companyId,
             financialYearId: fy.id,
             voucherType: VoucherType.DEBIT_NOTE,
           },
+          select: { voucherNumber: true },
         });
-        const voucherNumber = `V-DN-${returnDate.getFullYear()}-${String(voucherCount + 1).padStart(4, "0")}`;
+
+        const existingVoucherSet = new Set(
+          existingDebitNoteVouchers
+            .map((v) => v.voucherNumber?.trim().toUpperCase())
+            .filter(Boolean) as string[],
+        );
+
+        const vYear = returnDate.getFullYear();
+        const vPrefix = `V-DN-${vYear}-`;
+
+        let maxVSeq = 0;
+        for (const v of existingDebitNoteVouchers) {
+          if (!v.voucherNumber) continue;
+          const raw = v.voucherNumber.trim();
+          if (raw.toUpperCase().startsWith(vPrefix.toUpperCase())) {
+            const num = parseInt(raw.slice(vPrefix.length), 10);
+            if (!isNaN(num) && num > maxVSeq) {
+              maxVSeq = num;
+            }
+          } else {
+            const match = raw.match(/(\d+)$/);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              if (!isNaN(num) && num > maxVSeq) {
+                maxVSeq = num;
+              }
+            }
+          }
+        }
+
+        let nextVSeq = Math.max(maxVSeq + 1, existingDebitNoteVouchers.length + 1);
+        let voucherNumber = `${vPrefix}${String(nextVSeq).padStart(4, "0")}`;
+        while (existingVoucherSet.has(voucherNumber.toUpperCase())) {
+          nextVSeq++;
+          voucherNumber = `${vPrefix}${String(nextVSeq).padStart(4, "0")}`;
+        }
 
         const journalLines: Array<{
           accountId: string;
