@@ -3150,7 +3150,7 @@ export class InvoicesService {
         });
       } else {
         for (const line of dto.items || []) {
-          const qty = toDecimal(line.quantity || 1);
+          const qty = toDecimal(line.quantity !== undefined ? line.quantity : 1);
           if (qty.lte(0)) {
             throw new BadRequestException(
               "Return quantity must be strictly greater than 0.",
@@ -3924,31 +3924,19 @@ export class InvoicesService {
       }
 
       // 11. Reconcile Sales Invoice Balance & Status.
+      // A return larger than the unpaid balance is a credit owed to the customer.
       const currentBalance = toDecimal(invoice.balanceAmount);
-      const currentPaid = toDecimal(invoice.paidAmount);
       const newBalance = currentBalance.minus(grandTotal);
 
-      // If the invoice was already paid (fully or partially), the return reduces the paid amount
-      // "invoice ni amount total mathi less if paid hoi"
-      let newPaid = currentPaid;
-      if (newBalance.lt(0) && currentPaid.gt(0)) {
-        const excess = grandTotal.minus(currentBalance);
-        newPaid = Decimal.max(0, currentPaid.minus(excess));
-      }
-
-      const finalBalance = Decimal.max(0, newBalance);
       let newStatus = invoice.status;
-      if (finalBalance.lte(0.01)) {
+      if (newBalance.lte(0)) {
         newStatus = InvoiceStatus.PAID;
-      } else if (newPaid.gt(0)) {
-        newStatus = InvoiceStatus.PARTIALLY_PAID;
       }
 
       await tx.salesInvoice.update({
         where: { id: invoice.id },
         data: {
-          balanceAmount: finalBalance.toFixed(2),
-          paidAmount: newPaid.toFixed(2),
+          balanceAmount: newBalance.toFixed(2),
           status: newStatus,
         },
       });

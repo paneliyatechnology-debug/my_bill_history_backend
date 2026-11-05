@@ -1706,24 +1706,15 @@ export class PurchasesService {
         }
       }
 
-      // 11. Reconcile Purchase Invoice Balance & Status.
+      // 11. Reconcile Purchase Invoice Balance.
+      // A return larger than the unpaid balance is a credit owed by the supplier.
       const currentBalance = toDecimal(invoice.balanceAmount);
-      const currentPaid = toDecimal(invoice.paidAmount);
       const newBalance = currentBalance.minus(grandTotal);
-
-      let newPaid = currentPaid;
-      if (newBalance.lt(0) && currentPaid.gt(0)) {
-        const excess = grandTotal.minus(currentBalance);
-        newPaid = Decimal.max(0, currentPaid.minus(excess));
-      }
-
-      const finalBalance = Decimal.max(0, newBalance);
 
       await tx.purchaseInvoice.update({
         where: { id: invoice.id },
         data: {
-          balanceAmount: finalBalance.toFixed(2),
-          paidAmount: newPaid.toFixed(2),
+          balanceAmount: newBalance.toFixed(2),
         },
       });
 

@@ -15,6 +15,7 @@ describe("Sales Returns & Credit Notes Module Integration", () => {
 
   let tokenA: string;
   let tokenB: string;
+  let orgAId: string;
   let companyAId: string;
   let companyBId: string;
   let warehouseAId: string;
@@ -133,6 +134,7 @@ describe("Sales Returns & Credit Notes Module Integration", () => {
     expect(regResA.statusCode).toBe(201);
     const bodyA = JSON.parse(regResA.body);
     tokenA = bodyA.accessToken;
+    orgAId = bodyA.defaultContext.organizationId;
     companyAId = bodyA.defaultContext.companyId;
 
     // Seed Standard Chart of Accounts for Company A
@@ -234,7 +236,7 @@ describe("Sales Returns & Credit Notes Module Integration", () => {
     await prisma.executeBypassRls(async (tx) => {
       await tx.stockTransaction.create({
         data: {
-          organizationId: bodyA.defaultContext.organizationId,
+          organizationId: orgAId,
           companyId: companyAId,
           warehouseId: warehouseAId,
           itemId: itemAId,
@@ -822,7 +824,7 @@ describe("Sales Returns & Credit Notes Module Integration", () => {
         partyId: customerAId,
         invoiceDate: "2026-10-12",
         warehouseId: warehouseAId,
-        paymentMode: "CREDIT",
+        paymentMode: "UNPAID_CREDIT",
         items: [
           { itemId: itemAId, quantity: 2, unitPrice: 1000, taxRate: 18 },
         ],
@@ -896,7 +898,7 @@ describe("Sales Returns & Credit Notes Module Integration", () => {
         partyId: customerAId,
         invoiceDate: "2026-10-12",
         warehouseId: warehouseAId,
-        paymentMode: "CREDIT",
+        paymentMode: "UNPAID_CREDIT",
         items: [
           { itemId: itemAId, quantity: 3, unitPrice: 1000, taxRate: 18 },
         ],
@@ -969,5 +971,199 @@ describe("Sales Returns & Credit Notes Module Integration", () => {
       }),
     );
     expect(orphanStock).toHaveLength(0);
+  });
+
+  it("12. Successfully creates an Amount-Based Credit Note (flat monetary adjustment without item lines)", async () => {
+    await prisma.executeBypassRls(async (tx) => {
+      await tx.stockTransaction.create({
+        data: {
+          organizationId: orgAId,
+          companyId: companyAId,
+          warehouseId: warehouseAId,
+          itemId: itemAId,
+          transactionType: StockTransactionType.OPENING,
+          transactionDate: new Date(),
+          quantity: 20,
+          valuationRate: 50000,
+          totalValuation: 1000000,
+          referenceDocType: "OPENING_BALANCE",
+          referenceDocId: itemAId,
+        },
+      });
+    });
+
+    const invRes = await app.inject({
+      method: "POST",
+      url: "/api/v1/invoices/sales",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        partyId: customerAId,
+        invoiceDate: "2026-10-14",
+        warehouseId: warehouseAId,
+        paymentMode: "UNPAID_CREDIT",
+        items: [
+          { itemId: itemAId, quantity: 5, unitPrice: 1000, taxRate: 18 },
+        ],
+      },
+    });
+    expect(invRes.statusCode).toBe(201);
+    const inv = JSON.parse(invRes.body);
+
+    const cnRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/sales-returns`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        salesInvoiceId: inv.id,
+        docType: "CREDIT_NOTE",
+        creditNoteType: "AMOUNT_BASED",
+        gstCategory: "SECTION_34",
+        amount: 500,
+        taxRate: 18,
+        reason: "Annual volume rebate",
+      },
+    });
+    expect(cnRes.statusCode).toBe(201);
+    const cn = JSON.parse(cnRes.body);
+    expect(cn.docType).toBe("CREDIT_NOTE");
+    expect(cn.creditNoteType).toBe("AMOUNT_BASED");
+    expect(Number(cn.taxableAmount)).toBe(500);
+    expect(Number(cn.grandTotal)).toBe(590); // 500 + 18% GST (90)
+    expect(cn.voucherId).toBeDefined();
+
+    // Verify ZERO stock transactions were created
+    const stockMovements = await prisma.executeBypassRls((tx) =>
+      tx.stockTransaction.findMany({
+        where: { referenceDocId: cn.id },
+      }),
+    );
+    expect(stockMovements).toHaveLength(0);
+  });
+
+  it("13. Successfully creates a Commercial Credit Note (without GST reversal, debits commercial discount)", async () => {
+    const invRes = await app.inject({
+      method: "POST",
+      url: "/api/v1/invoices/sales",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        partyId: customerAId,
+        invoiceDate: "2026-10-15",
+        warehouseId: warehouseAId,
+        paymentMode: "UNPAID_CREDIT",
+        items: [
+          { itemId: itemAId, quantity: 2, unitPrice: 2000, taxRate: 18 },
+        ],
+      },
+    });
+    expect(invRes.statusCode).toBe(201);
+    const inv = JSON.parse(invRes.body);
+
+    const cnRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/sales-returns`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        salesInvoiceId: inv.id,
+        docType: "CREDIT_NOTE",
+        creditNoteType: "AMOUNT_BASED",
+        gstCategory: "COMMERCIAL",
+        amount: 800,
+        reason: "Special commercial compensation",
+      },
+    });
+    expect(cnRes.statusCode).toBe(201);
+    const cn = JSON.parse(cnRes.body);
+    expect(cn.gstCategory).toBe("COMMERCIAL");
+    expect(Number(cn.cgstAmount)).toBe(0);
+    expect(Number(cn.sgstAmount)).toBe(0);
+    expect(Number(cn.igstAmount)).toBe(0);
+    expect(Number(cn.grandTotal)).toBe(800);
+
+    // Verify voucher has Commercial Discounts debit line
+    const voucher = await prisma.executeBypassRls((tx) =>
+      tx.voucher.findUnique({
+        where: { id: cn.voucherId },
+        include: { journalEntries: { include: { account: true } } },
+      }),
+    );
+    expect(voucher).toBeDefined();
+    const discountLine = voucher?.journalEntries.find((je) =>
+      je.account.name.includes("Commercial Discount"),
+    );
+    expect(discountLine).toBeDefined();
+    expect(Number(discountLine?.debitAmount)).toBe(800);
+  });
+
+  it("14. 1-Click 'Create Credit Note from Sales Return' links documents and prevents duplicate credits", async () => {
+    await prisma.executeBypassRls(async (tx) => {
+      await tx.stockTransaction.create({
+        data: {
+          organizationId: orgAId,
+          companyId: companyAId,
+          warehouseId: warehouseAId,
+          itemId: itemAId,
+          transactionType: StockTransactionType.OPENING,
+          transactionDate: new Date(),
+          quantity: 20,
+          valuationRate: 50000,
+          totalValuation: 1000000,
+          referenceDocType: "OPENING_BALANCE",
+          referenceDocId: itemAId,
+        },
+      });
+    });
+
+    const invRes = await app.inject({
+      method: "POST",
+      url: "/api/v1/invoices/sales",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        partyId: customerAId,
+        invoiceDate: "2026-10-16",
+        warehouseId: warehouseAId,
+        paymentMode: "UNPAID_CREDIT",
+        items: [
+          { itemId: itemAId, quantity: 10, unitPrice: 500, taxRate: 18 },
+        ],
+      },
+    });
+    expect(invRes.statusCode).toBe(201);
+    const inv = JSON.parse(invRes.body);
+
+    // 1. Create a physical Sales Return
+    const retRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/sales-returns`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        salesInvoiceId: inv.id,
+        docType: "SALES_RETURN",
+        returnDate: "2026-10-16",
+        warehouseId: warehouseAId,
+        restoreStock: true,
+        items: [{ salesItemId: inv.items[0].id, quantity: 2 }],
+      },
+    });
+    expect(retRes.statusCode).toBe(201);
+    const ret = JSON.parse(retRes.body);
+
+    // 2. Call 1-click Create Credit Note endpoint
+    const linkRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/sales-returns/${ret.id}/create-credit-note`,
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    expect(linkRes.statusCode).toBe(201);
+    const linkedCn = JSON.parse(linkRes.body);
+    expect(linkedCn.docType).toBe("CREDIT_NOTE");
+    expect(linkedCn.linkedReturnId).toBe(ret.id);
+
+    // 3. Attempt duplicate creation -> must reject with 400
+    const dupRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/sales-returns/${ret.id}/create-credit-note`,
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    expect(dupRes.statusCode).toBe(400);
   });
 });

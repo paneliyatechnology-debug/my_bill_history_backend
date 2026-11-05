@@ -8,6 +8,7 @@ import {
 import { DatabaseService } from "../database/database.service";
 import { TenantContext } from "@billing/shared-types";
 import { WebPushService } from "./web-push.service";
+import { SessionEventsService } from "../auth/session-events.service";
 import { QueryNotificationsDto } from "./dto/query-notifications.dto";
 import { RegisterDeviceDto } from "./dto/register-device.dto";
 import { UpdatePreferencesDto } from "./dto/update-preferences.dto";
@@ -46,6 +47,7 @@ export class NotificationsService {
   constructor(
     private readonly prisma: DatabaseService,
     private readonly webPush: WebPushService,
+    private readonly sessionEvents: SessionEventsService,
   ) {}
 
   /**
@@ -253,6 +255,25 @@ export class NotificationsService {
 
       (notification as any).isRead = notification.readAt !== null;
       createdNotifications.push(notification);
+
+      // Broadcast real-time notification event via SSE stream
+      try {
+        this.sessionEvents.emitNotificationReceived({
+          organizationId,
+          companyId,
+          userId,
+          notification: {
+            id: notification.id,
+            type: notification.type,
+            title: notification.title,
+            message: notification.message,
+            createdAt: notification.createdAt,
+            deepLink: (notification.data as any)?.deepLink,
+          },
+        });
+      } catch (err: any) {
+        this.logger.warn(`Failed to broadcast real-time notification: ${err.message}`);
+      }
 
       // Asynchronously trigger Web Push & Mobile Push if user has opted in
       if (pushEnabled) {

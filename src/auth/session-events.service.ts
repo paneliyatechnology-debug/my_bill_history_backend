@@ -8,6 +8,8 @@ export type SessionCondition =
   | "SESSION_REVOKED"
   | "SUBSCRIPTION_EXPIRED"
   | "SUBSCRIPTION_ACTIVE"
+  | "NOTIFICATION_RECEIVED"
+  | "NOTIFICATION_UPDATED"
   | "PING";
 
 export interface SessionEventPayload {
@@ -24,6 +26,8 @@ export interface SessionEventPayload {
   tier?: string;
   isExpired?: boolean;
   isSuspended?: boolean;
+  unreadCount?: number;
+  notification?: any;
 }
 
 @Injectable()
@@ -64,6 +68,28 @@ export class SessionEventsService {
       isSuspended: false,
       message: "Your organization account has been activated.",
       messageGujarati: "તમારું ટેનન્ટ સક્રિય કરવામાં આવ્યું છે.",
+    });
+  }
+
+  emitNotificationReceived(input: {
+    organizationId: string;
+    companyId?: string;
+    userId?: string;
+    unreadCount?: number;
+    notification?: any;
+  }) {
+    this.emit({
+      type: "NOTIFICATION_RECEIVED",
+      condition: "NOTIFICATION_RECEIVED",
+      organizationId: input.organizationId,
+      userId: input.userId,
+      unreadCount: input.unreadCount,
+      notification: input.notification,
+      message: input.notification?.title || "New notification received",
+      messageGujarati:
+        input.notification?.messageGujarati ||
+        input.notification?.title ||
+        "નવી સૂચના પ્રાપ્ત થઈ",
     });
   }
 
