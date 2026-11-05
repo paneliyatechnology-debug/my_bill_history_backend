@@ -1129,6 +1129,10 @@ export class InvoicesService {
       }
       if (query.status) where.status = query.status;
       if (query.category) where.category = query.category;
+      const targetFyId = (query as any)?.financialYearId || tenant.financialYearId;
+      if (targetFyId) {
+        where.financialYearId = targetFyId;
+      }
       if (query.startDate || query.endDate) {
         where.invoiceDate = {};
         if (query.startDate)

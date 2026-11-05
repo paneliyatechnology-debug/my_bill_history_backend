@@ -829,10 +829,36 @@ export class TenantsService {
         });
         compId = primary?.id;
       }
+      if (!compId) return [];
+
+      const existingYears = await tx.financialYear.findMany({
+        where: { companyId: compId },
+        select: { id: true, name: true, startDate: true, endDate: true, isCurrent: true, isLocked: true },
+      });
+
+      const defaultYears = [
+        { name: "FY 2024-25", startDate: new Date("2024-04-01T00:00:00.000Z"), endDate: new Date("2025-03-31T23:59:59.999Z"), isCurrent: false },
+        { name: "FY 2025-26", startDate: new Date("2025-04-01T00:00:00.000Z"), endDate: new Date("2026-03-31T23:59:59.999Z"), isCurrent: false },
+        { name: "FY 2026-27", startDate: new Date("2026-04-01T00:00:00.000Z"), endDate: new Date("2027-03-31T23:59:59.999Z"), isCurrent: true },
+      ];
+
+      for (const def of defaultYears) {
+        if (!existingYears.some((y) => y.name === def.name)) {
+          await tx.financialYear.create({
+            data: {
+              companyId: compId,
+              name: def.name,
+              startDate: def.startDate,
+              endDate: def.endDate,
+              isCurrent: def.isCurrent,
+              isLocked: false,
+            },
+          });
+        }
+      }
+
       return tx.financialYear.findMany({
-        where: {
-          ...(compId ? { companyId: compId } : {}),
-        },
+        where: { companyId: compId },
         orderBy: { startDate: "desc" },
         select: {
           id: true,

@@ -49,19 +49,35 @@ export class DashboardService {
     horizonDate.setUTCHours(23, 59, 59, 999);
 
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      let fyRecord: { id: string; startDate: Date; endDate: Date } | null = null;
+      if (tenant.financialYearId) {
+        fyRecord = await tx.financialYear.findFirst({
+          where: { id: tenant.financialYearId, companyId: tenant.companyId },
+          select: { id: true, startDate: true, endDate: true },
+        });
+      }
+
       const dues: any[] = [];
       let totalOverdueAmount = 0;
       let totalDueSoonAmount = 0;
 
       // 1. Sales Invoices (Receivables / Collections)
       if (typeFilter === "ALL" || typeFilter === "SALES") {
+        const salesWhere: any = {
+          companyId: tenant.companyId,
+          balanceAmount: { gt: 0 },
+          status: { notIn: ["CANCELLED", "DRAFT", "PAID"] },
+          dueDate: { not: null, lte: horizonDate },
+        };
+        if (fyRecord) {
+          salesWhere.OR = [
+            { financialYearId: fyRecord.id },
+            { invoiceDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
+          ];
+        }
+
         const salesInvoices = await tx.salesInvoice.findMany({
-          where: {
-            companyId: tenant.companyId,
-            balanceAmount: { gt: 0 },
-            status: { notIn: ["CANCELLED", "DRAFT", "PAID"] },
-            dueDate: { not: null, lte: horizonDate },
-          },
+          where: salesWhere,
           include: {
             party: {
               select: { id: true, name: true, phone: true },
@@ -113,12 +129,20 @@ export class DashboardService {
 
       // 2. Purchase Invoices (Payables / Supplier Bills)
       if (typeFilter === "ALL" || typeFilter === "PURCHASES") {
+        const purchaseWhere: any = {
+          companyId: tenant.companyId,
+          balanceAmount: { gt: 0 },
+          dueDate: { not: null, lte: horizonDate },
+        };
+        if (fyRecord) {
+          purchaseWhere.OR = [
+            { financialYearId: fyRecord.id },
+            { invoiceDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
+          ];
+        }
+
         const purchaseInvoices = await tx.purchaseInvoice.findMany({
-          where: {
-            companyId: tenant.companyId,
-            balanceAmount: { gt: 0 },
-            dueDate: { not: null, lte: horizonDate },
-          },
+          where: purchaseWhere,
           include: {
             party: {
               select: { id: true, name: true, phone: true },
@@ -208,17 +232,45 @@ export class DashboardService {
 
   async getSalesOverview(tenant: TenantContext, daysCount: number = 7) {
     const days = Math.min(30, Math.max(1, Number(daysCount) || 7));
-    const now = new Date();
-    const startDate = new Date(now);
-    startDate.setDate(now.getDate() - (days - 1));
-    startDate.setHours(0, 0, 0, 0);
 
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      let anchorDate = new Date();
+      let fyRecord: { id: string; startDate: Date; endDate: Date } | null = null;
+      if (tenant.financialYearId) {
+        fyRecord = await tx.financialYear.findFirst({
+          where: { id: tenant.financialYearId, companyId: tenant.companyId },
+          select: { id: true, startDate: true, endDate: true },
+        });
+        if (fyRecord) {
+          const fyEnd = new Date(fyRecord.endDate);
+          const fyStart = new Date(fyRecord.startDate);
+          if (anchorDate > fyEnd) {
+            anchorDate = fyEnd;
+          } else if (anchorDate < fyStart) {
+            anchorDate = fyStart;
+          }
+        }
+      }
+
+      const startDate = new Date(anchorDate);
+      startDate.setDate(anchorDate.getDate() - (days - 1));
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(anchorDate);
+      endDate.setHours(23, 59, 59, 999);
+
       const invoices = await tx.salesInvoice.findMany({
         where: {
           companyId: tenant.companyId,
           status: { not: "CANCELLED" },
-          invoiceDate: { gte: startDate },
+          invoiceDate: { gte: startDate, lte: endDate },
+          ...(fyRecord
+            ? {
+                OR: [
+                  { financialYearId: fyRecord.id },
+                  { invoiceDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
+                ],
+              }
+            : {}),
         },
         select: {
           invoiceDate: true,
@@ -232,8 +284,8 @@ export class DashboardService {
       let invoicesCount = invoices.length;
 
       for (let i = days - 1; i >= 0; i--) {
-        const d = new Date(now);
-        d.setDate(now.getDate() - i);
+        const d = new Date(anchorDate);
+        d.setDate(anchorDate.getDate() - i);
         const dayLabel = dayNames[d.getDay()];
         const dateIso = d.toISOString().slice(0, 10);
 
@@ -365,16 +417,32 @@ export class DashboardService {
     }
 
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      let fyRecord: { id: string; startDate: Date; endDate: Date } | null = null;
+      const targetFyId = (query as any)?.financialYearId || tenant.financialYearId;
+      if (targetFyId) {
+        fyRecord = await tx.financialYear.findFirst({
+          where: { id: targetFyId, companyId: tenant.companyId },
+          select: { id: true, startDate: true, endDate: true },
+        });
+      }
+
       const dateFilter: any = {};
       if (query?.startDate) {
         dateFilter.gte = new Date(query.startDate);
+      } else if (fyRecord?.startDate) {
+        dateFilter.gte = new Date(fyRecord.startDate);
       }
+
       if (query?.endDate) {
         const end = new Date(query.endDate);
         end.setHours(23, 59, 59, 999);
         dateFilter.lte = end;
+      } else if (fyRecord?.endDate) {
+        const end = new Date(fyRecord.endDate);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.lte = end;
       }
-      const hasDateFilter = Boolean(query?.startDate || query?.endDate);
+      const hasDateFilter = Boolean(query?.startDate || query?.endDate || fyRecord);
 
       // Item filter setup (itemId, sku, itemCode, or item search)
       const rawItemId =
@@ -458,6 +526,12 @@ export class DashboardService {
         status: { not: "CANCELLED" },
       };
       if (hasDateFilter) salesWhere.invoiceDate = dateFilter;
+      if (fyRecord) {
+        salesWhere.OR = [
+          { financialYearId: fyRecord.id },
+          { invoiceDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
+        ];
+      }
       if (itemClause) salesWhere.items = { some: itemClause };
 
       const salesPromise = tx.salesInvoice.findMany({
@@ -473,6 +547,12 @@ export class DashboardService {
       // 2. Purchase Invoices
       const purchaseWhere: any = { companyId: tenant.companyId };
       if (hasDateFilter) purchaseWhere.invoiceDate = dateFilter;
+      if (fyRecord) {
+        purchaseWhere.OR = [
+          { financialYearId: fyRecord.id },
+          { invoiceDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
+        ];
+      }
       if (itemClause) purchaseWhere.items = { some: itemClause };
 
       const purchasePromise = tx.purchaseInvoice.findMany({
@@ -498,6 +578,12 @@ export class DashboardService {
         ],
       };
       if (hasDateFilter) voucherWhere.voucherDate = dateFilter;
+      if (fyRecord) {
+        voucherWhere.OR = [
+          { financialYearId: fyRecord.id },
+          { voucherDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
+        ];
+      }
 
       const voucherPromise = hasItemFilter
         ? Promise.resolve([])

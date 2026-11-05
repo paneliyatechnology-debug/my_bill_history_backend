@@ -32,6 +32,7 @@ import {
   resolveReportPeriod,
 } from "@billing/gst-provider";
 import { DatabaseService } from "../database/database.service";
+import { Prisma } from "@prisma/client";
 import { QuerySalesRegisterDto } from "./dto/query-sales-register.dto";
 import {
   QueryReceiptPaymentRegisterDto,
@@ -934,6 +935,15 @@ export class ReportsService {
     }
 
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      let fyRecord: { id: string; startDate: Date; endDate: Date } | null = null;
+      const targetFyId = (query as any)?.financialYearId || tenant.financialYearId;
+      if (targetFyId) {
+        fyRecord = await tx.financialYear.findFirst({
+          where: { id: targetFyId, companyId: tenant.companyId },
+          select: { id: true, startDate: true, endDate: true },
+        });
+      }
+
       // 1. To Collect (Customer Receivables)
       const customerParties = await tx.party.findMany({
         where: {
@@ -956,6 +966,14 @@ export class ReportsService {
             where: {
               status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT] },
               balanceAmount: { not: 0 },
+              ...(fyRecord
+                ? {
+                    OR: [
+                      { financialYearId: fyRecord.id },
+                      { invoiceDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
+                    ],
+                  }
+                : {}),
               ...(asOfDateObj ? { invoiceDate: { lte: asOfDateObj } } : {}),
             },
             select: {
@@ -1003,6 +1021,14 @@ export class ReportsService {
           purchaseInvoices: {
             where: {
               balanceAmount: { not: 0 },
+              ...(fyRecord
+                ? {
+                    OR: [
+                      { financialYearId: fyRecord.id },
+                      { invoiceDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
+                    ],
+                  }
+                : {}),
               ...(asOfDateObj ? { invoiceDate: { lte: asOfDateObj } } : {}),
             },
             select: {
@@ -1068,6 +1094,7 @@ export class ReportsService {
               WHERE v.company_id = ${tenant.companyId}::uuid
                 AND v.is_cancelled = false
                 AND v.voucher_date <= ${asOfDateObj}
+                ${fyRecord ? Prisma.sql`AND (v.financial_year_id = ${fyRecord.id}::uuid OR (v.voucher_date >= ${fyRecord.startDate} AND v.voucher_date <= ${fyRecord.endDate}))` : Prisma.empty}
                 AND je.account_id = ANY(${accountIds}::uuid[])
               GROUP BY je.account_id
             `
@@ -1080,6 +1107,7 @@ export class ReportsService {
               JOIN vouchers v ON v.id = je.voucher_id
               WHERE v.company_id = ${tenant.companyId}::uuid
                 AND v.is_cancelled = false
+                ${fyRecord ? Prisma.sql`AND (v.financial_year_id = ${fyRecord.id}::uuid OR (v.voucher_date >= ${fyRecord.startDate} AND v.voucher_date <= ${fyRecord.endDate}))` : Prisma.empty}
                 AND je.account_id = ANY(${accountIds}::uuid[])
               GROUP BY je.account_id
             `;
@@ -1112,12 +1140,49 @@ export class ReportsService {
 
       const totalCashBank = totalCash.plus(totalBank);
 
+      const [invoiceCount, pendingInvoicesCount] = await Promise.all([
+        tx.salesInvoice.count({
+          where: {
+            companyId: tenant.companyId,
+            status: { not: InvoiceStatus.CANCELLED },
+            ...(fyRecord
+              ? {
+                  OR: [
+                    { financialYearId: fyRecord.id },
+                    { invoiceDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
+                  ],
+                }
+              : {}),
+          },
+        }),
+        tx.salesInvoice.count({
+          where: {
+            companyId: tenant.companyId,
+            status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT, InvoiceStatus.PAID] },
+            balanceAmount: { gt: 0 },
+            ...(fyRecord
+              ? {
+                  OR: [
+                    { financialYearId: fyRecord.id },
+                    { invoiceDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
+                  ],
+                }
+              : {}),
+          },
+        }),
+      ]);
+
       return {
         toCollect: totalReceivables.toFixed(2),
         toPay: totalPayables.toFixed(2),
         cashBalance: totalCash.toFixed(2),
         bankBalance: totalBank.toFixed(2),
         totalCashBankBalance: totalCashBank.toFixed(2),
+        totalInvoices: invoiceCount,
+        invoicesCount: invoiceCount,
+        pendingBills: pendingInvoicesCount,
+        unpaidInvoices: pendingInvoicesCount,
+        financialYearId: fyRecord?.id,
         currency: "INR",
         asOf: (asOfDateObj ?? new Date()).toISOString(),
       };
