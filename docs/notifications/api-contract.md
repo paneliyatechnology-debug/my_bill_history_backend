@@ -138,50 +138,61 @@ Marks a single notification as unread (`readAt: null`).
 
 ---
 
-### 2.6 PATCH /api/v1/notifications/:id
-Unified status update endpoint to toggle or explicitly set notification read or unread state in one API.
+### 2.6 PATCH /api/v1/notifications (Unified Status API)
+Single unified API to manage notification read/unread status across all use cases:
+1. Mark single notification as Read (`id` + `isRead: true`)
+2. Mark single notification as Unread (`id` + `isRead: false`)
+3. Mark ALL notifications as Read (`all: true` + `isRead: true`)
+4. Mark ALL notifications as Unread (`all: true` + `isRead: false`)
 
-**Request Body:**
+Supports parameters via JSON body, query string (`?id=...&isRead=...` / `?all=true&isRead=...`), or path param (`/api/v1/notifications/:id`).
+
+**Request Body Schema:**
 ```json
 {
-  "isRead": false
+  "id": "e93297a7-59d4-4a57-8173-10d9cebc1748", // optional: specific notification UUID. If omitted or "ALL", applies to all notifications
+  "isRead": true, // boolean: true to mark as read, false to mark as unread
+  "all": false // optional: set true to explicitly apply to all notifications
 }
 ```
 
-**Success Response (200 OK):**
+**Single Notification Response:**
 ```json
 {
   "id": "e93297a7-59d4-4a57-8173-10d9cebc1748",
-  "readAt": null,
-  "isRead": false
+  "readAt": "2026-11-05T06:22:15.000Z",
+  "isRead": true,
+  "message": "Notification marked as read"
+}
+```
+
+**All Notifications Response:**
+```json
+{
+  "success": true,
+  "isRead": true,
+  "all": true,
+  "updatedCount": 12,
+  "message": "All notifications marked as read"
 }
 ```
 
 ---
 
-### 2.7 PATCH /api/v1/notifications/read-all
-Marks all unread notifications as read for the user in the company.
-
-**Success Response (200 OK):**
-```json
-{
-  "success": true,
-  "count": 4
-}
-```
+### 2.7 PATCH /api/v1/notifications/:id
+Convenience path alias targeting a specific notification ID.
+Accepts `{"isRead": true}` or `{"isRead": false}`.
+Also supports `:id = "read-all"` or `:id = "unread-all"`.
 
 ---
 
-### 2.8 PATCH /api/v1/notifications/unread-all
-Marks all notifications as unread for the user in the company.
+### 2.8 PATCH /api/v1/notifications/read-all
+Convenience alias that marks all unread notifications as read.
 
-**Success Response (200 OK):**
-```json
-{
-  "success": true,
-  "count": 45
-}
-```
+---
+
+### 2.9 PATCH /api/v1/notifications/unread-all
+Convenience alias that marks all notifications as unread.
 
 ---
 
