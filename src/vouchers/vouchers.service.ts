@@ -955,35 +955,14 @@ export class VouchersService {
       }
 
       // 4. Supplier Account
-      let supplierAccount = party.ledgerAccount;
-      if (!supplierAccount) {
-        supplierAccount = await tx.ledgerAccount.findFirst({
-          where: { companyId: tenant.companyId, partyId: party.id },
-          include: { group: true },
-        });
-      }
-      if (!supplierAccount) {
-        const sundryCreditors = await tx.ledgerGroup.findFirst({
-          where: { companyId: tenant.companyId, name: "Sundry Creditors" },
-        });
-        supplierAccount = await tx.ledgerAccount.create({
-          data: {
-            organizationId: tenant.organizationId,
-            companyId: tenant.companyId,
-            groupId:
-              sundryCreditors?.id ||
-              (await tx.ledgerGroup.findFirst({
-                where: { companyId: tenant.companyId, nature: "LIABILITY" },
-              }))!.id,
-            name: party.name,
-            isPartyLedger: true,
-            partyId: party.id,
-            openingType: "CR",
-            currentBalance: 0,
-          },
-          include: { group: true },
-        });
-      }
+      const supplierAccount = await this.resolvePartyLedgerAccount(
+        tx,
+        tenant,
+        party,
+        "Sundry Creditors",
+        "LIABILITY",
+        "CR",
+      );
 
       // 5. Allocations (Settling purchase invoices)
       let totalSettled = new Decimal(0);
@@ -1512,35 +1491,14 @@ export class VouchersService {
       }
 
       // Supplier Account
-      let supplierAccount = party.ledgerAccount;
-      if (!supplierAccount) {
-        supplierAccount = await tx.ledgerAccount.findFirst({
-          where: { companyId: tenant.companyId, partyId: party.id },
-          include: { group: true },
-        });
-      }
-      if (!supplierAccount) {
-        const sundryCreditors = await tx.ledgerGroup.findFirst({
-          where: { companyId: tenant.companyId, name: "Sundry Creditors" },
-        });
-        supplierAccount = await tx.ledgerAccount.create({
-          data: {
-            organizationId: tenant.organizationId,
-            companyId: tenant.companyId,
-            groupId:
-              sundryCreditors?.id ||
-              (await tx.ledgerGroup.findFirst({
-                where: { companyId: tenant.companyId, nature: "LIABILITY" },
-              }))!.id,
-            name: party.name,
-            isPartyLedger: true,
-            partyId: party.id,
-            openingType: "CR",
-            currentBalance: 0,
-          },
-          include: { group: true },
-        });
-      }
+      const supplierAccount = await this.resolvePartyLedgerAccount(
+        tx,
+        tenant,
+        party,
+        "Sundry Creditors",
+        "LIABILITY",
+        "CR",
+      );
 
       // 5. New Allocations
       let totalSettled = new Decimal(0);
@@ -1819,35 +1777,14 @@ export class VouchersService {
       }
 
       // 4. Customer Account
-      let customerAccount = party.ledgerAccount;
-      if (!customerAccount) {
-        customerAccount = await tx.ledgerAccount.findFirst({
-          where: { companyId: tenant.companyId, partyId: party.id },
-          include: { group: true },
-        });
-      }
-      if (!customerAccount) {
-        const sundryDebtors = await tx.ledgerGroup.findFirst({
-          where: { companyId: tenant.companyId, name: "Sundry Debtors" },
-        });
-        customerAccount = await tx.ledgerAccount.create({
-          data: {
-            organizationId: tenant.organizationId,
-            companyId: tenant.companyId,
-            groupId:
-              sundryDebtors?.id ||
-              (await tx.ledgerGroup.findFirst({
-                where: { companyId: tenant.companyId, nature: "ASSET" },
-              }))!.id,
-            name: party.name,
-            isPartyLedger: true,
-            partyId: party.id,
-            openingType: "DR",
-            currentBalance: 0,
-          },
-          include: { group: true },
-        });
-      }
+      const customerAccount = await this.resolvePartyLedgerAccount(
+        tx,
+        tenant,
+        party,
+        "Sundry Debtors",
+        "ASSET",
+        "DR",
+      );
 
       // 5. Validate Allocations (optional: unallocated balance stays as party advance)
       let totalSettled = new Decimal(0);
@@ -2277,35 +2214,14 @@ export class VouchersService {
       }
 
       // 7. Customer Account
-      let customerAccount = party.ledgerAccount;
-      if (!customerAccount) {
-        customerAccount = await tx.ledgerAccount.findFirst({
-          where: { companyId: tenant.companyId, partyId: party.id },
-          include: { group: true },
-        });
-      }
-      if (!customerAccount) {
-        const sundryDebtors = await tx.ledgerGroup.findFirst({
-          where: { companyId: tenant.companyId, name: "Sundry Debtors" },
-        });
-        customerAccount = await tx.ledgerAccount.create({
-          data: {
-            organizationId: tenant.organizationId,
-            companyId: tenant.companyId,
-            groupId:
-              sundryDebtors?.id ||
-              (await tx.ledgerGroup.findFirst({
-                where: { companyId: tenant.companyId, nature: "ASSET" },
-              }))!.id,
-            name: party.name,
-            isPartyLedger: true,
-            partyId: party.id,
-            openingType: "DR",
-            currentBalance: 0,
-          },
-          include: { group: true },
-        });
-      }
+      const customerAccount = await this.resolvePartyLedgerAccount(
+        tx,
+        tenant,
+        party,
+        "Sundry Debtors",
+        "ASSET",
+        "DR",
+      );
 
       // 8. New Allocations
       let totalSettled = new Decimal(0);
@@ -3687,6 +3603,79 @@ export class VouchersService {
       });
 
       return { data: payments, total: payments.length };
+    });
+  }
+
+  /**
+   * Resolves or safely creates a party's ledger account.
+   * Prevents @@unique([companyId, name]) and @unique(partyId) collision by:
+   * 1. Checking party.ledgerAccount
+   * 2. Checking tx.ledgerAccount by partyId
+   * 3. Checking tx.ledgerAccount by name in this company (linking partyId if unlinked)
+   * 4. Creating new account only if neither partyId nor name exists
+   */
+  private async resolvePartyLedgerAccount(
+    tx: any,
+    tenant: { organizationId: string; companyId: string },
+    party: { id: string; name: string; nameGujarati?: string | null; ledgerAccount?: any },
+    groupName: "Sundry Creditors" | "Sundry Debtors",
+    nature: "LIABILITY" | "ASSET",
+    openingType: "CR" | "DR",
+  ): Promise<any> {
+    if (party.ledgerAccount) return party.ledgerAccount;
+
+    // 1. Check by partyId
+    let account = await tx.ledgerAccount.findFirst({
+      where: { companyId: tenant.companyId, partyId: party.id },
+      include: { group: true },
+    });
+    if (account) return account;
+
+    // 2. Check by name within this company
+    account = await tx.ledgerAccount.findFirst({
+      where: { companyId: tenant.companyId, name: party.name },
+      include: { group: true },
+    });
+    if (account) {
+      if (!account.partyId) {
+        account = await tx.ledgerAccount.update({
+          where: { id: account.id },
+          data: { partyId: party.id, isPartyLedger: true },
+          include: { group: true },
+        });
+      }
+      return account;
+    }
+
+    // 3. Create new account under target group
+    const targetGroup = await tx.ledgerGroup.findFirst({
+      where: { companyId: tenant.companyId, name: groupName },
+    });
+    const fallbackGroup =
+      targetGroup ||
+      (await tx.ledgerGroup.findFirst({
+        where: { companyId: tenant.companyId, nature },
+      }));
+
+    if (!fallbackGroup) {
+      throw new NotFoundException(
+        `Ledger group '${groupName}' or ${nature} not found in this company.`,
+      );
+    }
+
+    return await tx.ledgerAccount.create({
+      data: {
+        organizationId: tenant.organizationId,
+        companyId: tenant.companyId,
+        groupId: fallbackGroup.id,
+        name: party.name,
+        nameGujarati: party.nameGujarati,
+        isPartyLedger: true,
+        partyId: party.id,
+        openingType,
+        currentBalance: 0,
+      },
+      include: { group: true },
     });
   }
 }

@@ -1202,4 +1202,346 @@ describe("Sales Returns & Credit Notes Module Integration", () => {
     // Empty customer has no invoices, so MUST NOT be included
     expect(eligibleList.some((p: any) => p.id === emptyParty.id)).toBe(false);
   });
+
+  it("16. Accounting Audit Scenario A: Linked Credit Note never duplicates ledger, balance, or stock impacts", async () => {
+    // Inject stock
+    await prisma.executeBypassRls(async (tx) => {
+      await tx.stockTransaction.create({
+        data: {
+          organizationId: orgAId,
+          companyId: companyAId,
+          warehouseId: warehouseAId,
+          itemId: itemAId,
+          transactionType: StockTransactionType.OPENING,
+          transactionDate: new Date(),
+          quantity: 20,
+          valuationRate: 50000,
+          totalValuation: 1000000,
+          referenceDocType: "OPENING_BALANCE",
+          referenceDocId: itemAId,
+        },
+      });
+    });
+
+    // 1. Create Sales Invoice for 10 units @ 1000 = ₹10,000 + 18% GST (1800) = ₹11,800
+    const invRes = await app.inject({
+      method: "POST",
+      url: "/api/v1/invoices/sales",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        partyId: customerAId,
+        invoiceDate: "2026-10-18",
+        warehouseId: warehouseAId,
+        paymentMode: "UNPAID_CREDIT",
+        items: [
+          { itemId: itemAId, quantity: 10, unitPrice: 1000, taxRate: 18 },
+        ],
+      },
+    });
+    expect(invRes.statusCode).toBe(201);
+    const invoice = JSON.parse(invRes.body);
+    expect(Number(invoice.grandTotal)).toBe(11800);
+    expect(Number(invoice.balanceAmount)).toBe(11800);
+
+    // Initial stock check
+    const stockBefore = await prisma.executeBypassRls((tx) =>
+      tx.stockTransaction.aggregate({
+        where: { itemId: itemAId, warehouseId: warehouseAId, companyId: companyAId },
+        _sum: { quantity: true },
+      }),
+    );
+
+    // 2. Issue physical Sales Return for 2 units (2 * 1000 + 18% = ₹2,360)
+    const retRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/sales-returns`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        salesInvoiceId: invoice.id,
+        docType: "SALES_RETURN",
+        returnDate: "2026-10-18",
+        warehouseId: warehouseAId,
+        restoreStock: true,
+        disposition: "SELLABLE",
+        items: [{ salesItemId: invoice.items[0].id, quantity: 2 }],
+      },
+    });
+    expect(retRes.statusCode).toBe(201);
+    const salesReturn = JSON.parse(retRes.body);
+    expect(Number(salesReturn.grandTotal)).toBe(2360);
+
+    // Invoice balance should now be 11,800 - 2,360 = 9,440
+    const invAfterRet = await prisma.executeBypassRls((tx) =>
+      tx.salesInvoice.findUnique({ where: { id: invoice.id } }),
+    );
+    expect(Number(invAfterRet?.balanceAmount)).toBe(9440);
+
+    // Stock should have increased by exactly 2
+    const stockAfterRet = await prisma.executeBypassRls((tx) =>
+      tx.stockTransaction.aggregate({
+        where: { itemId: itemAId, warehouseId: warehouseAId, companyId: companyAId },
+        _sum: { quantity: true },
+      }),
+    );
+    expect(Number(stockAfterRet._sum.quantity)).toBe(
+      Number(stockBefore._sum.quantity) + 2,
+    );
+
+    // Check customer ledger balance after return
+    const custAcc = await prisma.executeBypassRls((tx) =>
+      tx.ledgerAccount.findFirst({ where: { partyId: customerAId } }),
+    );
+    const custBalAfterRet = Number(custAcc?.currentBalance);
+
+    // 3. Issue Linked Credit Note from the Sales Return
+    const cnRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/sales-returns/${salesReturn.id}/create-credit-note`,
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    expect(cnRes.statusCode).toBe(201);
+    const creditNote = JSON.parse(cnRes.body);
+    expect(creditNote.docType).toBe("CREDIT_NOTE");
+    expect(creditNote.linkedReturnId).toBe(salesReturn.id);
+
+    // VERIFICATION 1: Receivable / invoice balance is NOT reduced twice!
+    const invAfterCN = await prisma.executeBypassRls((tx) =>
+      tx.salesInvoice.findUnique({ where: { id: invoice.id } }),
+    );
+    expect(Number(invAfterCN?.balanceAmount)).toBe(9440); // Still 9440, not 7080!
+
+    // VERIFICATION 2: Customer ledger is NOT credited twice!
+    const custAccAfterCN = await prisma.executeBypassRls((tx) =>
+      tx.ledgerAccount.findFirst({ where: { partyId: customerAId } }),
+    );
+    expect(Number(custAccAfterCN?.currentBalance)).toBe(custBalAfterRet); // Exactly unchanged!
+
+    // VERIFICATION 3: Stock is NOT increased twice!
+    const stockAfterCN = await prisma.executeBypassRls((tx) =>
+      tx.stockTransaction.aggregate({
+        where: { itemId: itemAId, warehouseId: warehouseAId, companyId: companyAId },
+        _sum: { quantity: true },
+      }),
+    );
+    expect(Number(stockAfterCN._sum.quantity)).toBe(
+      Number(stockAfterRet._sum.quantity),
+    ); // No extra stock added!
+
+    // VERIFICATION 4: Shared voucher attached, no duplicate vouchers created
+    expect(creditNote.voucherId).toBe(salesReturn.voucherId);
+  });
+
+  it("17. Accounting Audit Scenario B: Direct Credit Note without Sales Return causes zero stock movement", async () => {
+    // Inject stock
+    await prisma.executeBypassRls(async (tx) => {
+      await tx.stockTransaction.create({
+        data: {
+          organizationId: orgAId,
+          companyId: companyAId,
+          warehouseId: warehouseAId,
+          itemId: itemAId,
+          transactionType: StockTransactionType.OPENING,
+          transactionDate: new Date(),
+          quantity: 20,
+          valuationRate: 50000,
+          totalValuation: 1000000,
+          referenceDocType: "OPENING_BALANCE",
+          referenceDocId: itemAId,
+        },
+      });
+    });
+
+    const invRes = await app.inject({
+      method: "POST",
+      url: "/api/v1/invoices/sales",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        partyId: customerAId,
+        invoiceDate: "2026-10-18",
+        warehouseId: warehouseAId,
+        paymentMode: "UNPAID_CREDIT",
+        items: [
+          { itemId: itemAId, quantity: 5, unitPrice: 200, taxRate: 18 },
+        ],
+      },
+    });
+    expect(invRes.statusCode).toBe(201);
+    const invoice = JSON.parse(invRes.body);
+
+    const stockBefore = await prisma.executeBypassRls((tx) =>
+      tx.stockTransaction.aggregate({
+        where: { itemId: itemAId, warehouseId: warehouseAId, companyId: companyAId },
+        _sum: { quantity: true },
+      }),
+    );
+
+    // Direct Amount-Based Credit Note for commercial turnover incentive of ₹300
+    const cnRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/sales-returns`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        salesInvoiceId: invoice.id,
+        docType: "CREDIT_NOTE",
+        creditNoteType: "AMOUNT_BASED",
+        gstCategory: "COMMERCIAL",
+        amount: 300,
+        returnDate: "2026-10-18",
+        restoreStock: false,
+      },
+    });
+    expect(cnRes.statusCode).toBe(201);
+    const cn = JSON.parse(cnRes.body);
+    expect(Number(cn.grandTotal)).toBe(300);
+
+    // Verify stock is strictly untouched
+    const stockAfter = await prisma.executeBypassRls((tx) =>
+      tx.stockTransaction.aggregate({
+        where: { itemId: itemAId, warehouseId: warehouseAId, companyId: companyAId },
+        _sum: { quantity: true },
+      }),
+    );
+    expect(Number(stockAfter._sum.quantity)).toBe(Number(stockBefore._sum.quantity));
+  });
+
+  it("18. Stock Audit: Damaged and Scrapped goods do not increase sellable warehouse inventory", async () => {
+    // Inject stock
+    await prisma.executeBypassRls(async (tx) => {
+      await tx.stockTransaction.create({
+        data: {
+          organizationId: orgAId,
+          companyId: companyAId,
+          warehouseId: warehouseAId,
+          itemId: itemAId,
+          transactionType: StockTransactionType.OPENING,
+          transactionDate: new Date(),
+          quantity: 20,
+          valuationRate: 50000,
+          totalValuation: 1000000,
+          referenceDocType: "OPENING_BALANCE",
+          referenceDocId: itemAId,
+        },
+      });
+    });
+
+    const invRes = await app.inject({
+      method: "POST",
+      url: "/api/v1/invoices/sales",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        partyId: customerAId,
+        invoiceDate: "2026-10-18",
+        warehouseId: warehouseAId,
+        paymentMode: "UNPAID_CREDIT",
+        items: [
+          { itemId: itemAId, quantity: 5, unitPrice: 400, taxRate: 18 },
+        ],
+      },
+    });
+    expect(invRes.statusCode).toBe(201);
+    const invoice = JSON.parse(invRes.body);
+
+    const stockBefore = await prisma.executeBypassRls((tx) =>
+      tx.stockTransaction.aggregate({
+        where: { itemId: itemAId, warehouseId: warehouseAId, companyId: companyAId },
+        _sum: { quantity: true },
+      }),
+    );
+
+    // Return marked as DAMAGED
+    const retRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/sales-returns`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        salesInvoiceId: invoice.id,
+        docType: "SALES_RETURN",
+        disposition: "DAMAGED",
+        restoreStock: false,
+        returnDate: "2026-10-18",
+        items: [{ salesItemId: invoice.items[0].id, quantity: 2 }],
+      },
+    });
+    expect(retRes.statusCode).toBe(201);
+
+    const stockAfter = await prisma.executeBypassRls((tx) =>
+      tx.stockTransaction.aggregate({
+        where: { itemId: itemAId, warehouseId: warehouseAId, companyId: companyAId },
+        _sum: { quantity: true },
+      }),
+    );
+    expect(Number(stockAfter._sum.quantity)).toBe(Number(stockBefore._sum.quantity));
+  });
+
+  it("19. Refund Audit: Refund to Cash generates balanced Payment Voucher and records cash outflow", async () => {
+    // Inject stock
+    await prisma.executeBypassRls(async (tx) => {
+      await tx.stockTransaction.create({
+        data: {
+          organizationId: orgAId,
+          companyId: companyAId,
+          warehouseId: warehouseAId,
+          itemId: itemAId,
+          transactionType: StockTransactionType.OPENING,
+          transactionDate: new Date(),
+          quantity: 20,
+          valuationRate: 50000,
+          totalValuation: 1000000,
+          referenceDocType: "OPENING_BALANCE",
+          referenceDocId: itemAId,
+        },
+      });
+    });
+
+    const invRes = await app.inject({
+      method: "POST",
+      url: "/api/v1/invoices/sales",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        partyId: customerAId,
+        invoiceDate: "2026-10-18",
+        warehouseId: warehouseAId,
+        paymentMode: "UNPAID_CREDIT",
+        items: [
+          { itemId: itemAId, quantity: 2, unitPrice: 500, taxRate: 18 },
+        ],
+      },
+    });
+    expect(invRes.statusCode).toBe(201);
+    const invoice = JSON.parse(invRes.body);
+
+    // Issue return with REFUND_CASH
+    const retRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/sales-returns`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        salesInvoiceId: invoice.id,
+        docType: "SALES_RETURN",
+        returnDate: "2026-10-18",
+        warehouseId: warehouseAId,
+        restoreStock: true,
+        settlementMode: "REFUND_CASH",
+        items: [{ salesItemId: invoice.items[0].id, quantity: 1 }],
+      },
+    });
+    expect(retRes.statusCode).toBe(201);
+    const ret = JSON.parse(retRes.body);
+    expect(ret.settlementMode).toBe("REFUND_CASH");
+
+    // Verify refund payment voucher was created
+    const refundVoucher = await prisma.executeBypassRls((tx) =>
+      tx.voucher.findFirst({
+        where: {
+          companyId: companyAId,
+          sourceDocument: "SALES_RETURN_REFUND",
+          sourceEntityId: ret.id,
+        },
+        include: { journalEntries: { include: { account: true } } },
+      }),
+    );
+    expect(refundVoucher).toBeDefined();
+    expect(refundVoucher?.voucherType).toBe("PAYMENT");
+    expect(Number(refundVoucher?.totalAmount)).toBe(590);
+  });
 });

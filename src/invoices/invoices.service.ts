@@ -3037,6 +3037,14 @@ export class InvoicesService {
 
       const returnDate = dto.returnDate ? new Date(dto.returnDate) : new Date();
 
+      // Check if linked return exists (e.g. 1-click Create Credit Note from Sales Return)
+      let linkedReturn: any = null;
+      if (dto.linkedReturnId) {
+        linkedReturn = await tx.salesReturn.findUnique({
+          where: { id: dto.linkedReturnId },
+        });
+      }
+
       // 3. Financial Year validation
       const fy =
         (await tx.financialYear.findFirst({
@@ -3059,8 +3067,14 @@ export class InvoicesService {
       }
 
       // 4. Calculate previously returned quantities per line item
+      // Do not count CANCELLED returns, and do not double count credit notes linked to sales returns
       const returnedQtyMap = new Map<string, Decimal>();
       for (const ret of invoice.returns) {
+        if (ret.status === "CANCELLED") continue;
+        // If this return is the one currently being converted into a credit note, do not count it against the credit note's validation
+        if (dto.linkedReturnId && ret.id === dto.linkedReturnId) continue;
+        // If this return is a credit note linked to a sales return, do not count twice
+        if (ret.docType === "CREDIT_NOTE" && ret.linkedReturnId) continue;
         for (const itm of ret.items) {
           if (!itm.salesItemId) continue;
           const prev = returnedQtyMap.get(itm.salesItemId) || new Decimal(0);
@@ -3564,7 +3578,15 @@ export class InvoicesService {
         );
       }
 
-      if (salesAccount && customerAccount) {
+      if (linkedReturn && linkedReturn.voucherId) {
+        // Linked Sales Return has already posted the double-entry accounting voucher and updated ledger balances.
+        // Link this Credit Note directly to the existing voucher to prevent duplicate ledger postings.
+        await tx.salesReturn.update({
+          where: { id: salesReturn.id },
+          data: { voucherId: linkedReturn.voucherId },
+        });
+        salesReturn.voucherId = linkedReturn.voucherId;
+      } else if (salesAccount && customerAccount) {
         // Concurrency lock for credit note voucher sequence in this company & FY
         await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(hashtext(${`seq_${tenant.companyId}_${fy.id}_voucher_CREDIT_NOTE`})::bigint)
@@ -3627,9 +3649,11 @@ export class InvoicesService {
 
         if (isCommercial) {
           // Commercial Credit Note: Debit Commercial Discounts & Rebates, Credit Customer Account
+          // Dynamically resolve account through the company's Chart of Accounts
           let commDiscountAcc = await tx.ledgerAccount.findFirst({
             where: {
               companyId: tenant.companyId,
+              isActive: true,
               OR: [
                 { name: "Commercial Discounts & Rebates" },
                 { name: { contains: "Commercial Discount", mode: "insensitive" } },
@@ -3639,7 +3663,13 @@ export class InvoicesService {
           });
           if (!commDiscountAcc) {
             let expGroup = await tx.ledgerGroup.findFirst({
-              where: { companyId: tenant.companyId, nature: "EXPENSE" },
+              where: {
+                companyId: tenant.companyId,
+                OR: [
+                  { name: "Indirect Expenses" },
+                  { nature: "EXPENSE" },
+                ],
+              },
             });
             if (!expGroup) {
               expGroup = await tx.ledgerGroup.create({
@@ -3652,13 +3682,16 @@ export class InvoicesService {
                 },
               });
             }
+            const codeTaken = await tx.ledgerAccount.findFirst({
+              where: { companyId: tenant.companyId, code: "5150" },
+            });
             commDiscountAcc = await tx.ledgerAccount.create({
               data: {
                 organizationId: tenant.organizationId,
                 companyId: tenant.companyId,
                 groupId: expGroup.id,
                 name: "Commercial Discounts & Rebates",
-                code: "5150",
+                code: codeTaken ? null : "5150",
                 openingType: "DR",
                 openingBalance: "0.00",
                 currentBalance: "0.00",
@@ -3924,22 +3957,25 @@ export class InvoicesService {
       }
 
       // 11. Reconcile Sales Invoice Balance & Status.
-      // A return larger than the unpaid balance is a credit owed to the customer.
-      const currentBalance = toDecimal(invoice.balanceAmount);
-      const newBalance = currentBalance.minus(grandTotal);
+      // If this document is a Credit Note generated from a Sales Return, the Sales Return has already reconciled the invoice balance.
+      // Skip duplicate balance reduction.
+      if (!dto.linkedReturnId) {
+        const currentBalance = toDecimal(invoice.balanceAmount);
+        const newBalance = currentBalance.minus(grandTotal);
 
-      let newStatus = invoice.status;
-      if (newBalance.lte(0)) {
-        newStatus = InvoiceStatus.PAID;
+        let newStatus = invoice.status;
+        if (newBalance.lte(0)) {
+          newStatus = InvoiceStatus.PAID;
+        }
+
+        await tx.salesInvoice.update({
+          where: { id: invoice.id },
+          data: {
+            balanceAmount: newBalance.toFixed(2),
+            status: newStatus,
+          },
+        });
       }
-
-      await tx.salesInvoice.update({
-        where: { id: invoice.id },
-        data: {
-          balanceAmount: newBalance.toFixed(2),
-          status: newStatus,
-        },
-      });
 
       // 12. Audit Log
       await this.audit.record({
@@ -4286,33 +4322,86 @@ export class InvoicesService {
         throw new NotFoundException(`Sales return with ID ${id} not found.`);
       }
 
-      // 1. Revert invoice balance if linked
-      if (salesReturn.salesInvoiceId && salesReturn.grandTotal) {
-        const inv = await tx.salesInvoice.findUnique({
-          where: { id: salesReturn.salesInvoiceId },
+      // 1 & 2. Revert invoice balance and accounting vouchers
+      if (salesReturn.docType === "CREDIT_NOTE" && salesReturn.linkedReturnId) {
+        // Unlink on the underlying sales return
+        await tx.salesReturn.update({
+          where: { id: salesReturn.linkedReturnId },
+          data: { linkedReturnId: null },
         });
-        if (inv) {
-          const currentBal = toDecimal(inv.balanceAmount);
-          const restoredBal = currentBal.add(toDecimal(salesReturn.grandTotal));
-          await tx.salesInvoice.update({
-            where: { id: inv.id },
-            data: { balanceAmount: restoredBal.toFixed(2) },
+
+        const underlyingReturn = await tx.salesReturn.findUnique({
+          where: { id: salesReturn.linkedReturnId },
+        });
+
+        // If the voucher is shared with the underlying return, do not delete the voucher or double-restore invoice balance
+        const isSharedVoucher =
+          underlyingReturn &&
+          underlyingReturn.voucherId &&
+          underlyingReturn.voucherId === salesReturn.voucherId;
+
+        if (!isSharedVoucher && salesReturn.salesInvoiceId && salesReturn.grandTotal) {
+          const inv = await tx.salesInvoice.findUnique({
+            where: { id: salesReturn.salesInvoiceId },
+          });
+          if (inv) {
+            const currentBal = toDecimal(inv.balanceAmount);
+            const restoredBal = currentBal.add(toDecimal(salesReturn.grandTotal));
+            await tx.salesInvoice.update({
+              where: { id: inv.id },
+              data: { balanceAmount: restoredBal.toFixed(2) },
+            });
+          }
+        }
+
+        if (!isSharedVoucher) {
+          const returnVouchers = await tx.voucher.findMany({
+            where: {
+              companyId: tenant.companyId,
+              OR: [
+                salesReturn.voucherId ? { id: salesReturn.voucherId } : null,
+                { sourceDocument: "SALES_RETURN", sourceEntityId: salesReturn.id },
+              ].filter(Boolean) as any,
+            },
+            include: { journalEntries: true },
+          });
+          await this.reverseAndDeleteVouchers(tx, returnVouchers);
+        }
+      } else {
+        // Standard sales return / independent credit note deletion
+        if (salesReturn.salesInvoiceId && salesReturn.grandTotal) {
+          const inv = await tx.salesInvoice.findUnique({
+            where: { id: salesReturn.salesInvoiceId },
+          });
+          if (inv) {
+            const currentBal = toDecimal(inv.balanceAmount);
+            const restoredBal = currentBal.add(toDecimal(salesReturn.grandTotal));
+            await tx.salesInvoice.update({
+              where: { id: inv.id },
+              data: { balanceAmount: restoredBal.toFixed(2) },
+            });
+          }
+        }
+
+        const returnVouchers = await tx.voucher.findMany({
+          where: {
+            companyId: tenant.companyId,
+            OR: [
+              salesReturn.voucherId ? { id: salesReturn.voucherId } : null,
+              { sourceDocument: "SALES_RETURN", sourceEntityId: salesReturn.id },
+            ].filter(Boolean) as any,
+          },
+          include: { journalEntries: true },
+        });
+        await this.reverseAndDeleteVouchers(tx, returnVouchers);
+
+        // If this return had a linked credit note, delete the linked note as well
+        if (salesReturn.linkedReturnId) {
+          await tx.salesReturn.deleteMany({
+            where: { id: salesReturn.linkedReturnId, companyId: tenant.companyId },
           });
         }
       }
-
-      // 2. Remove accounting voucher and entries if posted and reverse ledger balances
-      const returnVouchers = await tx.voucher.findMany({
-        where: {
-          companyId: tenant.companyId,
-          OR: [
-            salesReturn.voucherId ? { id: salesReturn.voucherId } : null,
-            { sourceDocument: "SALES_RETURN", sourceEntityId: salesReturn.id },
-          ].filter(Boolean) as any,
-        },
-        include: { journalEntries: true },
-      });
-      await this.reverseAndDeleteVouchers(tx, returnVouchers);
 
       // 3. Remove stock transactions created for this return
       await tx.stockTransaction.deleteMany({

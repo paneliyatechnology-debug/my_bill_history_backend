@@ -505,6 +505,12 @@ export class PurchasesService {
             OR: [{ partyId: party.id }, { name: party.name }],
           },
         });
+        if (supplierAccount && !supplierAccount.partyId) {
+          supplierAccount = await tx.ledgerAccount.update({
+            where: { id: supplierAccount.id },
+            data: { partyId: party.id, isPartyLedger: true },
+          });
+        }
         if (!supplierAccount) {
           let creditorGroup = await tx.ledgerGroup.findFirst({
             where: {
