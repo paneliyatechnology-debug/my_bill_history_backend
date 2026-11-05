@@ -4005,34 +4005,154 @@ export class ReportsService {
         include: {
           party: {
             select: {
+              id: true,
               name: true,
               nameGujarati: true,
               phone: true,
               gstin: true,
             },
           },
-          items: true,
+          warehouse: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          items: {
+            include: {
+              item: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true,
+                  hsnCode: true,
+                },
+              },
+            },
+          },
         },
         orderBy: { returnDate: "desc" },
       });
 
       let totalTaxable = new Decimal(0);
       let totalTax = new Decimal(0);
+      let totalCgst = new Decimal(0);
+      let totalSgst = new Decimal(0);
+      let totalIgst = new Decimal(0);
       let grandTotal = new Decimal(0);
+
+      const itemMap = new Map<string, any>();
+      const customerMap = new Map<string, any>();
+      const reasonMap = new Map<string, any>();
+      const warehouseMap = new Map<string, any>();
+
+      let sec34Count = 0;
+      let sec34Taxable = new Decimal(0);
+      let sec34Cgst = new Decimal(0);
+      let sec34Sgst = new Decimal(0);
+      let sec34Igst = new Decimal(0);
+      let sec34Total = new Decimal(0);
+
+      let commCount = 0;
+      let commTotal = new Decimal(0);
+
+      let totalRemainingCredit = new Decimal(0);
+      let totalAllocatedCredit = new Decimal(0);
+      let totalRefunds = new Decimal(0);
 
       const items = returns.map((r) => {
         const taxable = toMoney(r.taxableAmount);
-        const tax = toMoney(r.cgstAmount)
-          .plus(toMoney(r.sgstAmount))
-          .plus(toMoney(r.igstAmount));
+        const cgst = toMoney(r.cgstAmount);
+        const sgst = toMoney(r.sgstAmount);
+        const igst = toMoney(r.igstAmount);
+        const tax = cgst.plus(sgst).plus(igst);
         const grand = toMoney(r.grandTotal);
 
         totalTaxable = totalTaxable.plus(taxable);
         totalTax = totalTax.plus(tax);
+        totalCgst = totalCgst.plus(cgst);
+        totalSgst = totalSgst.plus(sgst);
+        totalIgst = totalIgst.plus(igst);
         grandTotal = grandTotal.plus(grand);
+
+        if (r.gstCategory === "COMMERCIAL") {
+          commCount++;
+          commTotal = commTotal.plus(grand);
+        } else {
+          sec34Count++;
+          sec34Taxable = sec34Taxable.plus(taxable);
+          sec34Cgst = sec34Cgst.plus(cgst);
+          sec34Sgst = sec34Sgst.plus(sgst);
+          sec34Igst = sec34Igst.plus(igst);
+          sec34Total = sec34Total.plus(grand);
+        }
+
+        totalRemainingCredit = totalRemainingCredit.plus(toMoney(r.remainingCredit));
+        totalAllocatedCredit = totalAllocatedCredit.plus(toMoney(r.allocatedAmount));
+        totalRefunds = totalRefunds.plus(toMoney(r.refundAmount));
+
+        // Customer aggregation
+        const pKey = r.partyId || "DIRECT";
+        const cEntry = customerMap.get(pKey) || {
+          partyId: r.partyId,
+          partyName: r.party?.name || "Direct Customer",
+          phone: r.party?.phone || "—",
+          gstin: r.party?.gstin || "—",
+          returnCount: 0,
+          totalAmount: new Decimal(0),
+        };
+        cEntry.returnCount++;
+        cEntry.totalAmount = cEntry.totalAmount.plus(grand);
+        customerMap.set(pKey, cEntry);
+
+        // Reason aggregation
+        const rReason = r.reason || "Sales Return";
+        const rEntry = reasonMap.get(rReason) || {
+          reason: rReason,
+          count: 0,
+          totalAmount: new Decimal(0),
+        };
+        rEntry.count++;
+        rEntry.totalAmount = rEntry.totalAmount.plus(grand);
+        reasonMap.set(rReason, rEntry);
+
+        // Warehouse aggregation
+        const whName = r.warehouse?.name || "Main Godown";
+        const whEntry = warehouseMap.get(whName) || {
+          warehouseName: whName,
+          count: 0,
+          totalAmount: new Decimal(0),
+        };
+        whEntry.count++;
+        whEntry.totalAmount = whEntry.totalAmount.plus(grand);
+        warehouseMap.set(whName, whEntry);
+
+        // Item aggregation
+        r.items.forEach((line) => {
+          const itmName = line.item?.name || line.description || "Returned Item";
+          const iKey = line.itemId || itmName;
+          const iEntry = itemMap.get(iKey) || {
+            itemId: line.itemId,
+            itemName: itmName,
+            sku: line.item?.sku || "—",
+            hsnCode: line.item?.hsnCode || "—",
+            totalQuantity: new Decimal(0),
+            totalTaxable: new Decimal(0),
+            totalAmount: new Decimal(0),
+          };
+          iEntry.totalQuantity = iEntry.totalQuantity.plus(toMoney(line.quantity));
+          iEntry.totalTaxable = iEntry.totalTaxable.plus(toMoney(line.taxableAmount));
+          iEntry.totalAmount = iEntry.totalAmount.plus(toMoney(line.totalAmount));
+          itemMap.set(iKey, iEntry);
+        });
 
         return {
           id: r.id,
+          docType: r.docType,
+          creditNoteType: r.creditNoteType,
+          gstCategory: r.gstCategory,
+          disposition: r.disposition,
+          warehouseName: r.warehouse?.name || "Main Godown",
           creditNoteNumber: r.returnNumber,
           returnDate: r.returnDate.toISOString().slice(0, 10),
           partyName: r.party?.name || "Direct Customer",
@@ -4041,8 +4161,14 @@ export class ReportsService {
           gstin: r.party?.gstin,
           reason: r.reason || "Sales Return",
           taxableAmount: taxable.toFixed(2),
+          cgstAmount: cgst.toFixed(2),
+          sgstAmount: sgst.toFixed(2),
+          igstAmount: igst.toFixed(2),
           totalTax: tax.toFixed(2),
           grandTotal: grand.toFixed(2),
+          settlementMode: r.settlementMode,
+          refundAmount: toMoney(r.refundAmount).toFixed(2),
+          remainingCredit: toMoney(r.remainingCredit).toFixed(2),
           itemsCount: r.items.length,
         };
       });
@@ -4052,9 +4178,47 @@ export class ReportsService {
           totalReturns: returns.length,
           totalTaxable: totalTaxable.toFixed(2),
           totalTax: totalTax.toFixed(2),
+          totalCgst: totalCgst.toFixed(2),
+          totalSgst: totalSgst.toFixed(2),
+          totalIgst: totalIgst.toFixed(2),
           grandTotal: grandTotal.toFixed(2),
+          totalRemainingCredit: totalRemainingCredit.toFixed(2),
+          totalAllocatedCredit: totalAllocatedCredit.toFixed(2),
+          totalRefunds: totalRefunds.toFixed(2),
         },
         returns: items,
+        itemWise: Array.from(itemMap.values()).map((i) => ({
+          ...i,
+          totalQuantity: i.totalQuantity.toFixed(2),
+          totalTaxable: i.totalTaxable.toFixed(2),
+          totalAmount: i.totalAmount.toFixed(2),
+        })),
+        customerWise: Array.from(customerMap.values()).map((c) => ({
+          ...c,
+          totalAmount: c.totalAmount.toFixed(2),
+        })),
+        reasonWise: Array.from(reasonMap.values()).map((r) => ({
+          ...r,
+          totalAmount: r.totalAmount.toFixed(2),
+        })),
+        warehouseWise: Array.from(warehouseMap.values()).map((w) => ({
+          ...w,
+          totalAmount: w.totalAmount.toFixed(2),
+        })),
+        gstSchedule: {
+          section34: {
+            count: sec34Count,
+            taxable: sec34Taxable.toFixed(2),
+            cgst: sec34Cgst.toFixed(2),
+            sgst: sec34Sgst.toFixed(2),
+            igst: sec34Igst.toFixed(2),
+            total: sec34Total.toFixed(2),
+          },
+          commercial: {
+            count: commCount,
+            rebateAmount: commTotal.toFixed(2),
+          },
+        },
       };
     });
   }
