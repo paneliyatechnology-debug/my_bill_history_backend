@@ -22,13 +22,17 @@ Content-Type: application/json
 
 ### 2.1 GET /api/v1/notifications
 Retrieves paginated notifications for the authenticated user within the active company context.
+Supports querying read, unread, or both in a single API call, returning separate `unread` and `read` arrays alongside total counts.
 
 **Query Parameters:**
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `page` | integer | No | 1 | Page number (1-based) |
 | `limit` | integer | No | 20 | Number of items per page (max 100) |
-| `unreadOnly` | boolean | No | false | When `true`, filters to unread items only |
+| `status` | string | No | `all` | Filter status: `unread`, `read`, or `all` |
+| `isRead` | boolean / string | No | - | Filter by read state (`false` for unread, `true` for read) |
+| `unreadOnly` | boolean / string | No | false | When `true`, filters to unread items only |
+| `readOnly` | boolean / string | No | false | When `true`, filters to read items only |
 | `type` | string | No | ALL | Event filter (`PAYMENT_RECEIVED`, `PAYMENT_SENT`, `DUE_DATE_REMINDER_T3`, etc.) |
 | `from` | ISO date | No | - | Filter items created on or after date |
 | `to` | ISO date | No | - | Filter items created on or before date |
@@ -59,11 +63,15 @@ Retrieves paginated notifications for the authenticated user within the active c
       "createdAt": "2026-11-04T12:00:00.000Z"
     }
   ],
+  "data": [ ... ],
+  "unread": [ ... ],
+  "read": [ ... ],
   "total": 45,
   "page": 1,
   "limit": 20,
   "totalPages": 3,
-  "unreadCount": 4
+  "unreadCount": 4,
+  "readCount": 41
 }
 ```
 
@@ -116,7 +124,42 @@ Marks a single notification as read.
 
 ---
 
-### 2.5 PATCH /api/v1/notifications/read-all
+### 2.5 PATCH /api/v1/notifications/:id/unread
+Marks a single notification as unread (`readAt: null`).
+
+**Success Response (200 OK):**
+```json
+{
+  "id": "e93297a7-59d4-4a57-8173-10d9cebc1748",
+  "readAt": null,
+  "isRead": false
+}
+```
+
+---
+
+### 2.6 PATCH /api/v1/notifications/:id
+Unified status update endpoint to toggle or explicitly set notification read or unread state in one API.
+
+**Request Body:**
+```json
+{
+  "isRead": false
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "id": "e93297a7-59d4-4a57-8173-10d9cebc1748",
+  "readAt": null,
+  "isRead": false
+}
+```
+
+---
+
+### 2.7 PATCH /api/v1/notifications/read-all
 Marks all unread notifications as read for the user in the company.
 
 **Success Response (200 OK):**
@@ -129,7 +172,20 @@ Marks all unread notifications as read for the user in the company.
 
 ---
 
-### 2.6 POST /api/v1/notifications/devices
+### 2.8 PATCH /api/v1/notifications/unread-all
+Marks all notifications as unread for the user in the company.
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "count": 45
+}
+```
+
+---
+
+### 2.9 POST /api/v1/notifications/devices
 Registers or refreshes a client device for Web Push (VAPID) or Mobile Push (FCM / APNs).
 
 **Request Body (Mobile FCM / APNs):**

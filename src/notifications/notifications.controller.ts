@@ -18,6 +18,7 @@ import { ReminderSchedulerService } from "./reminder-scheduler.service";
 import { QueryNotificationsDto } from "./dto/query-notifications.dto";
 import { RegisterDeviceDto } from "./dto/register-device.dto";
 import { UpdatePreferencesDto } from "./dto/update-preferences.dto";
+import { UpdateNotificationDto } from "./dto/update-notification.dto";
 
 @Controller("notifications")
 export class NotificationsController {
@@ -111,6 +112,15 @@ export class NotificationsController {
   }
 
   /**
+   * PATCH /api/v1/notifications/unread-all
+   * Mark all notifications as unread.
+   */
+  @Patch("unread-all")
+  async markAllAsUnread(@CurrentTenant() tenant: TenantContext) {
+    return await this.notificationsService.markAllAsUnread(tenant);
+  }
+
+  /**
    * POST /api/v1/notifications/reminders/trigger
    * Trigger the T-3 calendar days due-date reminder scan.
    */
@@ -133,6 +143,20 @@ export class NotificationsController {
   }
 
   /**
+   * PATCH /api/v1/notifications/:id
+   * Unified endpoint to update notification read or unread state in one API.
+   * Accepts { isRead: boolean } or { read: boolean }.
+   */
+  @Patch(":id")
+  async updateNotification(
+    @Param("id") id: string,
+    @Body() dto: UpdateNotificationDto,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.notificationsService.updateNotification(id, dto, tenant);
+  }
+
+  /**
    * PATCH /api/v1/notifications/:id/read
    * Mark a notification as read.
    */
@@ -142,6 +166,18 @@ export class NotificationsController {
     @CurrentTenant() tenant: TenantContext,
   ) {
     return await this.notificationsService.markAsRead(id, tenant);
+  }
+
+  /**
+   * PATCH /api/v1/notifications/:id/unread
+   * Mark a notification as unread.
+   */
+  @Patch(":id/unread")
+  async markAsUnread(
+    @Param("id") id: string,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.notificationsService.markAsUnread(id, tenant);
   }
 
   /**

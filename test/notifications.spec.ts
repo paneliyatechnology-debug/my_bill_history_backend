@@ -259,4 +259,125 @@ describe("Notifications & Reminders Test Suite", () => {
     expect(purchaseRes.salesCount).toBe(0);
     expect(purchaseRes.count).toBe(purchaseRes.purchaseCount);
   });
+
+  it("10. Unified listing API: should return both read & unread with counts and supports status/string query filters", async () => {
+    // Create one unread notification
+    const [unreadNotif] = await notificationsService.createNotification({
+      organizationId,
+      companyId,
+      userId,
+      type: NotificationType.PAYMENT_RECEIVED,
+      title: "Test Payment Received For Read/Unread Test",
+      message: "Unread notification test message.",
+    });
+
+    // Create a notification and mark it as read
+    const [readNotif] = await notificationsService.createNotification({
+      organizationId,
+      companyId,
+      userId,
+      type: NotificationType.PAYMENT_RECEIVED,
+      title: "Test Payment Received For Read Notif",
+      message: "Read notification test message.",
+    });
+    await notificationsService.markAsRead(readNotif.id, tenant);
+
+    // 1. Single API call returns both read and unread lists and respective counts
+    const allRes = await notificationsService.getNotifications(tenant, { page: 1, limit: 50 });
+    expect(allRes.items).toBeDefined();
+    expect(allRes.data).toBeDefined();
+    expect(Array.isArray(allRes.unread)).toBe(true);
+    expect(Array.isArray(allRes.read)).toBe(true);
+    expect(allRes.unreadCount).toBeGreaterThanOrEqual(1);
+    expect(allRes.readCount).toBeGreaterThanOrEqual(1);
+    expect(allRes.total).toBeGreaterThanOrEqual(2);
+    expect(allRes.unread.some((n: any) => n.id === unreadNotif.id)).toBe(true);
+    expect(allRes.read.some((n: any) => n.id === readNotif.id)).toBe(true);
+
+    // 2. Query with status="unread"
+    const unreadRes = await notificationsService.getNotifications(tenant, { status: "unread" });
+    expect(unreadRes.items.every((n: any) => n.isRead === false)).toBe(true);
+    expect(unreadRes.items.some((n: any) => n.id === unreadNotif.id)).toBe(true);
+    expect(unreadRes.items.some((n: any) => n.id === readNotif.id)).toBe(false);
+
+    // 3. Query with string isRead="false" (from HTTP query param)
+    const isReadFalseRes = await notificationsService.getNotifications(tenant, { isRead: "false" as any });
+    expect(isReadFalseRes.items.every((n: any) => n.isRead === false)).toBe(true);
+    expect(isReadFalseRes.items.some((n: any) => n.id === unreadNotif.id)).toBe(true);
+    expect(isReadFalseRes.items.some((n: any) => n.id === readNotif.id)).toBe(false);
+
+    // 4. Query with status="read"
+    const readRes = await notificationsService.getNotifications(tenant, { status: "read" });
+    expect(readRes.items.every((n: any) => n.isRead === true)).toBe(true);
+    expect(readRes.items.some((n: any) => n.id === readNotif.id)).toBe(true);
+    expect(readRes.items.some((n: any) => n.id === unreadNotif.id)).toBe(false);
+
+    // 5. Query with string isRead="true" (from HTTP query param)
+    const isReadTrueRes = await notificationsService.getNotifications(tenant, { isRead: "true" as any });
+    expect(isReadTrueRes.items.every((n: any) => n.isRead === true)).toBe(true);
+    expect(isReadTrueRes.items.some((n: any) => n.id === readNotif.id)).toBe(true);
+    expect(isReadTrueRes.items.some((n: any) => n.id === unreadNotif.id)).toBe(false);
+
+    // Clean up
+    await prisma.notification.deleteMany({
+      where: { id: { in: [unreadNotif.id, readNotif.id] } },
+    });
+  });
+
+  it("11. Should mark notification as unread and update via unified updateNotification endpoint", async () => {
+    // Create a notification
+    const [notif] = await notificationsService.createNotification({
+      organizationId,
+      companyId,
+      userId,
+      type: NotificationType.PAYMENT_RECEIVED,
+      title: "Test Toggle Read/Unread",
+      message: "Testing toggle status.",
+    });
+
+    // Mark as read
+    const markedRead = await notificationsService.markAsRead(notif.id, tenant);
+    expect(markedRead.isRead).toBe(true);
+    expect(markedRead.readAt).not.toBeNull();
+
+    // Mark as unread using markAsUnread
+    const markedUnread = await notificationsService.markAsUnread(notif.id, tenant);
+    expect(markedUnread.isRead).toBe(false);
+    expect(markedUnread.readAt).toBeNull();
+
+    // Update using unified updateNotification({ isRead: true })
+    const updatedToRead = await notificationsService.updateNotification(
+      notif.id,
+      { isRead: true },
+      tenant,
+    );
+    expect(updatedToRead.isRead).toBe(true);
+    expect(updatedToRead.readAt).not.toBeNull();
+
+    // Update using unified updateNotification({ isRead: false })
+    const updatedToUnread = await notificationsService.updateNotification(
+      notif.id,
+      { isRead: false },
+      tenant,
+    );
+    expect(updatedToUnread.isRead).toBe(false);
+    expect(updatedToUnread.readAt).toBeNull();
+
+    // Mark all as read then mark all as unread
+    await notificationsService.markAllAsRead(tenant);
+    const unreadCountAfterReadAll = await notificationsService.getUnreadCount(tenant);
+    expect(unreadCountAfterReadAll.unreadCount).toBe(0);
+
+    const markAllUnreadRes = await notificationsService.markAllAsUnread(tenant);
+    expect(markAllUnreadRes.success).toBe(true);
+    expect(markAllUnreadRes.count).toBeGreaterThanOrEqual(1);
+
+    const unreadCountAfterUnreadAll = await notificationsService.getUnreadCount(tenant);
+    expect(unreadCountAfterUnreadAll.unreadCount).toBeGreaterThanOrEqual(1);
+
+    // Clean up
+    await prisma.notification.deleteMany({
+      where: { id: notif.id },
+    });
+  });
 });

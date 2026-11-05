@@ -11,6 +11,7 @@ import { WebPushService } from "./web-push.service";
 import { QueryNotificationsDto } from "./dto/query-notifications.dto";
 import { RegisterDeviceDto } from "./dto/register-device.dto";
 import { UpdatePreferencesDto } from "./dto/update-preferences.dto";
+import { UpdateNotificationDto } from "./dto/update-notification.dto";
 import {
   NotificationType,
   DevicePlatform,
@@ -373,10 +374,24 @@ export class NotificationsService {
 
   /**
    * Retrieves paginated notifications for the authenticated user.
+   * Supports listing read, unread, or both (all) in a single API.
+   * Returns items, data, unread list, read list, total count, unreadCount, and readCount.
    */
   async getNotifications(arg1: any, arg2?: any) {
-    const tenant: TenantContext = (arg1 && arg1.companyId) ? arg1 : (arg2 && arg2.companyId) ? arg2 : arg1;
-    const query: QueryNotificationsDto = (arg1 && !arg1.companyId) ? arg1 : (arg2 && !arg2.companyId) ? arg2 : (arg2 || arg1 || {});
+    let tenant: TenantContext;
+    let query: QueryNotificationsDto;
+
+    // Detect if arg1 is tenantContext (has userId and organizationId and companyId)
+    if (arg1 && typeof arg1 === "object" && "organizationId" in arg1 && "companyId" in arg1 && "userId" in arg1) {
+      tenant = arg1;
+      query = (arg2 || {}) as QueryNotificationsDto;
+    } else if (arg2 && typeof arg2 === "object" && "organizationId" in arg2 && "companyId" in arg2 && "userId" in arg2) {
+      tenant = arg2;
+      query = (arg1 || {}) as QueryNotificationsDto;
+    } else {
+      tenant = ((arg1 && arg1.companyId) ? arg1 : (arg2 && arg2.companyId) ? arg2 : arg1) as TenantContext;
+      query = ((arg1 && !arg1.companyId) ? arg1 : (arg2 && !arg2.companyId) ? arg2 : (arg2 || arg1 || {})) as QueryNotificationsDto;
+    }
 
     const page = Math.max(1, Number(query?.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query?.limit) || 20));
@@ -389,11 +404,49 @@ export class NotificationsService {
       dismissedAt: null,
     };
 
-    if (query?.unreadOnly === true || query?.unreadOnly === "true" || (query as any)?.isRead === false) {
+    // Parse status and read/unread flags flexibly across all standard query conventions
+    const statusParam = typeof query?.status === "string" ? query.status.trim().toLowerCase() : undefined;
+    const unreadOnlyVal = query?.unreadOnly;
+    const readOnlyVal = query?.readOnly;
+    const isReadVal = (query as any)?.isRead;
+    const readVal = (query as any)?.read;
+
+    const wantsUnread =
+      statusParam === "unread" ||
+      unreadOnlyVal === true ||
+      unreadOnlyVal === "true" ||
+      (unreadOnlyVal as any) === 1 ||
+      unreadOnlyVal === "1" ||
+      isReadVal === false ||
+      isReadVal === "false" ||
+      (isReadVal as any) === 0 ||
+      isReadVal === "0" ||
+      readVal === false ||
+      readVal === "false" ||
+      (readVal as any) === 0 ||
+      readVal === "0";
+
+    const wantsRead =
+      statusParam === "read" ||
+      readOnlyVal === true ||
+      readOnlyVal === "true" ||
+      (readOnlyVal as any) === 1 ||
+      readOnlyVal === "1" ||
+      isReadVal === true ||
+      isReadVal === "true" ||
+      (isReadVal as any) === 1 ||
+      isReadVal === "1" ||
+      readVal === true ||
+      readVal === "true" ||
+      (readVal as any) === 1 ||
+      readVal === "1";
+
+    if (wantsUnread && !wantsRead) {
       where.readAt = null;
-    } else if ((query as any)?.isRead === true) {
+    } else if (wantsRead && !wantsUnread) {
       where.readAt = { not: null };
     }
+    // If statusParam === "all" or both or neither, where.readAt remains unset -> returns all
 
     if (query?.type && query.type !== "ALL") {
       where.type = query.type as NotificationType;
@@ -405,7 +458,14 @@ export class NotificationsService {
       if (query.to) where.createdAt.lte = new Date(query.to);
     }
 
-    const [items, total, unreadCount] = await Promise.all([
+    const baseTenantWhere = {
+      organizationId: tenant.organizationId,
+      companyId: tenant.companyId,
+      recipientUserId: tenant.userId,
+      dismissedAt: null,
+    };
+
+    const [items, total, unreadCount, readCount] = await Promise.all([
       this.prisma.notification.findMany({
         where,
         orderBy: { createdAt: "desc" },
@@ -415,11 +475,14 @@ export class NotificationsService {
       this.prisma.notification.count({ where }),
       this.prisma.notification.count({
         where: {
-          organizationId: tenant.organizationId,
-          companyId: tenant.companyId,
-          recipientUserId: tenant.userId,
+          ...baseTenantWhere,
           readAt: null,
-          dismissedAt: null,
+        },
+      }),
+      this.prisma.notification.count({
+        where: {
+          ...baseTenantWhere,
+          readAt: { not: null },
         },
       }),
     ]);
@@ -429,14 +492,20 @@ export class NotificationsService {
       isRead: n.readAt !== null,
     }));
 
+    const unreadItems = itemsWithIsRead.filter((n) => !n.isRead);
+    const readItems = itemsWithIsRead.filter((n) => n.isRead);
+
     return {
       items: itemsWithIsRead,
       data: itemsWithIsRead,
+      unread: unreadItems,
+      read: readItems,
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(total / limit) || 1,
       unreadCount,
+      readCount,
     };
   }
 
@@ -507,6 +576,58 @@ export class NotificationsService {
   }
 
   /**
+   * Marks a notification as unread.
+   */
+  async markAsUnread(id: string, tenant: TenantContext) {
+    const existing = await this.prisma.notification.findFirst({
+      where: {
+        id,
+        organizationId: tenant.organizationId,
+        companyId: tenant.companyId,
+        recipientUserId: tenant.userId,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Notification ${id} not found.`);
+    }
+
+    const updated = await this.prisma.notification.update({
+      where: { id },
+      data: { readAt: null },
+    });
+
+    return {
+      ...updated,
+      isRead: false,
+    };
+  }
+
+  /**
+   * Updates notification read/unread status from a payload.
+   */
+  async updateNotification(
+    id: string,
+    dto: UpdateNotificationDto,
+    tenant: TenantContext,
+  ) {
+    const isUnread =
+      dto?.isRead === false ||
+      dto?.isRead === "false" ||
+      (dto?.isRead as any) === 0 ||
+      dto?.isRead === "0" ||
+      dto?.read === false ||
+      dto?.read === "false" ||
+      (dto?.read as any) === 0 ||
+      dto?.read === "0";
+
+    if (isUnread) {
+      return await this.markAsUnread(id, tenant);
+    }
+    return await this.markAsRead(id, tenant);
+  }
+
+  /**
    * Marks all eligible notifications as read for current user.
    */
   async markAllAsRead(tenant: TenantContext) {
@@ -519,6 +640,24 @@ export class NotificationsService {
         dismissedAt: null,
       },
       data: { readAt: new Date() },
+    });
+
+    return { success: true, count: res.count };
+  }
+
+  /**
+   * Marks all eligible notifications as unread for current user.
+   */
+  async markAllAsUnread(tenant: TenantContext) {
+    const res = await this.prisma.notification.updateMany({
+      where: {
+        organizationId: tenant.organizationId,
+        companyId: tenant.companyId,
+        recipientUserId: tenant.userId,
+        readAt: { not: null },
+        dismissedAt: null,
+      },
+      data: { readAt: null },
     });
 
     return { success: true, count: res.count };
