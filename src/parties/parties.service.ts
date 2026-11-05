@@ -229,7 +229,7 @@ export class PartiesService {
     const page = Math.max(1, Number(query.page) || 1);
     const effectiveLimit = isFilteringReturnEligible
       ? (query.limit ? Math.max(1, Number(query.limit)) : 500)
-      : Math.min(100, Math.max(1, Number(query.limit) || 20));
+      : (query.limit ? Math.min(1000, Math.max(1, Number(query.limit))) : 100);
     const skip = isFilteringReturnEligible ? undefined : (page - 1) * effectiveLimit;
     const take = isFilteringReturnEligible ? undefined : effectiveLimit;
 
