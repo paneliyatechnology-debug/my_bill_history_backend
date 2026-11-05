@@ -3623,18 +3623,20 @@ export class InvoicesService {
     invoiceId: string,
     tenant: TenantContext,
   ): Promise<any[]> {
-    return this.prisma.salesReturn.findMany({
-      where: {
-        companyId: tenant.companyId,
-        salesInvoiceId: invoiceId,
-      },
-      include: {
-        items: {
-          include: { item: true, salesItem: true },
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      return tx.salesReturn.findMany({
+        where: {
+          companyId: tenant.companyId,
+          salesInvoiceId: invoiceId,
         },
-        party: true,
-      },
-      orderBy: { returnDate: "desc" },
+        include: {
+          items: {
+            include: { item: true, salesItem: true },
+          },
+          party: true,
+        },
+        orderBy: { returnDate: "desc" },
+      });
     });
   }
 
@@ -3645,134 +3647,144 @@ export class InvoicesService {
     const limit = Math.min(Number(dto.limit) || 50, 100);
     const offset = Number(dto.offset) || 0;
 
-    const where: any = {
-      companyId: tenant.companyId,
-    };
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const where: any = {
+        companyId: tenant.companyId,
+      };
 
-    if (dto.partyId) {
-      where.partyId = dto.partyId;
-    }
-    if (dto.salesInvoiceId) {
-      where.salesInvoiceId = dto.salesInvoiceId;
-    }
-    if (dto.startDate || dto.endDate) {
-      where.returnDate = {};
-      if (dto.startDate) where.returnDate.gte = new Date(dto.startDate);
-      if (dto.endDate) where.returnDate.lte = new Date(dto.endDate);
-    }
-    if (dto.search) {
-      where.OR = [
-        { returnNumber: { contains: dto.search, mode: "insensitive" } },
-        {
-          salesInvoice: {
-            invoiceNumber: { contains: dto.search, mode: "insensitive" },
-          },
-        },
-        { party: { name: { contains: dto.search, mode: "insensitive" } } },
-      ];
-    }
-
-    const [data, total] = await Promise.all([
-      this.prisma.salesReturn.findMany({
-        where,
-        include: {
-          party: {
-            select: {
-              id: true,
-              name: true,
-              nameGujarati: true,
-              gstin: true,
-              phone: true,
+      if (dto.partyId) {
+        where.partyId = dto.partyId;
+      }
+      if (dto.salesInvoiceId) {
+        where.salesInvoiceId = dto.salesInvoiceId;
+      }
+      if (dto.startDate || dto.endDate) {
+        where.returnDate = {};
+        if (dto.startDate) where.returnDate.gte = new Date(dto.startDate);
+        if (dto.endDate) where.returnDate.lte = new Date(dto.endDate);
+      }
+      if (dto.search) {
+        where.OR = [
+          { returnNumber: { contains: dto.search, mode: "insensitive" } },
+          {
+            salesInvoice: {
+              invoiceNumber: { contains: dto.search, mode: "insensitive" },
             },
           },
+          { party: { name: { contains: dto.search, mode: "insensitive" } } },
+        ];
+      }
+
+      const [data, total] = await Promise.all([
+        tx.salesReturn.findMany({
+          where,
+          include: {
+            party: {
+              select: {
+                id: true,
+                name: true,
+                nameGujarati: true,
+                gstin: true,
+                phone: true,
+              },
+            },
+            salesInvoice: {
+              select: {
+                id: true,
+                invoiceNumber: true,
+                invoiceDate: true,
+                grandTotal: true,
+                status: true,
+              },
+            },
+            branch: {
+              select: { id: true, name: true },
+            },
+            financialYear: {
+              select: { id: true, name: true },
+            },
+            items: {
+              include: {
+                item: {
+                  select: { id: true, name: true, sku: true, hsnCode: true },
+                },
+              },
+            },
+          },
+          orderBy: { returnDate: "desc" },
+          take: limit,
+          skip: offset,
+        }),
+        tx.salesReturn.count({ where }),
+      ]);
+
+      // Calculate next available sequence return number
+      const prefix = `CN-${new Date().getFullYear()}-`;
+      const existingReturns = await tx.salesReturn.findMany({
+        where: { companyId: tenant.companyId },
+        select: { returnNumber: true },
+      });
+      let maxSeq = 0;
+      const existingSet = new Set<string>();
+      for (const r of existingReturns) {
+        if (r.returnNumber) {
+          existingSet.add(r.returnNumber.trim().toUpperCase());
+          const raw = r.returnNumber.trim();
+          if (raw.startsWith(prefix)) {
+            const num = parseInt(raw.slice(prefix.length), 10);
+            if (!isNaN(num) && num > maxSeq) maxSeq = num;
+          } else {
+            const match = raw.match(/(\d+)$/);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              if (!isNaN(num) && num > maxSeq) maxSeq = num;
+            }
+          }
+        }
+      }
+      let nextSeq = Math.max(maxSeq + 1, total + 1);
+      let nextNumber = `${prefix}${String(nextSeq).padStart(4, "0")}`;
+      while (existingSet.has(nextNumber.toUpperCase())) {
+        nextSeq++;
+        nextNumber = `${prefix}${String(nextSeq).padStart(4, "0")}`;
+      }
+
+      return { data, total, limit, offset, nextNumber };
+    });
+  }
+
+  async getSalesReturnById(id: string, tenant: TenantContext) {
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const salesReturn = await tx.salesReturn.findFirst({
+        where: { id, companyId: tenant.companyId },
+        include: {
+          party: true,
           salesInvoice: {
-            select: {
-              id: true,
-              invoiceNumber: true,
-              invoiceDate: true,
-              grandTotal: true,
-              status: true,
+            include: {
+              items: {
+                include: { item: true },
+              },
             },
           },
           items: {
             include: {
               item: {
-                select: { id: true, name: true, sku: true, hsnCode: true },
+                include: { primaryUom: true },
               },
+              salesItem: true,
             },
           },
+          branch: true,
+          financialYear: true,
         },
-        orderBy: { returnDate: "desc" },
-        take: limit,
-        skip: offset,
-      }),
-      this.prisma.salesReturn.count({ where }),
-    ]);
+      });
 
-    // Calculate next available sequence return number
-    const prefix = `CN-${new Date().getFullYear()}-`;
-    const existingReturns = await this.prisma.salesReturn.findMany({
-      where: { companyId: tenant.companyId },
-      select: { returnNumber: true },
-    });
-    let maxSeq = 0;
-    const existingSet = new Set<string>();
-    for (const r of existingReturns) {
-      if (r.returnNumber) {
-        existingSet.add(r.returnNumber.trim().toUpperCase());
-        const raw = r.returnNumber.trim();
-        if (raw.startsWith(prefix)) {
-          const num = parseInt(raw.slice(prefix.length), 10);
-          if (!isNaN(num) && num > maxSeq) maxSeq = num;
-        } else {
-          const match = raw.match(/(\d+)$/);
-          if (match) {
-            const num = parseInt(match[1], 10);
-            if (!isNaN(num) && num > maxSeq) maxSeq = num;
-          }
-        }
+      if (!salesReturn) {
+        throw new NotFoundException(`Sales return with ID ${id} not found.`);
       }
-    }
-    let nextSeq = Math.max(maxSeq + 1, total + 1);
-    let nextNumber = `${prefix}${String(nextSeq).padStart(4, "0")}`;
-    while (existingSet.has(nextNumber.toUpperCase())) {
-      nextSeq++;
-      nextNumber = `${prefix}${String(nextSeq).padStart(4, "0")}`;
-    }
 
-    return { data, total, limit, offset, nextNumber };
-  }
-
-  async getSalesReturnById(id: string, tenant: TenantContext) {
-    const salesReturn = await this.prisma.salesReturn.findFirst({
-      where: { id, companyId: tenant.companyId },
-      include: {
-        party: true,
-        salesInvoice: {
-          include: {
-            items: {
-              include: { item: true },
-            },
-          },
-        },
-        items: {
-          include: {
-            item: {
-              include: { primaryUom: true },
-            },
-            salesItem: true,
-          },
-        },
-        branch: true,
-        financialYear: true,
-      },
+      return salesReturn;
     });
-
-    if (!salesReturn) {
-      throw new NotFoundException(`Sales return with ID ${id} not found.`);
-    }
-
-    return salesReturn;
   }
 
   /**
