@@ -11,6 +11,7 @@ import {
   TenantContext,
   PartyType,
   GstRegistrationType,
+  InvoiceStatus,
 } from "@billing/shared-types";
 import { CreatePartyDto } from "./dto/create-party.dto";
 import { UpdatePartyDto, QueryPartiesDto } from "./dto/update-party.dto";
@@ -212,9 +213,25 @@ export class PartiesService {
   }
 
   async findAll(ctx: TenantContext, query: QueryPartiesDto) {
+    const isReturnSalesOnly =
+      query.availableForReturnOnly === true ||
+      query.availableForReturnOnly === "true" ||
+      query.hasReturnableSalesInvoices === true ||
+      query.hasReturnableSalesInvoices === "true";
+
+    const isReturnPurchaseOnly =
+      query.hasReturnablePurchaseInvoices === true ||
+      query.hasReturnablePurchaseInvoices === "true" ||
+      (isReturnSalesOnly && query.type === "SUPPLIER");
+
+    const isFilteringReturnEligible = isReturnSalesOnly || isReturnPurchaseOnly;
+
     const page = Math.max(1, Number(query.page) || 1);
-    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
-    const skip = (page - 1) * limit;
+    const effectiveLimit = isFilteringReturnEligible
+      ? (query.limit ? Math.max(1, Number(query.limit)) : 500)
+      : Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const skip = isFilteringReturnEligible ? undefined : (page - 1) * effectiveLimit;
+    const take = isFilteringReturnEligible ? undefined : effectiveLimit;
 
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
       const where: any = {
@@ -255,26 +272,155 @@ export class PartiesService {
         ];
       }
 
+      if (isReturnPurchaseOnly) {
+        where.purchaseInvoices = {
+          some: {
+            items: { some: {} },
+          },
+        };
+      } else if (isReturnSalesOnly) {
+        where.salesInvoices = {
+          some: {
+            status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT] },
+            items: { some: {} },
+          },
+        };
+      }
+
+      const salesInvoicesInclude: any = isFilteringReturnEligible
+        ? {
+            where: { status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT] } },
+            select: {
+              id: true,
+              grandTotal: true,
+              paidAmount: true,
+              status: true,
+              items: {
+                select: {
+                  id: true,
+                  quantity: true,
+                  returnItems: {
+                    select: {
+                      id: true,
+                      quantity: true,
+                    },
+                  },
+                },
+              },
+              returns: {
+                where: { status: { not: "CANCELLED" } },
+                select: {
+                  id: true,
+                  grandTotal: true,
+                },
+              },
+            },
+          }
+        : {
+            where: { status: { not: InvoiceStatus.CANCELLED } },
+            select: { grandTotal: true, paidAmount: true, status: true },
+          };
+
+      const purchaseInvoicesInclude: any = isReturnPurchaseOnly
+        ? {
+            select: {
+              id: true,
+              grandTotal: true,
+              paidAmount: true,
+              items: {
+                select: {
+                  id: true,
+                  quantity: true,
+                  returnItems: {
+                    select: {
+                      id: true,
+                      quantity: true,
+                    },
+                  },
+                },
+              },
+              returns: {
+                select: {
+                  id: true,
+                  grandTotal: true,
+                },
+              },
+            },
+          }
+        : {
+            select: { grandTotal: true, paidAmount: true },
+          };
+
       const [items, total] = await Promise.all([
         tx.party.findMany({
           where,
           include: {
-            salesInvoices: {
-              where: { status: { not: "CANCELLED" } },
-              select: { grandTotal: true, paidAmount: true, status: true },
-            },
-            purchaseInvoices: {
-              select: { grandTotal: true, paidAmount: true },
-            },
+            salesInvoices: salesInvoicesInclude,
+            purchaseInvoices: purchaseInvoicesInclude,
           },
           orderBy: { name: "asc" },
           skip,
-          take: limit,
+          take,
         }),
         tx.party.count({ where }),
       ]);
 
-      const itemsWithBalance = items.map((p: any) => {
+      const countReturnableSalesInvoices = (invoices: any[] = []): number => {
+        return invoices.filter((inv) => {
+          if (inv.status === "CANCELLED" || inv.status === "DRAFT") return false;
+          const returnedAmount = (inv.returns || [])
+            .filter((r: any) => r.status !== "CANCELLED")
+            .reduce((sum: number, r: any) => sum + Number(r.grandTotal || 0), 0);
+
+          let totalOriginalQty = 0;
+          let totalReturnedQty = 0;
+          for (const line of inv.items || []) {
+            const origQty = Number(line.quantity || 0);
+            const retQty = (line.returnItems || []).reduce(
+              (s: number, ri: any) => s + Number(ri.quantity || 0),
+              0,
+            );
+            totalOriginalQty += origQty;
+            totalReturnedQty += retQty;
+          }
+          const totalRemainingQty = Math.max(0, totalOriginalQty - totalReturnedQty);
+          const grandTotalNum = Number(inv.grandTotal || 0);
+          const isFullyReturned =
+            (totalOriginalQty > 0 && totalRemainingQty <= 0.0001) ||
+            returnedAmount >= grandTotalNum - 0.01;
+
+          return !isFullyReturned && (totalOriginalQty === 0 || totalRemainingQty > 0.0001);
+        }).length;
+      };
+
+      const countReturnablePurchaseInvoices = (invoices: any[] = []): number => {
+        return invoices.filter((inv) => {
+          const returnedAmount = (inv.returns || [])
+            .filter((r: any) => r.status !== "CANCELLED")
+            .reduce((sum: number, r: any) => sum + Number(r.grandTotal || 0), 0);
+
+          let totalOriginalQty = 0;
+          let totalReturnedQty = 0;
+          for (const line of inv.items || []) {
+            const origQty = Number(line.quantity || 0);
+            const retQty = (line.returnItems || []).reduce(
+              (s: number, ri: any) => s + Number(ri.quantity || 0),
+              0,
+            );
+            totalOriginalQty += origQty;
+            totalReturnedQty += retQty;
+          }
+          const totalRemainingQty = Math.max(0, totalOriginalQty - totalReturnedQty);
+          const grandTotalNum = Number(inv.grandTotal || 0);
+          const isFullyReturned =
+            (totalOriginalQty > 0 && totalRemainingQty <= 0.0001) ||
+            returnedAmount >= grandTotalNum - 0.01;
+
+          return !isFullyReturned && (totalOriginalQty === 0 || totalRemainingQty > 0.0001);
+        }).length;
+      };
+
+      let itemsWithBalance = items.map((p: any) => {
         let balance = 0;
         if (p.type === "CUSTOMER") {
           balance = (p.salesInvoices || []).reduce(
@@ -302,19 +448,44 @@ export class PartiesService {
           balance = rec >= pay ? rec - pay : pay - rec;
         }
 
+        const returnableSalesCount = isReturnSalesOnly
+          ? countReturnableSalesInvoices(p.salesInvoices)
+          : undefined;
+        const returnablePurchaseCount = isReturnPurchaseOnly
+          ? countReturnablePurchaseInvoices(p.purchaseInvoices)
+          : undefined;
+
         const { salesInvoices, purchaseInvoices, ...cleanParty } = p;
         return {
           ...cleanParty,
           balance,
+          returnableInvoicesCount: isReturnPurchaseOnly
+            ? returnablePurchaseCount
+            : returnableSalesCount,
         };
       });
 
+      if (isFilteringReturnEligible) {
+        itemsWithBalance = itemsWithBalance.filter(
+          (p: any) => (p.returnableInvoicesCount || 0) > 0,
+        );
+        return {
+          items: itemsWithBalance,
+          data: itemsWithBalance,
+          total: itemsWithBalance.length,
+          page: 1,
+          limit: effectiveLimit,
+          totalPages: 1,
+        };
+      }
+
       return {
         items: itemsWithBalance,
+        data: itemsWithBalance,
         total,
         page,
-        limit,
-        totalPages: Math.ceil(total / limit),
+        limit: effectiveLimit,
+        totalPages: Math.ceil(total / effectiveLimit),
       };
     });
   }

@@ -29,4 +29,7 @@ export interface QueryPartiesDto {
   stateCode?: string;
   page?: number | string;
   limit?: number | string;
+  availableForReturnOnly?: boolean | string;
+  hasReturnableSalesInvoices?: boolean | string;
+  hasReturnablePurchaseInvoices?: boolean | string;
 }

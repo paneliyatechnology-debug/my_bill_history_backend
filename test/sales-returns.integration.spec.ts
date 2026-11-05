@@ -1166,4 +1166,40 @@ describe("Sales Returns & Credit Notes Module Integration", () => {
     });
     expect(dupRes.statusCode).toBe(400);
   });
+
+  it("15. Filtering parties by availableForReturnOnly returns only customers with return-eligible invoices", async () => {
+    // Customer without invoice
+    const emptyPartyRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/parties`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        name: "Empty Customer No Invoices",
+        phone: "9825999039",
+        stateCode: "24",
+        type: "CUSTOMER",
+        billingAddress: { line1: "Street 1", city: "Surat", pincode: "395006" },
+      },
+    });
+    expect(emptyPartyRes.statusCode).toBe(201);
+    const emptyParty = JSON.parse(emptyPartyRes.body);
+
+    // Fetch parties with availableForReturnOnly=true
+    const returnEligibleRes = await app.inject({
+      method: "GET",
+      url: `/api/v1/parties?availableForReturnOnly=true&type=CUSTOMER`,
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    expect(returnEligibleRes.statusCode).toBe(200);
+    const eligibleData = JSON.parse(returnEligibleRes.body);
+    const eligibleList = eligibleData.items || eligibleData.data || [];
+
+    // CustomerA has active returnable invoices, so must be included
+    expect(eligibleList.some((p: any) => p.id === customerAId)).toBe(true);
+    const matchedCustomer = eligibleList.find((p: any) => p.id === customerAId);
+    expect(matchedCustomer.returnableInvoicesCount).toBeGreaterThan(0);
+
+    // Empty customer has no invoices, so MUST NOT be included
+    expect(eligibleList.some((p: any) => p.id === emptyParty.id)).toBe(false);
+  });
 });
