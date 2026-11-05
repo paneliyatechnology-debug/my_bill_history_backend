@@ -18,6 +18,7 @@ import {
   PushProvider,
   NotificationChannel,
   DeliveryStatus,
+  Prisma,
 } from "@prisma/client";
 
 import { randomUUID } from "crypto";
@@ -35,6 +36,7 @@ export interface CreateNotificationParams {
   targetUserIds?: string[];
   deepLink?: string;
   idempotencyKey?: string;
+  tx?: Prisma.TransactionClient;
 }
 
 @Injectable()
@@ -53,10 +55,14 @@ export class NotificationsService {
     organizationId: string,
     companyId: string,
     explicitUserIds?: string[],
+    tx?: Prisma.TransactionClient,
   ): Promise<string[]> {
+    const db = tx || this.prisma;
+    const userIds = new Set<string>();
+
     if (explicitUserIds && explicitUserIds.length > 0) {
-      // Validate that all explicit user IDs belong to the organization
-      const validUsers = await this.prisma.user.findMany({
+      // Validate that explicit user IDs belong to the organization
+      const validUsers = await db.user.findMany({
         where: {
           id: { in: explicitUserIds },
           organizationId,
@@ -64,11 +70,13 @@ export class NotificationsService {
         },
         select: { id: true },
       });
-      return validUsers.map((u) => u.id);
+      for (const u of validUsers) {
+        userIds.add(u.id);
+      }
     }
 
     // Find users assigned to branches of this company
-    const assignedUsers = await this.prisma.userBranchAssignment.findMany({
+    const assignedUsers = await db.userBranchAssignment.findMany({
       where: {
         branch: { companyId },
         user: { isActive: true },
@@ -76,10 +84,12 @@ export class NotificationsService {
       select: { userId: true },
     });
 
-    const userIds = new Set<string>(assignedUsers.map((a) => a.userId));
+    for (const a of assignedUsers) {
+      userIds.add(a.userId);
+    }
 
     // Also include organization admins and super admins
-    const admins = await this.prisma.user.findMany({
+    const admins = await db.user.findMany({
       where: {
         organizationId,
         isActive: true,
@@ -90,6 +100,20 @@ export class NotificationsService {
 
     for (const admin of admins) {
       userIds.add(admin.id);
+    }
+
+    // Fallback: If still empty, send to all active users in organization
+    if (userIds.size === 0) {
+      const allUsers = await db.user.findMany({
+        where: {
+          organizationId,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      for (const u of allUsers) {
+        userIds.add(u.id);
+      }
     }
 
     return Array.from(userIds);
@@ -107,8 +131,10 @@ export class NotificationsService {
       message,
       data = {},
       deepLink,
+      tx,
     } = params;
 
+    const db = tx || this.prisma;
     const safeEntityType = params.entityType || "SYSTEM";
     const isUuid = (val?: string) =>
       typeof val === "string" &&
@@ -117,7 +143,7 @@ export class NotificationsService {
 
     // Idempotency check: prevent duplicate notifications within 3 minutes for identical entity & event
     if (params.entityId && isUuid(params.entityId)) {
-      const recentDuplicate = await this.prisma.notification.findFirst({
+      const recentDuplicate = await db.notification.findFirst({
         where: {
           companyId,
           entityType: safeEntityType,
@@ -146,6 +172,7 @@ export class NotificationsService {
       organizationId,
       companyId,
       explicitTargets.length > 0 ? explicitTargets : undefined,
+      tx,
     );
 
     if (recipientUserIds.length === 0) {
@@ -156,7 +183,7 @@ export class NotificationsService {
     }
 
     // Resolve user preferences for recipients
-    const preferences = await this.prisma.notificationPreference.findMany({
+    const preferences = await db.notificationPreference.findMany({
       where: {
         companyId,
         userId: { in: recipientUserIds },
@@ -207,7 +234,7 @@ export class NotificationsService {
       }
 
       // Persist In-App Notification record
-      const notification = await this.prisma.notification.create({
+      const notification = await db.notification.create({
         data: {
           organizationId,
           companyId,
@@ -485,65 +512,77 @@ export class NotificationsService {
       dismissedAt: null,
     };
 
-    const [items, total, unreadCount, readCount] = await Promise.all([
-      this.prisma.notification.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-      }),
-      this.prisma.notification.count({ where }),
-      this.prisma.notification.count({
-        where: {
-          ...baseTenantWhere,
-          readAt: null,
-        },
-      }),
-      this.prisma.notification.count({
-        where: {
-          ...baseTenantWhere,
-          readAt: { not: null },
-        },
-      }),
-    ]);
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const [items, total, unreadCount, readCount] = await Promise.all([
+        tx.notification.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: limit,
+        }),
+        tx.notification.count({ where }),
+        tx.notification.count({
+          where: {
+            ...baseTenantWhere,
+            readAt: null,
+          },
+        }),
+        tx.notification.count({
+          where: {
+            ...baseTenantWhere,
+            readAt: { not: null },
+          },
+        }),
+      ]);
 
-    const itemsWithIsRead = items.map((n) => ({
-      ...n,
-      isRead: n.readAt !== null,
-    }));
+      const itemsWithIsRead = items.map((n) => ({
+        ...n,
+        isRead: n.readAt !== null,
+      }));
 
-    const unreadItems = itemsWithIsRead.filter((n) => !n.isRead);
-    const readItems = itemsWithIsRead.filter((n) => n.isRead);
+      const unreadItems = itemsWithIsRead.filter((n) => !n.isRead);
+      const readItems = itemsWithIsRead.filter((n) => n.isRead);
 
-    return {
-      items: itemsWithIsRead,
-      data: itemsWithIsRead,
-      unread: unreadItems,
-      read: readItems,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit) || 1,
-      unreadCount,
-      readCount,
-    };
+      return {
+        items: itemsWithIsRead,
+        data: itemsWithIsRead,
+        unread: unreadItems,
+        read: readItems,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+        unreadCount,
+        readCount,
+      };
+    });
   }
 
   /**
    * Returns current user's unread notification count.
    */
   async getUnreadCount(tenant: TenantContext): Promise<{ unreadCount: number }> {
-    const count = await this.prisma.notification.count({
-      where: {
-        organizationId: tenant.organizationId,
-        companyId: tenant.companyId,
-        recipientUserId: tenant.userId,
-        readAt: null,
-        dismissedAt: null,
-      },
-    });
+    try {
+      if (tenant?.companyId) {
+        await this.syncDueRemindersForCompany(tenant.companyId, tenant.organizationId);
+      }
+    } catch (syncErr: any) {
+      this.logger.warn(`Reminder sync in getUnreadCount: ${syncErr?.message}`);
+    }
 
-    return { unreadCount: count };
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const count = await tx.notification.count({
+        where: {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          recipientUserId: tenant.userId,
+          readAt: null,
+          dismissedAt: null,
+        },
+      });
+
+      return { unreadCount: count };
+    });
   }
 
   /**
@@ -582,28 +621,30 @@ export class NotificationsService {
       };
     }
 
-    const existing = await this.prisma.notification.findFirst({
-      where: {
-        id,
-        organizationId: tenant.organizationId,
-        companyId: tenant.companyId,
-        recipientUserId: tenant.userId,
-      },
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const existing = await tx.notification.findFirst({
+        where: {
+          id,
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          recipientUserId: tenant.userId,
+        },
+      });
+
+      if (!existing) {
+        throw new NotFoundException(`Notification ${id} not found.`);
+      }
+
+      const updated = await tx.notification.update({
+        where: { id },
+        data: { readAt: new Date() },
+      });
+
+      return {
+        ...updated,
+        isRead: true,
+      };
     });
-
-    if (!existing) {
-      throw new NotFoundException(`Notification ${id} not found.`);
-    }
-
-    const updated = await this.prisma.notification.update({
-      where: { id },
-      data: { readAt: new Date() },
-    });
-
-    return {
-      ...updated,
-      isRead: true,
-    };
   }
 
   /**
@@ -621,28 +662,30 @@ export class NotificationsService {
       };
     }
 
-    const existing = await this.prisma.notification.findFirst({
-      where: {
-        id,
-        organizationId: tenant.organizationId,
-        companyId: tenant.companyId,
-        recipientUserId: tenant.userId,
-      },
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const existing = await tx.notification.findFirst({
+        where: {
+          id,
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          recipientUserId: tenant.userId,
+        },
+      });
+
+      if (!existing) {
+        throw new NotFoundException(`Notification ${id} not found.`);
+      }
+
+      const updated = await tx.notification.update({
+        where: { id },
+        data: { readAt: null },
+      });
+
+      return {
+        ...updated,
+        isRead: false,
+      };
     });
-
-    if (!existing) {
-      throw new NotFoundException(`Notification ${id} not found.`);
-    }
-
-    const updated = await this.prisma.notification.update({
-      where: { id },
-      data: { readAt: null },
-    });
-
-    return {
-      ...updated,
-      isRead: false,
-    };
   }
 
   /**
@@ -742,36 +785,40 @@ export class NotificationsService {
    * Marks all eligible notifications as read for current user.
    */
   async markAllAsRead(tenant: TenantContext) {
-    const res = await this.prisma.notification.updateMany({
-      where: {
-        organizationId: tenant.organizationId,
-        companyId: tenant.companyId,
-        recipientUserId: tenant.userId,
-        readAt: null,
-        dismissedAt: null,
-      },
-      data: { readAt: new Date() },
-    });
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const res = await tx.notification.updateMany({
+        where: {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          recipientUserId: tenant.userId,
+          readAt: null,
+          dismissedAt: null,
+        },
+        data: { readAt: new Date() },
+      });
 
-    return { success: true, count: res.count };
+      return { success: true, count: res.count };
+    });
   }
 
   /**
    * Marks all eligible notifications as unread for current user.
    */
   async markAllAsUnread(tenant: TenantContext) {
-    const res = await this.prisma.notification.updateMany({
-      where: {
-        organizationId: tenant.organizationId,
-        companyId: tenant.companyId,
-        recipientUserId: tenant.userId,
-        readAt: { not: null },
-        dismissedAt: null,
-      },
-      data: { readAt: null },
-    });
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const res = await tx.notification.updateMany({
+        where: {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          recipientUserId: tenant.userId,
+          readAt: { not: null },
+          dismissedAt: null,
+        },
+        data: { readAt: null },
+      });
 
-    return { success: true, count: res.count };
+      return { success: true, count: res.count };
+    });
   }
 
   /**
@@ -1131,6 +1178,8 @@ export class NotificationsService {
     partyName?: string;
     organizationId: string;
     companyId: string;
+    userId?: string;
+    tx?: Prisma.TransactionClient;
   }) {
     const outstanding = Number(invoice.balanceAmount);
     if (outstanding <= 0 || !invoice.dueDate) return null;
@@ -1146,69 +1195,87 @@ export class NotificationsService {
     }
 
     const reminderType = diffDays === 0 ? "DUE_TODAY" : (diffDays <= 3 ? "T_MINUS_3" : "T_MINUS_7");
-    const existingLog = await this.prisma.scheduledReminderLog.findUnique({
-      where: {
-        companyId_entityType_entityId_reminderType_dueDate: {
+
+    const runner = async (tx: Prisma.TransactionClient) => {
+      const existingLog = await tx.scheduledReminderLog.findUnique({
+        where: {
+          companyId_entityType_entityId_reminderType_dueDate: {
+            companyId: invoice.companyId,
+            entityType: "SALES_INVOICE",
+            entityId: invoice.id,
+            reminderType,
+            dueDate: dueUtc,
+          },
+        },
+      });
+
+      if (existingLog) return null;
+
+      const partyName = invoice.partyName || "Customer";
+      const formattedAmount = `₹${outstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+      const dueDateString = dueUtc.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+
+      const title = diffDays === 0
+        ? "Invoice Due Today"
+        : (diffDays === 1 ? "Invoice Due Tomorrow" : `Invoice Due in ${diffDays} Day(s)`);
+      const message = diffDays === 0
+        ? `Invoice Due Today: ${partyName} — ${invoice.invoiceNumber} — Outstanding ${formattedAmount} — Due Today (${dueDateString}).`
+        : (diffDays === 1
+          ? `Invoice Due Tomorrow: ${partyName} — ${invoice.invoiceNumber} — Outstanding ${formattedAmount} — Due Tomorrow (${dueDateString}).`
+          : `Invoice Due in ${diffDays} Day(s): ${partyName} — ${invoice.invoiceNumber} — Outstanding ${formattedAmount} — Due ${dueDateString}.`);
+
+      const created = await this.createNotification({
+        organizationId: invoice.organizationId,
+        companyId: invoice.companyId,
+        userId: invoice.userId,
+        type: NotificationType.INVOICE_DUE_REMINDER,
+        title,
+        message,
+        entityType: "SALES_INVOICE",
+        entityId: invoice.id,
+        data: {
+          invoiceNumber: invoice.invoiceNumber,
+          partyName,
+          outstandingAmount: outstanding,
+          currency: "INR",
+          dueDate: invoice.dueDate,
+          reminderType,
+          daysRemaining: diffDays,
+          action: "OPEN_INVOICE",
+        },
+        deepLink: `/sales/invoices/${invoice.id}`,
+        tx,
+      });
+
+      await tx.scheduledReminderLog.create({
+        data: {
+          organizationId: invoice.organizationId,
           companyId: invoice.companyId,
           entityType: "SALES_INVOICE",
           entityId: invoice.id,
           reminderType,
           dueDate: dueUtc,
+          status: "SENT",
+          outstandingAmount: outstanding,
+          notificationId: created[0]?.id || null,
         },
-      },
-    });
+      });
 
-    if (existingLog) return null;
+      return created;
+    };
 
-    const partyName = invoice.partyName || "Customer";
-    const formattedAmount = `₹${outstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
-    const dueDateString = dueUtc.toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-
-    const title = diffDays === 0 ? "Invoice Due Today" : `Invoice Due in ${diffDays} Day(s)`;
-    const message = diffDays === 0
-      ? `Invoice Due Today: ${partyName} — ${invoice.invoiceNumber} — Outstanding ${formattedAmount} — Due Today (${dueDateString}).`
-      : `Invoice Due in ${diffDays} Day(s): ${partyName} — ${invoice.invoiceNumber} — Outstanding ${formattedAmount} — Due ${dueDateString}.`;
-
-    const created = await this.createNotification({
-      organizationId: invoice.organizationId,
-      companyId: invoice.companyId,
-      type: NotificationType.INVOICE_DUE_REMINDER,
-      title,
-      message,
-      entityType: "SALES_INVOICE",
-      entityId: invoice.id,
-      data: {
-        invoiceNumber: invoice.invoiceNumber,
-        partyName,
-        outstandingAmount: outstanding,
-        currency: "INR",
-        dueDate: invoice.dueDate,
-        reminderType,
-        daysRemaining: diffDays,
-        action: "OPEN_INVOICE",
-      },
-      deepLink: `/sales/invoices/${invoice.id}`,
-    });
-
-    await this.prisma.scheduledReminderLog.create({
-      data: {
-        organizationId: invoice.organizationId,
-        companyId: invoice.companyId,
-        entityType: "SALES_INVOICE",
-        entityId: invoice.id,
-        reminderType,
-        dueDate: dueUtc,
-        status: "SENT",
-        outstandingAmount: outstanding,
-        notificationId: created[0]?.id || null,
-      },
-    });
-
-    return created;
+    if (invoice.tx) {
+      return await runner(invoice.tx);
+    } else {
+      return await this.prisma.executeInTenantContext(
+        { organizationId: invoice.organizationId, companyId: invoice.companyId } as any,
+        runner,
+      );
+    }
   }
 
   /**
@@ -1216,12 +1283,14 @@ export class NotificationsService {
    */
   async triggerPurchaseDueReminder(bill: {
     id: string;
-    vendorInvoiceNumber: string;
+    vendorInvoiceNumber?: string | null;
     dueDate: Date | string;
     balanceAmount: number | string | any;
     partyName?: string;
     organizationId: string;
     companyId: string;
+    userId?: string;
+    tx?: Prisma.TransactionClient;
   }) {
     const outstanding = Number(bill.balanceAmount);
     if (outstanding <= 0 || !bill.dueDate) return null;
@@ -1237,76 +1306,95 @@ export class NotificationsService {
     }
 
     const reminderType = diffDays === 0 ? "DUE_TODAY" : (diffDays <= 3 ? "T_MINUS_3" : "T_MINUS_7");
-    const existingLog = await this.prisma.scheduledReminderLog.findUnique({
-      where: {
-        companyId_entityType_entityId_reminderType_dueDate: {
+
+    const runner = async (tx: Prisma.TransactionClient) => {
+      const existingLog = await tx.scheduledReminderLog.findUnique({
+        where: {
+          companyId_entityType_entityId_reminderType_dueDate: {
+            companyId: bill.companyId,
+            entityType: "PURCHASE_INVOICE",
+            entityId: bill.id,
+            reminderType,
+            dueDate: dueUtc,
+          },
+        },
+      });
+
+      if (existingLog) return null;
+
+      const partyName = bill.partyName || "Supplier";
+      const billNumber = bill.vendorInvoiceNumber || "Bill";
+      const formattedAmount = `₹${outstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+      const dueDateString = dueUtc.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+
+      const title = diffDays === 0
+        ? "Purchase Bill Due Today"
+        : (diffDays === 1 ? "Purchase Bill Due Tomorrow" : `Purchase Bill Due in ${diffDays} Day(s)`);
+      const message = diffDays === 0
+        ? `Purchase Bill Due Today: ${partyName} — ${billNumber} — Payable ${formattedAmount} — Due Today (${dueDateString}).`
+        : (diffDays === 1
+          ? `Purchase Bill Due Tomorrow: ${partyName} — ${billNumber} — Payable ${formattedAmount} — Due Tomorrow (${dueDateString}).`
+          : `Purchase Bill Due in ${diffDays} Day(s): ${partyName} — ${billNumber} — Payable ${formattedAmount} — Due ${dueDateString}.`);
+
+      const created = await this.createNotification({
+        organizationId: bill.organizationId,
+        companyId: bill.companyId,
+        userId: bill.userId,
+        type: NotificationType.PURCHASE_DUE_REMINDER,
+        title,
+        message,
+        entityType: "PURCHASE_INVOICE",
+        entityId: bill.id,
+        data: {
+          vendorInvoiceNumber: bill.vendorInvoiceNumber,
+          partyName,
+          payableAmount: outstanding,
+          currency: "INR",
+          dueDate: bill.dueDate,
+          reminderType,
+          daysRemaining: diffDays,
+          action: "OPEN_PURCHASE_BILL",
+        },
+        deepLink: `/purchases/${bill.id}`,
+        tx,
+      });
+
+      await tx.scheduledReminderLog.create({
+        data: {
+          organizationId: bill.organizationId,
           companyId: bill.companyId,
           entityType: "PURCHASE_INVOICE",
           entityId: bill.id,
           reminderType,
           dueDate: dueUtc,
+          status: "SENT",
+          outstandingAmount: outstanding,
+          notificationId: created[0]?.id || null,
         },
-      },
-    });
+      });
 
-    if (existingLog) return null;
+      return created;
+    };
 
-    const partyName = bill.partyName || "Supplier";
-    const formattedAmount = `₹${outstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
-    const dueDateString = dueUtc.toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-
-    const title = diffDays === 0 ? "Purchase Bill Due Today" : `Purchase Bill Due in ${diffDays} Day(s)`;
-    const message = diffDays === 0
-      ? `Purchase Bill Due Today: ${partyName} — ${bill.vendorInvoiceNumber} — Payable ${formattedAmount} — Due Today (${dueDateString}).`
-      : `Purchase Bill Due in ${diffDays} Day(s): ${partyName} — ${bill.vendorInvoiceNumber} — Payable ${formattedAmount} — Due ${dueDateString}.`;
-
-    const created = await this.createNotification({
-      organizationId: bill.organizationId,
-      companyId: bill.companyId,
-      type: NotificationType.PURCHASE_DUE_REMINDER,
-      title,
-      message,
-      entityType: "PURCHASE_INVOICE",
-      entityId: bill.id,
-      data: {
-        vendorInvoiceNumber: bill.vendorInvoiceNumber,
-        partyName,
-        payableAmount: outstanding,
-        currency: "INR",
-        dueDate: bill.dueDate,
-        reminderType,
-        daysRemaining: diffDays,
-        action: "OPEN_PURCHASE_BILL",
-      },
-      deepLink: `/purchases/${bill.id}`,
-    });
-
-    await this.prisma.scheduledReminderLog.create({
-      data: {
-        organizationId: bill.organizationId,
-        companyId: bill.companyId,
-        entityType: "PURCHASE_INVOICE",
-        entityId: bill.id,
-        reminderType,
-        dueDate: dueUtc,
-        status: "SENT",
-        outstandingAmount: outstanding,
-        notificationId: created[0]?.id || null,
-      },
-    });
-
-    return created;
+    if (bill.tx) {
+      return await runner(bill.tx);
+    } else {
+      return await this.prisma.executeInTenantContext(
+        { organizationId: bill.organizationId, companyId: bill.companyId } as any,
+        runner,
+      );
+    }
   }
 
   /**
    * Scans company's sales invoices and purchase bills for pending dues:
    * - DUE_TODAY (0 days remaining)
-   * - T_MINUS_3 (3 days remaining)
-   * - T_MINUS_7 (7 days remaining)
+   * - T_MINUS_3 (1..3 days remaining)
+   * - T_MINUS_7 (4..7 days remaining)
    * Ensures separate notifications are generated when due date reaches today even if previously notified at 7 or 3 days.
    */
   async syncDueRemindersForCompany(
@@ -1335,190 +1423,205 @@ export class NotificationsService {
     }
     if (!resolvedOrgId) return { salesRemindersCreated: 0, purchaseRemindersCreated: 0 };
 
-    // 1. Sales Invoices
-    const salesInvoices = await this.prisma.salesInvoice.findMany({
-      where: {
-        companyId,
-        status: { notIn: ["CANCELLED", "DRAFT", "PAID"] },
-        balanceAmount: { gt: 0 },
-        dueDate: {
-          not: null,
-          gte: todayUtc,
-          lte: horizon7Days,
-        },
-      },
-      include: { party: true },
-    });
-
-    for (const inv of salesInvoices) {
-      const outstanding = Number(inv.balanceAmount);
-      if (outstanding <= 0 || !inv.dueDate) continue;
-
-      const rawDue = new Date(inv.dueDate);
-      const dueUtc = new Date(Date.UTC(rawDue.getUTCFullYear(), rawDue.getUTCMonth(), rawDue.getUTCDate()));
-      const diffDays = Math.round((dueUtc.getTime() - todayUtc.getTime()) / (1000 * 60 * 60 * 24));
-
-      // Handle Today (0), in 3 days (3), or in 7 days (7)
-      if (diffDays !== 0 && diffDays !== 3 && diffDays !== 7) continue;
-
-      const reminderType = diffDays === 0 ? "DUE_TODAY" : (diffDays === 3 ? "T_MINUS_3" : "T_MINUS_7");
-
-      const existingLog = await this.prisma.scheduledReminderLog.findUnique({
-        where: {
-          companyId_entityType_entityId_reminderType_dueDate: {
+    return await this.prisma.executeInTenantContext(
+      { organizationId: resolvedOrgId, companyId, isSystemBypass: false } as any,
+      async (tx) => {
+        // 1. Sales Invoices
+        const salesInvoices = await tx.salesInvoice.findMany({
+          where: {
             companyId,
+            status: { notIn: ["CANCELLED", "DRAFT", "PAID"] },
+            balanceAmount: { gt: 0 },
+            dueDate: {
+              not: null,
+              gte: todayUtc,
+              lte: horizon7Days,
+            },
+          },
+          include: { party: true },
+        });
+
+        for (const inv of salesInvoices) {
+          const outstanding = Number(inv.balanceAmount);
+          if (outstanding <= 0 || !inv.dueDate) continue;
+
+          const rawDue = new Date(inv.dueDate);
+          const dueUtc = new Date(Date.UTC(rawDue.getUTCFullYear(), rawDue.getUTCMonth(), rawDue.getUTCDate()));
+          const diffDays = Math.round((dueUtc.getTime() - todayUtc.getTime()) / (1000 * 60 * 60 * 24));
+
+          if (diffDays < 0 || diffDays > 7) continue;
+
+          const reminderType = diffDays === 0 ? "DUE_TODAY" : (diffDays <= 3 ? "T_MINUS_3" : "T_MINUS_7");
+
+          const existingLog = await tx.scheduledReminderLog.findUnique({
+            where: {
+              companyId_entityType_entityId_reminderType_dueDate: {
+                companyId,
+                entityType: "SALES_INVOICE",
+                entityId: inv.id,
+                reminderType,
+                dueDate: dueUtc,
+              },
+            },
+          });
+
+          if (existingLog) continue;
+
+          const partyName = inv.party?.name || "Customer";
+          const formattedAmount = `₹${outstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+          const dueDateString = dueUtc.toLocaleDateString("en-IN", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          });
+
+          const title = diffDays === 0
+            ? "Invoice Due Today"
+            : (diffDays === 1 ? "Invoice Due Tomorrow" : `Invoice Due in ${diffDays} Day(s)`);
+          const message = diffDays === 0
+            ? `Invoice Due Today: ${partyName} — ${inv.invoiceNumber} — Outstanding ${formattedAmount} — Due Today (${dueDateString}).`
+            : (diffDays === 1
+              ? `Invoice Due Tomorrow: ${partyName} — ${inv.invoiceNumber} — Outstanding ${formattedAmount} — Due Tomorrow (${dueDateString}).`
+              : `Invoice Due in ${diffDays} Day(s): ${partyName} — ${inv.invoiceNumber} — Outstanding ${formattedAmount} — Due ${dueDateString}.`);
+
+          const created = await this.createNotification({
+            organizationId: resolvedOrgId!,
+            companyId,
+            type: NotificationType.INVOICE_DUE_REMINDER,
+            title,
+            message,
             entityType: "SALES_INVOICE",
             entityId: inv.id,
-            reminderType,
-            dueDate: dueUtc,
-          },
-        },
-      });
+            data: {
+              invoiceNumber: inv.invoiceNumber,
+              partyName,
+              outstandingAmount: outstanding,
+              currency: "INR",
+              dueDate: inv.dueDate,
+              reminderType,
+              daysRemaining: diffDays,
+              action: "OPEN_INVOICE",
+            },
+            deepLink: `/sales/invoices/${inv.id}`,
+            tx,
+          });
 
-      if (existingLog) continue;
+          await tx.scheduledReminderLog.create({
+            data: {
+              organizationId: resolvedOrgId!,
+              companyId,
+              entityType: "SALES_INVOICE",
+              entityId: inv.id,
+              reminderType,
+              dueDate: dueUtc,
+              status: "SENT",
+              outstandingAmount: outstanding,
+              notificationId: created[0]?.id || null,
+            },
+          });
 
-      const partyName = inv.party?.name || "Customer";
-      const formattedAmount = `₹${outstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
-      const dueDateString = dueUtc.toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      });
+          salesRemindersCreated++;
+        }
 
-      const title = diffDays === 0 ? "Invoice Due Today" : `Invoice Due in ${diffDays} Days`;
-      const message = diffDays === 0
-        ? `Invoice Due Today: ${partyName} — ${inv.invoiceNumber} — Outstanding ${formattedAmount} — Due Today (${dueDateString}).`
-        : `Invoice Due in ${diffDays} Days: ${partyName} — ${inv.invoiceNumber} — Outstanding ${formattedAmount} — Due ${dueDateString}.`;
-
-      const created = await this.createNotification({
-        organizationId: resolvedOrgId,
-        companyId,
-        type: NotificationType.INVOICE_DUE_REMINDER,
-        title,
-        message,
-        entityType: "SALES_INVOICE",
-        entityId: inv.id,
-        data: {
-          invoiceNumber: inv.invoiceNumber,
-          partyName,
-          outstandingAmount: outstanding,
-          currency: "INR",
-          dueDate: inv.dueDate,
-          reminderType,
-          daysRemaining: diffDays,
-          action: "OPEN_INVOICE",
-        },
-        deepLink: `/sales/invoices/${inv.id}`,
-      });
-
-      await this.prisma.scheduledReminderLog.create({
-        data: {
-          organizationId: resolvedOrgId,
-          companyId,
-          entityType: "SALES_INVOICE",
-          entityId: inv.id,
-          reminderType,
-          dueDate: dueUtc,
-          status: "SENT",
-          outstandingAmount: outstanding,
-          notificationId: created[0]?.id || null,
-        },
-      });
-
-      salesRemindersCreated++;
-    }
-
-    // 2. Purchase Invoices
-    const purchaseInvoices = await this.prisma.purchaseInvoice.findMany({
-      where: {
-        companyId,
-        balanceAmount: { gt: 0 },
-        dueDate: {
-          not: null,
-          gte: todayUtc,
-          lte: horizon7Days,
-        },
-      },
-      include: { party: true },
-    });
-
-    for (const bill of purchaseInvoices) {
-      const outstanding = Number(bill.balanceAmount);
-      if (outstanding <= 0 || !bill.dueDate) continue;
-
-      const rawDue = new Date(bill.dueDate);
-      const dueUtc = new Date(Date.UTC(rawDue.getUTCFullYear(), rawDue.getUTCMonth(), rawDue.getUTCDate()));
-      const diffDays = Math.round((dueUtc.getTime() - todayUtc.getTime()) / (1000 * 60 * 60 * 24));
-
-      if (diffDays !== 0 && diffDays !== 3 && diffDays !== 7) continue;
-
-      const reminderType = diffDays === 0 ? "DUE_TODAY" : (diffDays === 3 ? "T_MINUS_3" : "T_MINUS_7");
-
-      const existingLog = await this.prisma.scheduledReminderLog.findUnique({
-        where: {
-          companyId_entityType_entityId_reminderType_dueDate: {
+        // 2. Purchase Invoices
+        const purchaseInvoices = await tx.purchaseInvoice.findMany({
+          where: {
             companyId,
+            balanceAmount: { gt: 0 },
+            dueDate: {
+              not: null,
+              gte: todayUtc,
+              lte: horizon7Days,
+            },
+          },
+          include: { party: true },
+        });
+
+        for (const bill of purchaseInvoices) {
+          const outstanding = Number(bill.balanceAmount);
+          if (outstanding <= 0 || !bill.dueDate) continue;
+
+          const rawDue = new Date(bill.dueDate);
+          const dueUtc = new Date(Date.UTC(rawDue.getUTCFullYear(), rawDue.getUTCMonth(), rawDue.getUTCDate()));
+          const diffDays = Math.round((dueUtc.getTime() - todayUtc.getTime()) / (1000 * 60 * 60 * 24));
+
+          if (diffDays < 0 || diffDays > 7) continue;
+
+          const reminderType = diffDays === 0 ? "DUE_TODAY" : (diffDays <= 3 ? "T_MINUS_3" : "T_MINUS_7");
+
+          const existingLog = await tx.scheduledReminderLog.findUnique({
+            where: {
+              companyId_entityType_entityId_reminderType_dueDate: {
+                companyId,
+                entityType: "PURCHASE_INVOICE",
+                entityId: bill.id,
+                reminderType,
+                dueDate: dueUtc,
+              },
+            },
+          });
+
+          if (existingLog) continue;
+
+          const partyName = bill.party?.name || "Supplier";
+          const billNumber = bill.vendorInvoiceNumber || "Bill";
+          const formattedAmount = `₹${outstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+          const dueDateString = dueUtc.toLocaleDateString("en-IN", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          });
+
+          const title = diffDays === 0
+            ? "Purchase Bill Due Today"
+            : (diffDays === 1 ? "Purchase Bill Due Tomorrow" : `Purchase Bill Due in ${diffDays} Day(s)`);
+          const message = diffDays === 0
+            ? `Purchase Bill Due Today: ${partyName} — ${billNumber} — Payable ${formattedAmount} — Due Today (${dueDateString}).`
+            : (diffDays === 1
+              ? `Purchase Bill Due Tomorrow: ${partyName} — ${billNumber} — Payable ${formattedAmount} — Due Tomorrow (${dueDateString}).`
+              : `Purchase Bill Due in ${diffDays} Day(s): ${partyName} — ${billNumber} — Payable ${formattedAmount} — Due ${dueDateString}.`);
+
+          const created = await this.createNotification({
+            organizationId: resolvedOrgId!,
+            companyId,
+            type: NotificationType.PURCHASE_DUE_REMINDER,
+            title,
+            message,
             entityType: "PURCHASE_INVOICE",
             entityId: bill.id,
-            reminderType,
-            dueDate: dueUtc,
-          },
-        },
-      });
+            data: {
+              vendorInvoiceNumber: bill.vendorInvoiceNumber,
+              partyName,
+              payableAmount: outstanding,
+              currency: "INR",
+              dueDate: bill.dueDate,
+              reminderType,
+              daysRemaining: diffDays,
+              action: "OPEN_PURCHASE_BILL",
+            },
+            deepLink: `/purchases/${bill.id}`,
+            tx,
+          });
 
-      if (existingLog) continue;
+          await tx.scheduledReminderLog.create({
+            data: {
+              organizationId: resolvedOrgId!,
+              companyId,
+              entityType: "PURCHASE_INVOICE",
+              entityId: bill.id,
+              reminderType,
+              dueDate: dueUtc,
+              status: "SENT",
+              outstandingAmount: outstanding,
+              notificationId: created[0]?.id || null,
+            },
+          });
 
-      const partyName = bill.party?.name || "Supplier";
-      const formattedAmount = `₹${outstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
-      const dueDateString = dueUtc.toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      });
+          purchaseRemindersCreated++;
+        }
 
-      const title = diffDays === 0 ? "Purchase Bill Due Today" : `Purchase Bill Due in ${diffDays} Days`;
-      const message = diffDays === 0
-        ? `Purchase Bill Due Today: ${partyName} — ${bill.vendorInvoiceNumber} — Payable ${formattedAmount} — Due Today (${dueDateString}).`
-        : `Purchase Bill Due in ${diffDays} Days: ${partyName} — ${bill.vendorInvoiceNumber} — Payable ${formattedAmount} — Due ${dueDateString}.`;
-
-      const created = await this.createNotification({
-        organizationId: resolvedOrgId,
-        companyId,
-        type: NotificationType.PURCHASE_DUE_REMINDER,
-        title,
-        message,
-        entityType: "PURCHASE_INVOICE",
-        entityId: bill.id,
-        data: {
-          vendorInvoiceNumber: bill.vendorInvoiceNumber,
-          partyName,
-          payableAmount: outstanding,
-          currency: "INR",
-          dueDate: bill.dueDate,
-          reminderType,
-          daysRemaining: diffDays,
-          action: "OPEN_PURCHASE_BILL",
-        },
-        deepLink: `/purchases/${bill.id}`,
-      });
-
-      await this.prisma.scheduledReminderLog.create({
-        data: {
-          organizationId: resolvedOrgId,
-          companyId,
-          entityType: "PURCHASE_INVOICE",
-          entityId: bill.id,
-          reminderType,
-          dueDate: dueUtc,
-          status: "SENT",
-          outstandingAmount: outstanding,
-          notificationId: created[0]?.id || null,
-        },
-      });
-
-      purchaseRemindersCreated++;
-    }
-
-    return { salesRemindersCreated, purchaseRemindersCreated };
+        return { salesRemindersCreated, purchaseRemindersCreated };
+      },
+    );
   }
 }

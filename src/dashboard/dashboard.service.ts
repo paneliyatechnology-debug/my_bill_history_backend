@@ -105,7 +105,7 @@ export class DashboardService {
             balanceAmount: Number(inv.balanceAmount),
             type: "SALES_INVOICE",
             deepLink: `/sales/invoices/${inv.id}`,
-            actionLink: `/sales/payment-in/new?partyId=${inv.party?.id || ""}&invoiceId=${inv.id}`,
+            actionLink: `/sales/payment-in/new?partyId=${inv.party?.id || ""}&invoiceId=${inv.id}&amount=${inv.balanceAmount}`,
             actionLabel: "Collect Payment",
           });
         }
@@ -162,7 +162,7 @@ export class DashboardService {
             balanceAmount: Number(bill.balanceAmount),
             type: "PURCHASE_INVOICE",
             deepLink: `/purchases/${bill.id}`,
-            actionLink: `/purchases/payment-out/new?partyId=${bill.party?.id || ""}&billId=${bill.id}`,
+            actionLink: `/purchases/payment-out/new?partyId=${bill.party?.id || ""}&billId=${bill.id}&amount=${bill.balanceAmount}`,
             actionLabel: "Pay Bill",
           });
         }

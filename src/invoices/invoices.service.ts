@@ -698,6 +698,7 @@ export class InvoicesService {
             partyName: (result as any).party?.name,
             organizationId: tenant.organizationId,
             companyId: tenant.companyId,
+            userId: tenant.userId,
           });
         } catch (notifErr: any) {
           this.logger.warn(
