@@ -8,6 +8,7 @@ export interface CreateSalesReturnItemDto {
 
 export interface CreateSalesReturnDto {
   salesInvoiceId?: string;
+  returnNumber?: string;
   returnDate?: string;
   reason?: string;
   reasonGujarati?: string;

@@ -2909,9 +2909,12 @@ export class InvoicesService {
     }
 
     return this.prisma.executeInTenantContext(tenant, async (tx) => {
-      // 1. Transactional advisory lock on this specific sales invoice
+      // 1. Transactional advisory lock on this specific sales invoice and company return sequence
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`sales_return_${invoiceId}`})::bigint)
+      `;
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`sales_return_seq_${tenant.companyId}`})::bigint)
       `;
 
       // 2. Fetch sales invoice and company
@@ -3125,11 +3128,61 @@ export class InvoicesService {
         }
       }
 
-      // 7. Generate Return Number (Credit Note number)
-      const returnCount = await tx.salesReturn.count({
+      // 7. Generate guaranteed-unique Return Number (Credit Note number)
+      const existingReturns = await tx.salesReturn.findMany({
         where: { companyId: tenant.companyId },
+        select: { returnNumber: true },
       });
-      const returnNumber = `CN-${returnDate.getFullYear()}-${String(returnCount + 1).padStart(4, "0")}`;
+      const existingSet = new Set(
+        existingReturns
+          .map((r) => r.returnNumber?.trim().toUpperCase())
+          .filter(Boolean) as string[],
+      );
+
+      const year = returnDate.getFullYear();
+      const defaultPrefix = `CN-${year}-`;
+
+      let maxSeq = 0;
+      for (const r of existingReturns) {
+        if (!r.returnNumber) continue;
+        const raw = r.returnNumber.trim();
+        if (raw.startsWith(defaultPrefix)) {
+          const num = parseInt(raw.slice(defaultPrefix.length), 10);
+          if (!isNaN(num) && num > maxSeq) {
+            maxSeq = num;
+          }
+        } else {
+          const match = raw.match(/(\d+)$/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num) && num > maxSeq) {
+              maxSeq = num;
+            }
+          }
+        }
+      }
+
+      let returnNumber = dto.returnNumber?.trim();
+      if (returnNumber) {
+        if (existingSet.has(returnNumber.toUpperCase())) {
+          // If custom returnNumber already exists, auto-generate next sequential candidate
+          let nextSeq = Math.max(maxSeq + 1, existingReturns.length + 1);
+          let generated = `${defaultPrefix}${String(nextSeq).padStart(4, "0")}`;
+          while (existingSet.has(generated.toUpperCase())) {
+            nextSeq++;
+            generated = `${defaultPrefix}${String(nextSeq).padStart(4, "0")}`;
+          }
+          returnNumber = generated;
+        }
+      } else {
+        let nextSeq = Math.max(maxSeq + 1, existingReturns.length + 1);
+        let generated = `${defaultPrefix}${String(nextSeq).padStart(4, "0")}`;
+        while (existingSet.has(generated.toUpperCase())) {
+          nextSeq++;
+          generated = `${defaultPrefix}${String(nextSeq).padStart(4, "0")}`;
+        }
+        returnNumber = generated;
+      }
 
       // 8. Create SalesReturn and SalesReturnItem records
       const salesReturn = await tx.salesReturn.create({
@@ -3547,7 +3600,7 @@ export class InvoicesService {
   async getSalesReturns(
     dto: QuerySalesReturnsDto,
     tenant: TenantContext,
-  ): Promise<{ data: any[]; total: number; limit: number; offset: number }> {
+  ): Promise<{ data: any[]; total: number; limit: number; offset: number; nextNumber?: string }> {
     const limit = Math.min(Number(dto.limit) || 50, 100);
     const offset = Number(dto.offset) || 0;
 
@@ -3615,7 +3668,38 @@ export class InvoicesService {
       this.prisma.salesReturn.count({ where }),
     ]);
 
-    return { data, total, limit, offset };
+    // Calculate next available sequence return number
+    const prefix = `CN-${new Date().getFullYear()}-`;
+    const existingReturns = await this.prisma.salesReturn.findMany({
+      where: { companyId: tenant.companyId },
+      select: { returnNumber: true },
+    });
+    let maxSeq = 0;
+    const existingSet = new Set<string>();
+    for (const r of existingReturns) {
+      if (r.returnNumber) {
+        existingSet.add(r.returnNumber.trim().toUpperCase());
+        const raw = r.returnNumber.trim();
+        if (raw.startsWith(prefix)) {
+          const num = parseInt(raw.slice(prefix.length), 10);
+          if (!isNaN(num) && num > maxSeq) maxSeq = num;
+        } else {
+          const match = raw.match(/(\d+)$/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num) && num > maxSeq) maxSeq = num;
+          }
+        }
+      }
+    }
+    let nextSeq = Math.max(maxSeq + 1, total + 1);
+    let nextNumber = `${prefix}${String(nextSeq).padStart(4, "0")}`;
+    while (existingSet.has(nextNumber.toUpperCase())) {
+      nextSeq++;
+      nextNumber = `${prefix}${String(nextSeq).padStart(4, "0")}`;
+    }
+
+    return { data, total, limit, offset, nextNumber };
   }
 
   async getSalesReturnById(id: string, tenant: TenantContext) {

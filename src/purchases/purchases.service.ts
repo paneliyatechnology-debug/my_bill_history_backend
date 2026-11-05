@@ -969,9 +969,12 @@ export class PurchasesService {
     }
 
     return this.prisma.executeInTenantContext(tenant, async (tx) => {
-      // 1. Transactional advisory lock on this specific purchase invoice
+      // 1. Transactional advisory lock on this specific purchase invoice and company return sequence
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`purchase_return_${purchaseId}`})::bigint)
+      `;
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`purchase_return_seq_${tenant.companyId}`})::bigint)
       `;
 
       // 2. Fetch purchase invoice and company
@@ -1166,13 +1169,60 @@ export class PurchasesService {
         );
       }
 
-      // 7. Generate Return Number (Debit Note number)
-      const returnCount = await tx.purchaseReturn.count({
+      // 7. Generate guaranteed-unique Return Number (Debit Note number)
+      const existingReturns = await tx.purchaseReturn.findMany({
         where: { companyId: tenant.companyId },
+        select: { returnNumber: true },
       });
-      const returnNumber =
-        dto.returnNumber ||
-        `DN-${returnDate.getFullYear()}-${String(returnCount + 1).padStart(4, "0")}`;
+      const existingSet = new Set(
+        existingReturns
+          .map((r) => r.returnNumber?.trim().toUpperCase())
+          .filter(Boolean) as string[],
+      );
+
+      const year = returnDate.getFullYear();
+      const defaultPrefix = `DN-${year}-`;
+
+      let maxSeq = 0;
+      for (const r of existingReturns) {
+        if (!r.returnNumber) continue;
+        const raw = r.returnNumber.trim();
+        if (raw.startsWith(defaultPrefix)) {
+          const num = parseInt(raw.slice(defaultPrefix.length), 10);
+          if (!isNaN(num) && num > maxSeq) {
+            maxSeq = num;
+          }
+        } else {
+          const match = raw.match(/(\d+)$/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num) && num > maxSeq) {
+              maxSeq = num;
+            }
+          }
+        }
+      }
+
+      let returnNumber = dto.returnNumber?.trim();
+      if (returnNumber) {
+        if (existingSet.has(returnNumber.toUpperCase())) {
+          let nextSeq = Math.max(maxSeq + 1, existingReturns.length + 1);
+          let generated = `${defaultPrefix}${String(nextSeq).padStart(4, "0")}`;
+          while (existingSet.has(generated.toUpperCase())) {
+            nextSeq++;
+            generated = `${defaultPrefix}${String(nextSeq).padStart(4, "0")}`;
+          }
+          returnNumber = generated;
+        }
+      } else {
+        let nextSeq = Math.max(maxSeq + 1, existingReturns.length + 1);
+        let generated = `${defaultPrefix}${String(nextSeq).padStart(4, "0")}`;
+        while (existingSet.has(generated.toUpperCase())) {
+          nextSeq++;
+          generated = `${defaultPrefix}${String(nextSeq).padStart(4, "0")}`;
+        }
+        returnNumber = generated;
+      }
 
       // 8. Create PurchaseReturn and PurchaseReturnItem records
       const purchaseReturn = await tx.purchaseReturn.create({
