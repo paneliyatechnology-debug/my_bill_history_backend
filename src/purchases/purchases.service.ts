@@ -705,7 +705,32 @@ export class PurchasesService {
     if (callerTx) {
       return executeWork(callerTx);
     }
-    return this.prisma.executeInTenantContext(tenant, executeWork);
+    const createdBill = await this.prisma.executeInTenantContext(
+      tenant,
+      executeWork,
+    );
+    if (
+      createdBill &&
+      createdBill.dueDate &&
+      Number(createdBill.balanceAmount) > 0
+    ) {
+      try {
+        await this.notificationsService.triggerPurchaseDueReminder({
+          id: createdBill.id,
+          vendorInvoiceNumber: createdBill.vendorInvoiceNumber,
+          dueDate: createdBill.dueDate,
+          balanceAmount: createdBill.balanceAmount,
+          partyName: (createdBill as any).party?.name,
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+        });
+      } catch (notifErr: any) {
+        this.logger.warn(
+          `Failed to dispatch purchase due reminder: ${notifErr?.message}`,
+        );
+      }
+    }
+    return createdBill;
   }
 
   /**

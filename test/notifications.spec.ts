@@ -380,4 +380,109 @@ describe("Notifications & Reminders Test Suite", () => {
       where: { id: notif.id },
     });
   });
+
+  it("12. Single unified manageNotificationStatus endpoint: handles single & all read/unread via body & query", async () => {
+    // Create 2 test notifications
+    const [n1] = await notificationsService.createNotification({
+      organizationId,
+      companyId,
+      userId,
+      type: NotificationType.PAYMENT_RECEIVED,
+      title: "Test Single/All 1",
+      message: "Msg 1",
+    });
+    const [n2] = await notificationsService.createNotification({
+      organizationId,
+      companyId,
+      userId,
+      type: NotificationType.PAYMENT_RECEIVED,
+      title: "Test Single/All 2",
+      message: "Msg 2",
+    });
+
+    // 1. Mark single n1 as read via manageNotificationStatus({ id: n1.id, isRead: true })
+    const r1 = await notificationsService.manageNotificationStatus({ id: n1.id, isRead: true }, tenant);
+    expect(r1.isRead).toBe(true);
+
+    // 2. Mark single n1 as unread via manageNotificationStatus({ id: n1.id, isRead: false })
+    const r2 = await notificationsService.manageNotificationStatus({ id: n1.id, isRead: false }, tenant);
+    expect(r2.isRead).toBe(false);
+
+    // 3. Mark ALL as read via manageNotificationStatus({ all: true, isRead: true })
+    const r3 = await notificationsService.manageNotificationStatus({ all: true, isRead: true }, tenant);
+    expect(r3.success).toBe(true);
+    expect(r3.isRead).toBe(true);
+    expect(r3.all).toBe(true);
+    expect(r3.updatedCount).toBeGreaterThanOrEqual(2);
+
+    // 4. Mark ALL as unread via manageNotificationStatus({ all: true, isRead: false })
+    const r4 = await notificationsService.manageNotificationStatus({ all: true, isRead: false }, tenant);
+    expect(r4.success).toBe(true);
+    expect(r4.isRead).toBe(false);
+    expect(r4.all).toBe(true);
+    expect(r4.updatedCount).toBeGreaterThanOrEqual(2);
+
+    // Clean up
+    await prisma.notification.deleteMany({
+      where: { id: { in: [n1.id, n2.id] } },
+    });
+  });
+
+  it("13. Due Today & 7 Days Due Reminders: generates new notifications for today and 7-day dues", async () => {
+    const today = new Date();
+    const todayUtc = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    const horizon7Days = new Date(todayUtc);
+    horizon7Days.setUTCDate(horizon7Days.getUTCDate() + 7);
+
+    // Trigger reminder for today's due date
+    const todayReminders = await notificationsService.triggerInvoiceDueReminder({
+      id: "22222222-2222-2222-2222-222222222222",
+      invoiceNumber: "INV-TEST-TODAY-001",
+      dueDate: todayUtc,
+      balanceAmount: 5000,
+      partyName: "Test Customer Today",
+      organizationId,
+      companyId,
+    });
+
+    expect(todayReminders).toBeDefined();
+    expect(todayReminders?.length).toBeGreaterThan(0);
+    const todayNotif = todayReminders![0];
+    expect(todayNotif.title).toBe("Invoice Due Today");
+    expect(todayNotif.message).toContain("Invoice Due Today");
+    expect(todayNotif.message).toContain("Due Today");
+
+    // Trigger reminder for 7 days ahead
+    const weekReminders = await notificationsService.triggerInvoiceDueReminder({
+      id: "33333333-3333-3333-3333-333333333333",
+      invoiceNumber: "INV-TEST-7D-001",
+      dueDate: horizon7Days,
+      balanceAmount: 12000,
+      partyName: "Test Customer 7D",
+      organizationId,
+      companyId,
+    });
+
+    expect(weekReminders).toBeDefined();
+    expect(weekReminders?.length).toBeGreaterThan(0);
+    const weekNotif = weekReminders![0];
+    expect(weekNotif.title).toContain("Due in 7 Day");
+    expect(weekNotif.message).toContain("Due in 7 Day");
+
+    // Test getNotifications includes the newly triggered notifications
+    const listRes = await notificationsService.getNotifications(tenant, { limit: 10 });
+    expect(listRes.items.some((n: any) => n.id === todayNotif.id)).toBe(true);
+
+    // Clean up
+    await prisma.scheduledReminderLog.deleteMany({
+      where: {
+        entityId: { in: ["22222222-2222-2222-2222-222222222222", "33333333-3333-3333-3333-333333333333"] },
+      },
+    });
+    await prisma.notification.deleteMany({
+      where: {
+        id: { in: [todayNotif.id, weekNotif.id] },
+      },
+    });
+  });
 });

@@ -103,6 +103,29 @@ export class NotificationsController {
   }
 
   /**
+   * PATCH /api/v1/notifications
+   * Unified single API endpoint to manage notification read/unread status parameter-wise.
+   * - Mark single as read: { id: "<ID>", isRead: true }
+   * - Mark single as unread: { id: "<ID>", isRead: false }
+   * - Mark all as read: { all: true, isRead: true }
+   * - Mark all as unread: { all: true, isRead: false }
+   * Also supports query parameters (?id=...&isRead=true or ?all=true&isRead=false).
+   */
+  @Patch()
+  async manageNotificationStatus(
+    @Body() dto: UpdateNotificationDto,
+    @Query() query: any,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.notificationsService.manageNotificationStatus(
+      dto,
+      tenant,
+      undefined,
+      query,
+    );
+  }
+
+  /**
    * PATCH /api/v1/notifications/read-all
    * Mark all eligible notifications as read.
    */
@@ -122,7 +145,7 @@ export class NotificationsController {
 
   /**
    * POST /api/v1/notifications/reminders/trigger
-   * Trigger the T-3 calendar days due-date reminder scan.
+   * Trigger the calendar days due-date reminder scan (DUE_TODAY, T-3, T-7).
    */
   @Post("reminders/trigger")
   @HttpCode(HttpStatus.OK)
@@ -151,9 +174,15 @@ export class NotificationsController {
   async updateNotification(
     @Param("id") id: string,
     @Body() dto: UpdateNotificationDto,
+    @Query() query: any,
     @CurrentTenant() tenant: TenantContext,
   ) {
-    return await this.notificationsService.updateNotification(id, dto, tenant);
+    return await this.notificationsService.manageNotificationStatus(
+      dto,
+      tenant,
+      id,
+      query,
+    );
   }
 
   /**

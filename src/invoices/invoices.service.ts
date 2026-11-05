@@ -92,7 +92,7 @@ export class InvoicesService {
     const offlineUuid = dto.clientOfflineUuid || idempotencyKey || null;
 
     try {
-      return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const result = await this.prisma.executeInTenantContext(tenant, async (tx) => {
         // 1. Idempotency Check: return existing invoice if clientOfflineUuid already processed
         if (offlineUuid) {
           await tx.$executeRaw`
@@ -670,6 +670,7 @@ export class InvoicesService {
 
         return {
           ...invoice,
+          party,
           grandTotalWords: taxCalc.grandTotalWords,
           grandTotalWordsGujarati: taxCalc.grandTotalWordsGujarati,
           items: createdItems,
@@ -681,6 +682,31 @@ export class InvoicesService {
           ...buildInvoiceUrls(invoice.id),
         };
       });
+
+      if (
+        result &&
+        result.dueDate &&
+        Number(result.balanceAmount) > 0 &&
+        result.status !== InvoiceStatus.DRAFT
+      ) {
+        try {
+          await this.notificationsService.triggerInvoiceDueReminder({
+            id: result.id,
+            invoiceNumber: result.invoiceNumber,
+            dueDate: result.dueDate,
+            balanceAmount: result.balanceAmount,
+            partyName: (result as any).party?.name,
+            organizationId: tenant.organizationId,
+            companyId: tenant.companyId,
+          });
+        } catch (notifErr: any) {
+          this.logger.warn(
+            `Failed to dispatch invoice due reminder: ${notifErr?.message}`,
+          );
+        }
+      }
+
+      return result;
     } catch (err: any) {
       if (
         offlineUuid &&
