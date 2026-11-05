@@ -679,6 +679,14 @@ export class PartiesService {
         },
       });
 
+      // Keep linked ledger account in sync if party name changed
+      if (dto.name && dto.name.trim() !== existing.name) {
+        await tx.ledgerAccount.updateMany({
+          where: { companyId: ctx.companyId, partyId: id },
+          data: { name: dto.name.trim() },
+        });
+      }
+
       if (ctx.userId) {
         await this.audit.record({
           organizationId: ctx.organizationId,
