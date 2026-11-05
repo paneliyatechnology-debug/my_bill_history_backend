@@ -40,12 +40,13 @@ export class DashboardService {
     typeFilter: "ALL" | "SALES" | "PURCHASES" = "ALL",
   ) {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Midnight UTC today for consistent date comparisons against @db.Date columns
+    const todayUtc = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
 
     const targetDays = Number(daysAhead) > 0 ? Number(daysAhead) : 3;
-    const horizonDate = new Date(today);
-    horizonDate.setDate(today.getDate() + targetDays);
-    horizonDate.setHours(23, 59, 59, 999);
+    const horizonDate = new Date(todayUtc);
+    horizonDate.setUTCDate(horizonDate.getUTCDate() + targetDays);
+    horizonDate.setUTCHours(23, 59, 59, 999);
 
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
       const dues: any[] = [];
@@ -71,11 +72,10 @@ export class DashboardService {
 
         for (const inv of salesInvoices) {
           if (!inv.dueDate) continue;
-          const dueDate = new Date(inv.dueDate);
-          dueDate.setHours(0, 0, 0, 0);
-
-          const diffTime = dueDate.getTime() - today.getTime();
-          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+          const rawDue = new Date(inv.dueDate);
+          const dueUtc = new Date(Date.UTC(rawDue.getUTCFullYear(), rawDue.getUTCMonth(), rawDue.getUTCDate()));
+          const diffDays = Math.round((dueUtc.getTime() - todayUtc.getTime()) / (1000 * 60 * 60 * 24));
+          const dueDateStr = rawDue.toISOString().split("T")[0];
 
           let urgencyStatus: "OVERDUE" | "DUE_TODAY" | "DUE_SOON";
           if (diffDays < 0) {
@@ -93,7 +93,7 @@ export class DashboardService {
             id: inv.id,
             invoiceNumber: inv.invoiceNumber,
             invoiceDate: inv.invoiceDate.toISOString().split("T")[0],
-            dueDate: dueDate.toISOString().split("T")[0],
+            dueDate: dueDateStr,
             hasExplicitDueDate: true,
             daysRemaining: diffDays,
             urgencyStatus,
@@ -129,11 +129,10 @@ export class DashboardService {
 
         for (const bill of purchaseInvoices) {
           if (!bill.dueDate) continue;
-          const dueDate = new Date(bill.dueDate);
-          dueDate.setHours(0, 0, 0, 0);
-
-          const diffTime = dueDate.getTime() - today.getTime();
-          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+          const rawDue = new Date(bill.dueDate);
+          const dueUtc = new Date(Date.UTC(rawDue.getUTCFullYear(), rawDue.getUTCMonth(), rawDue.getUTCDate()));
+          const diffDays = Math.round((dueUtc.getTime() - todayUtc.getTime()) / (1000 * 60 * 60 * 24));
+          const dueDateStr = rawDue.toISOString().split("T")[0];
 
           let urgencyStatus: "OVERDUE" | "DUE_TODAY" | "DUE_SOON";
           if (diffDays < 0) {
@@ -151,7 +150,7 @@ export class DashboardService {
             id: bill.id,
             invoiceNumber: bill.vendorInvoiceNumber || "Bill",
             invoiceDate: bill.invoiceDate.toISOString().split("T")[0],
-            dueDate: dueDate.toISOString().split("T")[0],
+            dueDate: dueDateStr,
             hasExplicitDueDate: true,
             daysRemaining: diffDays,
             urgencyStatus,
