@@ -868,19 +868,95 @@ export class PurchasesService {
             items: {
               include: {
                 item: { select: { id: true, name: true, nameGujarati: true } },
+                returnItems: true,
+              },
+            },
+            returns: {
+              select: {
+                id: true,
+                returnNumber: true,
+                grandTotal: true,
+                createdAt: true,
+                items: true,
               },
             },
           },
           orderBy: { invoiceDate: "desc" },
-          take: dto.limit ? Number(dto.limit) : 50,
-          skip: dto.offset ? Number(dto.offset) : 0,
+          take: (dto as any).availableForReturnOnly
+            ? undefined
+            : dto.limit
+              ? Number(dto.limit)
+              : 50,
+          skip: (dto as any).availableForReturnOnly
+            ? undefined
+            : dto.offset
+              ? Number(dto.offset)
+              : 0,
         }),
         tx.purchaseInvoice.count({ where }),
       ]);
 
+      let mappedInvoices = invoices.map((inv: any) => {
+        const returnedAmount = (inv.returns || [])
+          .filter((r: any) => r.status !== "CANCELLED")
+          .reduce((sum: number, r: any) => sum + Number(r.grandTotal || 0), 0);
+
+        let totalOriginalQty = 0;
+        let totalReturnedQty = 0;
+
+        const itemsWithReturnStatus = (inv.items || []).map((line: any) => {
+          const originalQty = Number(line.quantity || 0);
+          const returnedQty = (line.returnItems || []).reduce(
+            (sum: number, retItem: any) => sum + Number(retItem.quantity || 0),
+            0,
+          );
+          const remainingQty = Math.max(0, originalQty - returnedQty);
+          totalOriginalQty += originalQty;
+          totalReturnedQty += returnedQty;
+
+          return {
+            ...line,
+            returnedQuantity: returnedQty,
+            remainingQuantity: remainingQty,
+            isFullyReturned: remainingQty <= 0.0001,
+          };
+        });
+
+        const totalRemainingQty = Math.max(0, totalOriginalQty - totalReturnedQty);
+        const grandTotalNum = Number(inv.grandTotal || 0);
+        const isFullyReturned =
+          (totalOriginalQty > 0 && totalRemainingQty <= 0.0001) ||
+          returnedAmount >= grandTotalNum - 0.01;
+
+        const outstandingBalance = Math.max(0, Number(inv.balanceAmount || 0));
+        const netGrandTotal = Math.max(0, grandTotalNum - returnedAmount);
+
+        return {
+          ...inv,
+          items: itemsWithReturnStatus,
+          returnedAmount,
+          netGrandTotal,
+          outstandingBalance,
+          isFullyReturned,
+          totalRemainingQty,
+        };
+      });
+
+      if (
+        (dto as any).availableForReturnOnly === "true" ||
+        (dto as any).availableForReturnOnly === true
+      ) {
+        mappedInvoices = mappedInvoices.filter(
+          (inv: any) => !inv.isFullyReturned && inv.totalRemainingQty > 0.0001,
+        );
+      }
+
       return {
-        items: invoices,
-        total,
+        items: mappedInvoices,
+        data: mappedInvoices,
+        total: (dto as any).availableForReturnOnly
+          ? mappedInvoices.length
+          : total,
         limit: dto.limit ? Number(dto.limit) : 50,
         offset: dto.offset ? Number(dto.offset) : 0,
       };
@@ -1201,13 +1277,23 @@ export class PurchasesService {
                 where: { companyId: tenant.companyId },
               })
             )?.id;
-        }
-      }
 
-      if (!warehouseId) {
-        throw new BadRequestException(
-          "Warehouse is required for stock deduction.",
-        );
+          if (!warehouseId) {
+            const resolvedBranchId = invoice.branchId || tenant.branchId;
+            if (resolvedBranchId) {
+              const newWh = await tx.warehouse.create({
+                data: {
+                  organizationId: tenant.organizationId,
+                  companyId: tenant.companyId,
+                  branchId: resolvedBranchId,
+                  name: "Main Warehouse",
+                  isDefault: true,
+                },
+              });
+              warehouseId = newWh.id;
+            }
+          }
+        }
       }
 
       // 7. Generate guaranteed-unique Return Number (Debit Note number)
@@ -1620,14 +1706,24 @@ export class PurchasesService {
         }
       }
 
-      // 11. Reconcile Purchase Invoice Balance.
-      // A return larger than the unpaid balance is a credit owed by the supplier.
+      // 11. Reconcile Purchase Invoice Balance & Status.
       const currentBalance = toDecimal(invoice.balanceAmount);
+      const currentPaid = toDecimal(invoice.paidAmount);
       const newBalance = currentBalance.minus(grandTotal);
+
+      let newPaid = currentPaid;
+      if (newBalance.lt(0) && currentPaid.gt(0)) {
+        const excess = grandTotal.minus(currentBalance);
+        newPaid = Decimal.max(0, currentPaid.minus(excess));
+      }
+
+      const finalBalance = Decimal.max(0, newBalance);
+
       await tx.purchaseInvoice.update({
         where: { id: invoice.id },
         data: {
-          balanceAmount: newBalance.toFixed(2),
+          balanceAmount: finalBalance.toFixed(2),
+          paidAmount: newPaid.toFixed(2),
         },
       });
 

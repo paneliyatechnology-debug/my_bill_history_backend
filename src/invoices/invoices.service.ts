@@ -1150,27 +1150,95 @@ export class InvoicesService {
             party: {
               select: { id: true, name: true, gstin: true, phone: true },
             },
-            items: true,
+            items: {
+              include: {
+                item: true,
+                returnItems: true,
+              },
+            },
+            returns: {
+              select: {
+                id: true,
+                returnNumber: true,
+                grandTotal: true,
+                status: true,
+                createdAt: true,
+                items: true,
+              },
+            },
           },
           orderBy: { createdAt: "desc" },
-          skip,
-          take: limit,
+          skip: (query as any).availableForReturnOnly ? undefined : skip,
+          take: (query as any).availableForReturnOnly ? undefined : limit,
         }),
         tx.salesInvoice.count({ where }),
       ]);
 
-      const mappedItems = items.map((inv) => ({
-        ...inv,
-        ...buildInvoiceUrls(inv.id),
-      }));
+      let mappedItems = items.map((inv: any) => {
+        const returnedAmount = (inv.returns || [])
+          .filter((r: any) => r.status !== "CANCELLED")
+          .reduce((sum: number, r: any) => sum + Number(r.grandTotal || 0), 0);
+
+        let totalOriginalQty = 0;
+        let totalReturnedQty = 0;
+
+        const itemsWithReturnStatus = (inv.items || []).map((line: any) => {
+          const originalQty = Number(line.quantity || 0);
+          const returnedQty = (line.returnItems || []).reduce(
+            (sum: number, retItem: any) => sum + Number(retItem.quantity || 0),
+            0,
+          );
+          const remainingQty = Math.max(0, originalQty - returnedQty);
+          totalOriginalQty += originalQty;
+          totalReturnedQty += returnedQty;
+
+          return {
+            ...line,
+            returnedQuantity: returnedQty,
+            remainingQuantity: remainingQty,
+            isFullyReturned: remainingQty <= 0.0001,
+          };
+        });
+
+        const totalRemainingQty = Math.max(0, totalOriginalQty - totalReturnedQty);
+        const grandTotalNum = Number(inv.grandTotal || 0);
+        const isFullyReturned =
+          (totalOriginalQty > 0 && totalRemainingQty <= 0.0001) ||
+          returnedAmount >= grandTotalNum - 0.01;
+
+        const outstandingBalance = Math.max(0, Number(inv.balanceAmount || 0));
+        const netGrandTotal = Math.max(0, grandTotalNum - returnedAmount);
+
+        return {
+          ...inv,
+          items: itemsWithReturnStatus,
+          returnedAmount,
+          netGrandTotal,
+          outstandingBalance,
+          isFullyReturned,
+          totalRemainingQty,
+          ...buildInvoiceUrls(inv.id),
+        };
+      });
+
+      if (
+        (query as any).availableForReturnOnly === "true" ||
+        (query as any).availableForReturnOnly === true
+      ) {
+        mappedItems = mappedItems.filter(
+          (inv: any) => !inv.isFullyReturned && inv.totalRemainingQty > 0.0001,
+        );
+      }
 
       return {
         items: mappedItems,
         data: mappedItems,
-        total,
+        total: (query as any).availableForReturnOnly ? mappedItems.length : total,
         page,
         limit,
-        totalPages: Math.ceil(total / limit),
+        totalPages: (query as any).availableForReturnOnly
+          ? 1
+          : Math.ceil(total / limit),
       };
     });
   }
@@ -2902,9 +2970,15 @@ export class InvoicesService {
     dto: CreateSalesReturnDto,
     tenant: TenantContext,
   ): Promise<any> {
-    if (!dto.items || dto.items.length === 0) {
+    const isAmountBased = dto.creditNoteType === "AMOUNT_BASED";
+    if (!isAmountBased && (!dto.items || dto.items.length === 0)) {
       throw new BadRequestException(
-        "Sales return must contain at least one line item.",
+        "Sales return / credit note must contain at least one line item.",
+      );
+    }
+    if (isAmountBased && (!dto.items || dto.items.length === 0) && !dto.amount) {
+      throw new BadRequestException(
+        "Amount-based credit note must specify an adjustment amount.",
       );
     }
 
@@ -2988,6 +3062,7 @@ export class InvoicesService {
       const returnedQtyMap = new Map<string, Decimal>();
       for (const ret of invoice.returns) {
         for (const itm of ret.items) {
+          if (!itm.salesItemId) continue;
           const prev = returnedQtyMap.get(itm.salesItemId) || new Decimal(0);
           returnedQtyMap.set(
             itm.salesItemId,
@@ -3006,8 +3081,9 @@ export class InvoicesService {
       let sumIgst = new Decimal(0);
 
       const returnItemsData: Array<{
-        salesItemId: string;
-        itemId: string;
+        salesItemId?: string;
+        itemId?: string;
+        description?: string;
         quantity: Decimal;
         unitPrice: Decimal;
         taxableAmount: Decimal;
@@ -3019,85 +3095,150 @@ export class InvoicesService {
         disposition?: string;
       }> = [];
 
-      for (const line of dto.items) {
-        const qty = toDecimal(line.quantity);
-        if (qty.lte(0)) {
+      const isCommercial = dto.gstCategory === "COMMERCIAL";
+
+      if (isAmountBased) {
+        const rawAmount = toDecimal(
+          dto.amount || (dto.items && dto.items[0]?.taxableAmount) || 0,
+        );
+        if (rawAmount.lte(0)) {
           throw new BadRequestException(
-            "Return quantity must be strictly greater than 0.",
+            "Adjustment amount must be strictly greater than 0.",
           );
         }
 
-        const targetId = line.salesItemId || line.invoiceItemId;
-        const origLine = invoice.items.find((i) => i.id === targetId);
-        if (!origLine) {
+        const taxRate = isCommercial
+          ? new Decimal(0)
+          : toDecimal(dto.taxRate || (dto.items && dto.items[0]?.taxRate) || 0);
+
+        sumTaxable = rawAmount;
+        if (!isCommercial && taxRate.gt(0)) {
+          const taxAmount = sumTaxable
+            .times(taxRate)
+            .dividedBy(100)
+            .toDecimalPlaces(2);
+          if (isIntraState) {
+            sumCgst = taxAmount.dividedBy(2).toDecimalPlaces(2);
+            sumSgst = taxAmount.minus(sumCgst);
+          } else {
+            sumIgst = taxAmount;
+          }
+        }
+
+        const totalAmount = sumTaxable.plus(sumCgst).plus(sumSgst).plus(sumIgst);
+        if (totalAmount.gt(toDecimal(invoice.grandTotal))) {
           throw new BadRequestException(
-            `Sales line item ${targetId} not found in this invoice.`,
+            `Credit amount ${totalAmount.toFixed(2)} exceeds original invoice total ${invoice.grandTotal}.`,
           );
         }
-
-        const alreadyReturned =
-          returnedQtyMap.get(origLine.id) || new Decimal(0);
-        const originalQty = toDecimal(origLine.quantity);
-        const availableQty = originalQty.minus(alreadyReturned);
-
-        if (availableQty.lte(0)) {
-          throw new BadRequestException(
-            `Item ${origLine.item.name} has already been fully returned.`,
-          );
-        }
-
-        if (qty.gt(availableQty)) {
-          throw new BadRequestException(
-            `Return quantity ${qty.toFixed(2)} exceeds remaining returnable quantity ${availableQty.toFixed(2)} for item ${origLine.item.name}.`,
-          );
-        }
-
-        // Update running tracker in case DTO has duplicate lines for same item
-        returnedQtyMap.set(origLine.id, alreadyReturned.plus(qty));
-
-        const unitPrice = toDecimal(origLine.unitPrice);
-        const taxable = qty.times(unitPrice).toDecimalPlaces(2);
-        const taxRate = toDecimal(origLine.taxRate);
-        const taxAmount = taxable
-          .times(taxRate)
-          .dividedBy(100)
-          .toDecimalPlaces(2);
-
-        let cgst = new Decimal(0);
-        let sgst = new Decimal(0);
-        let igst = new Decimal(0);
-
-        const lineIsIntra =
-          origLine.cgstAmount.gt(0) ||
-          origLine.sgstAmount.gt(0) ||
-          isIntraState;
-        if (lineIsIntra && !origLine.igstAmount.gt(0)) {
-          cgst = taxAmount.dividedBy(2).toDecimalPlaces(2);
-          sgst = taxAmount.minus(cgst);
-        } else {
-          igst = taxAmount;
-        }
-
-        const totalAmount = taxable.plus(cgst).plus(sgst).plus(igst);
-
-        sumTaxable = sumTaxable.plus(taxable);
-        sumCgst = sumCgst.plus(cgst);
-        sumSgst = sumSgst.plus(sgst);
-        sumIgst = sumIgst.plus(igst);
 
         returnItemsData.push({
-          salesItemId: origLine.id,
-          itemId: origLine.itemId,
-          quantity: qty,
-          unitPrice,
-          taxableAmount: taxable,
+          salesItemId: invoice.items[0]?.id,
+          itemId: invoice.items[0]?.itemId,
+          description:
+            dto.reason ||
+            (dto.items && dto.items[0]?.description) ||
+            "Credit Note Adjustment",
+          quantity: new Decimal(1),
+          unitPrice: sumTaxable,
+          taxableAmount: sumTaxable,
           taxRate,
-          cgstAmount: cgst,
-          sgstAmount: sgst,
-          igstAmount: igst,
+          cgstAmount: sumCgst,
+          sgstAmount: sumSgst,
+          igstAmount: sumIgst,
           totalAmount,
-          disposition: line.disposition,
         });
+      } else {
+        for (const line of dto.items || []) {
+          const qty = toDecimal(line.quantity || 1);
+          if (qty.lte(0)) {
+            throw new BadRequestException(
+              "Return quantity must be strictly greater than 0.",
+            );
+          }
+
+          const targetId = line.salesItemId || line.invoiceItemId;
+          const origLine = invoice.items.find((i) => i.id === targetId);
+          if (!origLine) {
+            throw new BadRequestException(
+              `Sales line item ${targetId} not found in this invoice.`,
+            );
+          }
+
+          const alreadyReturned =
+            returnedQtyMap.get(origLine.id) || new Decimal(0);
+          const originalQty = toDecimal(origLine.quantity);
+          const availableQty = originalQty.minus(alreadyReturned);
+
+          if (availableQty.lte(0)) {
+            throw new BadRequestException(
+              `Item ${origLine.item.name} has already been fully returned.`,
+            );
+          }
+
+          if (qty.gt(availableQty)) {
+            throw new BadRequestException(
+              `Return quantity ${qty.toFixed(2)} exceeds remaining returnable quantity ${availableQty.toFixed(2)} for item ${origLine.item.name}.`,
+            );
+          }
+
+          // Update running tracker in case DTO has duplicate lines for same item
+          returnedQtyMap.set(origLine.id, alreadyReturned.plus(qty));
+
+          const unitPrice = toDecimal(
+            line.unitPrice !== undefined ? line.unitPrice : origLine.unitPrice,
+          );
+          const taxable = qty.times(unitPrice).toDecimalPlaces(2);
+          const taxRate = isCommercial
+            ? new Decimal(0)
+            : toDecimal(line.taxRate !== undefined ? line.taxRate : origLine.taxRate);
+          const taxAmount = isCommercial
+            ? new Decimal(0)
+            : taxable
+                .times(taxRate)
+                .dividedBy(100)
+                .toDecimalPlaces(2);
+
+          let cgst = new Decimal(0);
+          let sgst = new Decimal(0);
+          let igst = new Decimal(0);
+
+          if (!isCommercial) {
+            const lineIsIntra =
+              origLine.cgstAmount.gt(0) ||
+              origLine.sgstAmount.gt(0) ||
+              isIntraState;
+            if (lineIsIntra && !origLine.igstAmount.gt(0)) {
+              cgst = taxAmount.dividedBy(2).toDecimalPlaces(2);
+              sgst = taxAmount.minus(cgst);
+            } else {
+              igst = taxAmount;
+            }
+          }
+
+          const totalAmount = taxable.plus(cgst).plus(sgst).plus(igst);
+
+          sumTaxable = sumTaxable.plus(taxable);
+          sumCgst = sumCgst.plus(cgst);
+          sumSgst = sumSgst.plus(sgst);
+          sumIgst = sumIgst.plus(igst);
+
+          returnItemsData.push({
+            salesItemId: origLine.id,
+            itemId: origLine.itemId,
+            description:
+              line.description || origLine.description || origLine.item?.name,
+            quantity: qty,
+            unitPrice,
+            taxableAmount: taxable,
+            taxRate,
+            cgstAmount: cgst,
+            sgstAmount: sgst,
+            igstAmount: igst,
+            totalAmount,
+            disposition: line.disposition || dto.disposition,
+          });
+        }
       }
 
       const grandTotal = sumTaxable.plus(sumCgst).plus(sumSgst).plus(sumIgst);
@@ -3125,6 +3266,22 @@ export class InvoicesService {
                 where: { companyId: tenant.companyId },
               })
             )?.id;
+
+          if (!warehouseId) {
+            const resolvedBranchId = invoice.branchId || tenant.branchId;
+            if (resolvedBranchId) {
+              const newWh = await tx.warehouse.create({
+                data: {
+                  organizationId: tenant.organizationId,
+                  companyId: tenant.companyId,
+                  branchId: resolvedBranchId,
+                  name: "Main Warehouse",
+                  isDefault: true,
+                },
+              });
+              warehouseId = newWh.id;
+            }
+          }
         }
       }
 
@@ -3139,8 +3296,14 @@ export class InvoicesService {
           .filter(Boolean) as string[],
       );
 
+      const docType = dto.docType || "SALES_RETURN";
       const year = returnDate.getFullYear();
-      const defaultPrefix = `CN-${year}-`;
+      const defaultPrefix =
+        docType === "CREDIT_NOTE"
+          ? `CN-${year}-`
+          : dto.returnNumber?.startsWith("SR-")
+            ? `SR-${year}-`
+            : `CN-${year}-`;
 
       let maxSeq = 0;
       for (const r of existingReturns) {
@@ -3184,6 +3347,19 @@ export class InvoicesService {
         returnNumber = generated;
       }
 
+      const settlementMode = dto.settlementMode || "CUSTOMER_CREDIT";
+      let refundAmount = new Decimal(0);
+      let allocatedAmount = new Decimal(0);
+      let remainingCredit = grandTotal;
+
+      if (settlementMode === "REFUND_CASH" || settlementMode === "REFUND_BANK") {
+        refundAmount = grandTotal;
+        remainingCredit = new Decimal(0);
+      } else if (settlementMode === "ADJUST_OUTSTANDING") {
+        allocatedAmount = grandTotal;
+        remainingCredit = new Decimal(0);
+      }
+
       // 8. Create SalesReturn and SalesReturnItem records
       const salesReturn = await tx.salesReturn.create({
         data: {
@@ -3195,18 +3371,39 @@ export class InvoicesService {
           partyId: invoice.partyId,
           returnNumber,
           returnDate,
-          reason: dto.reason || "Goods returned by customer",
-          reasonGujarati: dto.reasonGujarati || "ગ્રાહક દ્વારા માલ પરત મળ્યો",
+          reason:
+            dto.reason ||
+            (docType === "CREDIT_NOTE"
+              ? "Credit note adjustment"
+              : "Goods returned by customer"),
+          reasonGujarati:
+            dto.reasonGujarati ||
+            (docType === "CREDIT_NOTE"
+              ? "ક્રેડિટ નોટ જારી કરી"
+              : "ગ્રાહક દ્વારા માલ પરત મળ્યો"),
           taxableAmount: sumTaxable.toFixed(2),
           cgstAmount: sumCgst.toFixed(2),
           sgstAmount: sumSgst.toFixed(2),
           igstAmount: sumIgst.toFixed(2),
           grandTotal: grandTotal.toFixed(2),
           status: "ISSUED",
+          docType,
+          creditNoteType:
+            dto.creditNoteType || (isAmountBased ? "AMOUNT_BASED" : "ITEM_BASED"),
+          gstCategory: dto.gstCategory || "SECTION_34",
+          disposition: dto.disposition || "SELLABLE",
+          warehouseId,
+          linkedReturnId: dto.linkedReturnId || null,
+          settlementMode,
+          refundAmount: refundAmount.toFixed(2),
+          allocatedAmount: allocatedAmount.toFixed(2),
+          remainingCredit: remainingCredit.toFixed(2),
+          notes: dto.notes || null,
           items: {
             create: returnItemsData.map((item) => ({
-              salesItemId: item.salesItemId,
-              itemId: item.itemId,
+              salesItemId: item.salesItemId || null,
+              itemId: item.itemId || null,
+              description: item.description || null,
               quantity: item.quantity.toFixed(4),
               unitPrice: item.unitPrice.toFixed(4),
               taxableAmount: item.taxableAmount.toFixed(2),
@@ -3224,13 +3421,17 @@ export class InvoicesService {
           },
           party: true,
           salesInvoice: true,
+          warehouse: true,
         },
       });
 
       // 9. Stock Restoration (SALES_RETURN) if accepted and warehouse available
-      const shouldRestore = dto.restoreStock !== false;
+      // Note: Credit Note must NEVER modify physical stock!
+      const shouldRestore =
+        docType !== "CREDIT_NOTE" && dto.restoreStock !== false;
       if (shouldRestore && warehouseId) {
         for (const line of returnItemsData) {
+          if (!line.itemId) continue;
           if (
             line.disposition === "DAMAGED" ||
             line.disposition === "SCRAPPED"
@@ -3424,95 +3625,154 @@ export class InvoicesService {
 
         let seq = 1;
 
-        // Dr: Sales Account (reducing sales revenue)
-        journalLines.push({
-          accountId: salesAccount.id,
-          debitAmount: sumTaxable,
-          creditAmount: new Decimal(0),
-          lineNarration: `Sales return against invoice ${invoice.invoiceNumber}`,
-          sequenceOrder: seq++,
-        });
-
-        // Dr: Output CGST Reversal
-        if (sumCgst.gt(0)) {
-          const acc =
-            outputCgstAccount ||
-            (await tx.ledgerAccount.findFirst({
-              where: {
+        if (isCommercial) {
+          // Commercial Credit Note: Debit Commercial Discounts & Rebates, Credit Customer Account
+          let commDiscountAcc = await tx.ledgerAccount.findFirst({
+            where: {
+              companyId: tenant.companyId,
+              OR: [
+                { name: "Commercial Discounts & Rebates" },
+                { name: { contains: "Commercial Discount", mode: "insensitive" } },
+                { code: "5150" },
+              ],
+            },
+          });
+          if (!commDiscountAcc) {
+            let expGroup = await tx.ledgerGroup.findFirst({
+              where: { companyId: tenant.companyId, nature: "EXPENSE" },
+            });
+            if (!expGroup) {
+              expGroup = await tx.ledgerGroup.create({
+                data: {
+                  organizationId: tenant.organizationId,
+                  companyId: tenant.companyId,
+                  name: "Indirect Expenses",
+                  nature: "EXPENSE",
+                  isSystem: true,
+                },
+              });
+            }
+            commDiscountAcc = await tx.ledgerAccount.create({
+              data: {
+                organizationId: tenant.organizationId,
                 companyId: tenant.companyId,
-                OR: [
-                  { name: { contains: "Output CGST", mode: "insensitive" } },
-                  { code: "2110" },
-                ],
+                groupId: expGroup.id,
+                name: "Commercial Discounts & Rebates",
+                code: "5150",
+                openingType: "DR",
+                openingBalance: "0.00",
+                currentBalance: "0.00",
               },
-            }));
-          if (acc) {
-            journalLines.push({
-              accountId: acc.id,
-              debitAmount: sumCgst,
-              creditAmount: new Decimal(0),
-              lineNarration: `CGST Output reversal on credit note ${returnNumber}`,
-              sequenceOrder: seq++,
             });
           }
-        }
 
-        // Dr: Output SGST Reversal
-        if (sumSgst.gt(0)) {
-          const acc =
-            outputSgstAccount ||
-            (await tx.ledgerAccount.findFirst({
-              where: {
-                companyId: tenant.companyId,
-                OR: [
-                  { name: { contains: "Output SGST", mode: "insensitive" } },
-                  { code: "2120" },
-                ],
-              },
-            }));
-          if (acc) {
-            journalLines.push({
-              accountId: acc.id,
-              debitAmount: sumSgst,
-              creditAmount: new Decimal(0),
-              lineNarration: `SGST Output reversal on credit note ${returnNumber}`,
-              sequenceOrder: seq++,
-            });
+          journalLines.push({
+            accountId: commDiscountAcc.id,
+            debitAmount: grandTotal,
+            creditAmount: new Decimal(0),
+            lineNarration: `Commercial discount on credit note ${returnNumber}`,
+            sequenceOrder: seq++,
+          });
+
+          journalLines.push({
+            accountId: customerAccount.id,
+            debitAmount: new Decimal(0),
+            creditAmount: grandTotal,
+            lineNarration: `Commercial credit note against invoice ${invoice.invoiceNumber} (${invoice.party.name})`,
+            sequenceOrder: seq++,
+          });
+        } else {
+          // GST Section 34 / Sales Return: Reverse Sales and Output GST
+          // Dr: Sales Account (reducing sales revenue)
+          journalLines.push({
+            accountId: salesAccount.id,
+            debitAmount: sumTaxable,
+            creditAmount: new Decimal(0),
+            lineNarration: `Sales return/adjustment against invoice ${invoice.invoiceNumber}`,
+            sequenceOrder: seq++,
+          });
+
+          // Dr: Output CGST Reversal
+          if (sumCgst.gt(0)) {
+            const acc =
+              outputCgstAccount ||
+              (await tx.ledgerAccount.findFirst({
+                where: {
+                  companyId: tenant.companyId,
+                  OR: [
+                    { name: { contains: "Output CGST", mode: "insensitive" } },
+                    { code: "2110" },
+                  ],
+                },
+              }));
+            if (acc) {
+              journalLines.push({
+                accountId: acc.id,
+                debitAmount: sumCgst,
+                creditAmount: new Decimal(0),
+                lineNarration: `CGST Output reversal on credit note ${returnNumber}`,
+                sequenceOrder: seq++,
+              });
+            }
           }
-        }
 
-        // Dr: Output IGST Reversal
-        if (sumIgst.gt(0)) {
-          const acc =
-            outputIgstAccount ||
-            (await tx.ledgerAccount.findFirst({
-              where: {
-                companyId: tenant.companyId,
-                OR: [
-                  { name: { contains: "Output IGST", mode: "insensitive" } },
-                  { code: "2130" },
-                ],
-              },
-            }));
-          if (acc) {
-            journalLines.push({
-              accountId: acc.id,
-              debitAmount: sumIgst,
-              creditAmount: new Decimal(0),
-              lineNarration: `IGST Output reversal on credit note ${returnNumber}`,
-              sequenceOrder: seq++,
-            });
+          // Dr: Output SGST Reversal
+          if (sumSgst.gt(0)) {
+            const acc =
+              outputSgstAccount ||
+              (await tx.ledgerAccount.findFirst({
+                where: {
+                  companyId: tenant.companyId,
+                  OR: [
+                    { name: { contains: "Output SGST", mode: "insensitive" } },
+                    { code: "2120" },
+                  ],
+                },
+              }));
+            if (acc) {
+              journalLines.push({
+                accountId: acc.id,
+                debitAmount: sumSgst,
+                creditAmount: new Decimal(0),
+                lineNarration: `SGST Output reversal on credit note ${returnNumber}`,
+                sequenceOrder: seq++,
+              });
+            }
           }
-        }
 
-        // Cr: Customer Account (reducing accounts receivable asset)
-        journalLines.push({
-          accountId: customerAccount.id,
-          debitAmount: new Decimal(0),
-          creditAmount: grandTotal,
-          lineNarration: `Credit Note against invoice ${invoice.invoiceNumber} (${invoice.party.name})`,
-          sequenceOrder: seq++,
-        });
+          // Dr: Output IGST Reversal
+          if (sumIgst.gt(0)) {
+            const acc =
+              outputIgstAccount ||
+              (await tx.ledgerAccount.findFirst({
+                where: {
+                  companyId: tenant.companyId,
+                  OR: [
+                    { name: { contains: "Output IGST", mode: "insensitive" } },
+                    { code: "2130" },
+                  ],
+                },
+              }));
+            if (acc) {
+              journalLines.push({
+                accountId: acc.id,
+                debitAmount: sumIgst,
+                creditAmount: new Decimal(0),
+                lineNarration: `IGST Output reversal on credit note ${returnNumber}`,
+                sequenceOrder: seq++,
+              });
+            }
+          }
+
+          // Cr: Customer Account (reducing accounts receivable asset)
+          journalLines.push({
+            accountId: customerAccount.id,
+            debitAmount: new Decimal(0),
+            creditAmount: grandTotal,
+            lineNarration: `Credit Note against invoice ${invoice.invoiceNumber} (${invoice.party.name})`,
+            sequenceOrder: seq++,
+          });
+        }
 
         // Validate double-entry debits == credits invariant
         const validation = validateJournalLines(
@@ -3538,11 +3798,11 @@ export class InvoicesService {
             voucherNumber,
             voucherDate: returnDate,
             referenceNo: returnNumber,
-            narration: `Credit note ${returnNumber} for return against invoice ${invoice.invoiceNumber}`,
-            narrationGujarati: `ક્રેડિટ નોટ ${returnNumber} - ઇનવોઇસ ${invoice.invoiceNumber} સામે વેચાણ પરત`,
+            narration: `${docType === "CREDIT_NOTE" ? "Credit note" : "Sales return"} ${returnNumber} against invoice ${invoice.invoiceNumber}`,
+            narrationGujarati: `${docType === "CREDIT_NOTE" ? "ક્રેડિટ નોટ" : "વેચાણ પરત"} ${returnNumber} - ઇનવોઇસ ${invoice.invoiceNumber} સામે`,
             totalAmount: grandTotal.toFixed(2),
             isAutoGenerated: true,
-            sourceDocument: "SALES_RETURN",
+            sourceDocument: docType === "CREDIT_NOTE" ? "CREDIT_NOTE" : "SALES_RETURN",
             sourceEntityId: salesReturn.id,
             journalEntries: {
               create: journalLines.map((jl) => ({
@@ -3581,18 +3841,115 @@ export class InvoicesService {
           data: { voucherId: voucher.id },
         });
         salesReturn.voucherId = voucher.id;
+
+        // If settlementMode is REFUND_CASH or REFUND_BANK, post refund voucher
+        if (settlementMode === "REFUND_CASH" || settlementMode === "REFUND_BANK") {
+          const searchKeyword = settlementMode === "REFUND_CASH" ? "Cash" : "Bank";
+          const refundAssetAcc = await tx.ledgerAccount.findFirst({
+            where: {
+              companyId: tenant.companyId,
+              OR: [
+                { name: { contains: searchKeyword, mode: "insensitive" } },
+                { code: settlementMode === "REFUND_CASH" ? "1010" : "1020" },
+              ],
+            },
+          });
+          if (refundAssetAcc) {
+            const refundVoucherNumber = `REF-${returnNumber}`;
+            await tx.voucher.create({
+              data: {
+                organizationId: tenant.organizationId,
+                companyId: tenant.companyId,
+                financialYearId: fy.id,
+                voucherType: VoucherType.PAYMENT,
+                voucherNumber: refundVoucherNumber,
+                voucherDate: returnDate,
+                referenceNo: returnNumber,
+                narration: `Refund (${settlementMode === "REFUND_CASH" ? "Cash" : "Bank"}) for ${docType} ${returnNumber}`,
+                totalAmount: grandTotal.toFixed(2),
+                isAutoGenerated: true,
+                sourceDocument: "SALES_RETURN_REFUND",
+                sourceEntityId: salesReturn.id,
+                journalEntries: {
+                  create: [
+                    {
+                      accountId: customerAccount.id,
+                      debitAmount: grandTotal.toFixed(2),
+                      creditAmount: "0.00",
+                      lineNarration: `Refund payment to customer for ${returnNumber}`,
+                      sequenceOrder: 1,
+                    },
+                    {
+                      accountId: refundAssetAcc.id,
+                      debitAmount: "0.00",
+                      creditAmount: grandTotal.toFixed(2),
+                      lineNarration: `Payout from ${refundAssetAcc.name} for ${returnNumber}`,
+                      sequenceOrder: 2,
+                    },
+                  ],
+                },
+              },
+            });
+
+            // Update ledger account balances for refund
+            const custBal = applyTransactionToBalance(
+              AccountNature.ASSET,
+              customerAccount.currentBalance.toString(),
+              grandTotal,
+              new Decimal(0),
+            );
+            await tx.ledgerAccount.update({
+              where: { id: customerAccount.id },
+              data: { currentBalance: custBal.toNumber() },
+            });
+
+            const assetAccDetail = await tx.ledgerAccount.findUnique({
+              where: { id: refundAssetAcc.id },
+              include: { group: true },
+            });
+            if (assetAccDetail?.group) {
+              const assetBal = applyTransactionToBalance(
+                assetAccDetail.group.nature as any,
+                assetAccDetail.currentBalance.toString(),
+                new Decimal(0),
+                grandTotal,
+              );
+              await tx.ledgerAccount.update({
+                where: { id: refundAssetAcc.id },
+                data: { currentBalance: assetBal.toNumber() },
+              });
+            }
+          }
+        }
       }
 
-      // 11. Reconcile Sales Invoice Balance.
-      // A return larger than the unpaid balance is a credit owed to the customer.
-      // Clamping at zero hid that credit from outstanding while the ledger still recorded it.
+      // 11. Reconcile Sales Invoice Balance & Status.
       const currentBalance = toDecimal(invoice.balanceAmount);
+      const currentPaid = toDecimal(invoice.paidAmount);
       const newBalance = currentBalance.minus(grandTotal);
+
+      // If the invoice was already paid (fully or partially), the return reduces the paid amount
+      // "invoice ni amount total mathi less if paid hoi"
+      let newPaid = currentPaid;
+      if (newBalance.lt(0) && currentPaid.gt(0)) {
+        const excess = grandTotal.minus(currentBalance);
+        newPaid = Decimal.max(0, currentPaid.minus(excess));
+      }
+
+      const finalBalance = Decimal.max(0, newBalance);
+      let newStatus = invoice.status;
+      if (finalBalance.lte(0.01)) {
+        newStatus = InvoiceStatus.PAID;
+      } else if (newPaid.gt(0)) {
+        newStatus = InvoiceStatus.PARTIALLY_PAID;
+      }
 
       await tx.salesInvoice.update({
         where: { id: invoice.id },
         data: {
-          balanceAmount: newBalance.toFixed(2),
+          balanceAmount: finalBalance.toFixed(2),
+          paidAmount: newPaid.toFixed(2),
+          status: newStatus,
         },
       });
 
@@ -3652,6 +4009,21 @@ export class InvoicesService {
         companyId: tenant.companyId,
       };
 
+      if (dto.docType) {
+        where.docType = dto.docType;
+      }
+      if (dto.warehouseId) {
+        where.warehouseId = dto.warehouseId;
+      }
+      if (dto.settlementMode) {
+        where.settlementMode = dto.settlementMode;
+      }
+      if (dto.gstCategory) {
+        where.gstCategory = dto.gstCategory;
+      }
+      if (dto.disposition) {
+        where.disposition = dto.disposition;
+      }
       if (dto.partyId) {
         where.partyId = dto.partyId;
       }
@@ -3703,6 +4075,9 @@ export class InvoicesService {
             financialYear: {
               select: { id: true, name: true },
             },
+            warehouse: {
+              select: { id: true, name: true },
+            },
             items: {
               include: {
                 item: {
@@ -3719,7 +4094,11 @@ export class InvoicesService {
       ]);
 
       // Calculate next available sequence return number
-      const prefix = `CN-${new Date().getFullYear()}-`;
+      const docType = dto.docType || "SALES_RETURN";
+      const prefix =
+        docType === "CREDIT_NOTE"
+          ? `CN-${new Date().getFullYear()}-`
+          : `SR-${new Date().getFullYear()}-`;
       const existingReturns = await tx.salesReturn.findMany({
         where: { companyId: tenant.companyId },
         select: { returnNumber: true },
@@ -3776,6 +4155,7 @@ export class InvoicesService {
           },
           branch: true,
           financialYear: true,
+          warehouse: true,
         },
       });
 
@@ -3785,6 +4165,89 @@ export class InvoicesService {
 
       return salesReturn;
     });
+  }
+
+  async createCreditNoteFromSalesReturn(
+    returnId: string,
+    tenant: TenantContext,
+  ): Promise<any> {
+    const salesReturn = await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      return tx.salesReturn.findFirst({
+        where: { id: returnId, companyId: tenant.companyId },
+        include: {
+          items: true,
+          salesInvoice: true,
+          party: true,
+        },
+      });
+    });
+
+    if (!salesReturn) {
+      throw new NotFoundException(`Sales return with ID ${returnId} not found.`);
+    }
+
+    if (salesReturn.docType === "CREDIT_NOTE") {
+      throw new BadRequestException("Document is already a Credit Note.");
+    }
+
+    // Check if a linked credit note already exists
+    const existingLinkedNote = await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      return tx.salesReturn.findFirst({
+        where: {
+          companyId: tenant.companyId,
+          docType: "CREDIT_NOTE",
+          linkedReturnId: salesReturn.id,
+        },
+      });
+    });
+
+    if (existingLinkedNote) {
+      throw new BadRequestException(
+        `Credit Note #${existingLinkedNote.returnNumber} has already been issued for this Sales Return.`,
+      );
+    }
+
+    // Create linked Credit Note with restoreStock = false
+    const creditNoteDto: CreateSalesReturnDto = {
+      salesInvoiceId: salesReturn.salesInvoiceId,
+      returnDate: new Date().toISOString(),
+      docType: "CREDIT_NOTE",
+      creditNoteType: "ITEM_BASED",
+      gstCategory: "SECTION_34",
+      reason: `Credit Note for Sales Return #${salesReturn.returnNumber}`,
+      reasonGujarati: `ક્રેડિટ નોટ - વેચાણ પરત #${salesReturn.returnNumber}`,
+      restoreStock: false, // Physical inventory was already restored by Sales Return
+      linkedReturnId: salesReturn.id,
+      items: salesReturn.items.map((i) => ({
+        salesItemId: i.salesItemId || undefined,
+        itemId: i.itemId || undefined,
+        description: i.description || undefined,
+        quantity: i.quantity.toNumber(),
+        unitPrice: i.unitPrice.toNumber(),
+        taxRate: i.taxRate.toNumber(),
+        taxableAmount: i.taxableAmount.toNumber(),
+        cgstAmount: i.cgstAmount.toNumber(),
+        sgstAmount: i.sgstAmount.toNumber(),
+        igstAmount: i.igstAmount.toNumber(),
+        totalAmount: i.totalAmount.toNumber(),
+      })),
+    };
+
+    const creditNote = await this.createSalesReturn(
+      salesReturn.salesInvoiceId,
+      creditNoteDto,
+      tenant,
+    );
+
+    // Link both documents
+    await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      await tx.salesReturn.update({
+        where: { id: salesReturn.id },
+        data: { linkedReturnId: creditNote.id },
+      });
+    });
+
+    return creditNote;
   }
 
   /**
