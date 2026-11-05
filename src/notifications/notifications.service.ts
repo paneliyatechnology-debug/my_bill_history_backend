@@ -568,9 +568,20 @@ export class NotificationsService {
   }
 
   /**
-   * Marks a notification as read.
+   * Marks a notification as read (or all if id is 'all' / 'read-all').
    */
   async markAsRead(id: string, tenant: TenantContext) {
+    if (!id || id.toLowerCase() === "all" || id.toLowerCase() === "read-all") {
+      const res = await this.markAllAsRead(tenant);
+      return {
+        success: true,
+        isRead: true,
+        all: true,
+        updatedCount: res.count,
+        message: "All notifications marked as read",
+      };
+    }
+
     const existing = await this.prisma.notification.findFirst({
       where: {
         id,
@@ -596,9 +607,20 @@ export class NotificationsService {
   }
 
   /**
-   * Marks a notification as unread.
+   * Marks a notification as unread (or all if id is 'all' / 'unread-all').
    */
   async markAsUnread(id: string, tenant: TenantContext) {
+    if (!id || id.toLowerCase() === "all" || id.toLowerCase() === "unread-all") {
+      const res = await this.markAllAsUnread(tenant);
+      return {
+        success: true,
+        isRead: false,
+        all: true,
+        updatedCount: res.count,
+        message: "All notifications marked as unread",
+      };
+    }
+
     const existing = await this.prisma.notification.findFirst({
       where: {
         id,
