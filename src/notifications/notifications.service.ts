@@ -414,7 +414,18 @@ export class NotificationsService {
     };
 
     // Parse status and read/unread flags flexibly across all standard query conventions
-    const statusParam = typeof query?.status === "string" ? query.status.trim().toLowerCase() : undefined;
+    let statusParam: string | undefined;
+    if (typeof query?.status === "string") {
+      statusParam = query.status.trim().toLowerCase();
+    } else if (Array.isArray(query?.status)) {
+      const lowerArr = (query.status as any[]).map((s) =>
+        String(s).toLowerCase().trim(),
+      );
+      statusParam =
+        lowerArr.includes("unread") && lowerArr.includes("read")
+          ? "all"
+          : lowerArr[0];
+    }
     const unreadOnlyVal = query?.unreadOnly;
     const readOnlyVal = query?.readOnly;
     const isReadVal = (query as any)?.isRead;
