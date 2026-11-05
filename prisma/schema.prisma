@@ -763,6 +763,7 @@ model Warehouse {
   transfersFrom  StockTransfer[] @relation("StockTransferFrom")
   transfersTo    StockTransfer[] @relation("StockTransferTo")
   deliveryChallans DeliveryChallan[]
+  salesReturns   SalesReturn[]
 
   @@index([organizationId, companyId])
   @@map("warehouses")
@@ -971,25 +972,40 @@ model SalesReturn {
   status               String            @default("ISSUED") @db.VarChar(20)
   createdAt            DateTime          @default(now()) @map("created_at")
 
+  docType              String            @default("SALES_RETURN") @map("doc_type") @db.VarChar(30)
+  creditNoteType       String?           @map("credit_note_type") @db.VarChar(30) // "ITEM_BASED" | "AMOUNT_BASED"
+  gstCategory          String?           @map("gst_category") @db.VarChar(30) // "SECTION_34" | "COMMERCIAL"
+  disposition          String?           @map("disposition") @db.VarChar(30) // "SELLABLE" | "DAMAGED" | "SCRAPPED"
+  warehouseId          String?           @map("warehouse_id") @db.Uuid
+  linkedReturnId       String?           @map("linked_return_id") @db.Uuid
+  settlementMode       String?           @map("settlement_mode") @db.VarChar(30) // "ADJUST_OUTSTANDING" | "CUSTOMER_CREDIT" | "REFUND_CASH" | "REFUND_BANK" | "PENDING_REFUND"
+  refundAmount         Decimal           @default(0.00) @map("refund_amount") @db.Decimal(15, 2)
+  allocatedAmount      Decimal           @default(0.00) @map("allocated_amount") @db.Decimal(15, 2)
+  remainingCredit      Decimal           @default(0.00) @map("remaining_credit") @db.Decimal(15, 2)
+  notes                String?           @map("notes") @db.Text
+
   company              Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   branch               Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
   financialYear        FinancialYear     @relation(fields: [financialYearId], references: [id], onDelete: Restrict)
   salesInvoice         SalesInvoice      @relation(fields: [salesInvoiceId], references: [id], onDelete: Restrict)
   party                Party             @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  warehouse            Warehouse?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   items                SalesReturnItem[]
 
   @@unique([companyId, returnNumber])
   @@index([organizationId, companyId, returnDate])
   @@index([salesInvoiceId])
+  @@index([docType])
   @@map("sales_returns")
 }
 
 model SalesReturnItem {
   id                   String           @id @default(uuid()) @db.Uuid
   returnId             String           @map("return_id") @db.Uuid
-  salesItemId          String           @map("sales_item_id") @db.Uuid
-  itemId               String           @map("item_id") @db.Uuid
-  quantity             Decimal          @db.Decimal(15, 4)
+  salesItemId          String?          @map("sales_item_id") @db.Uuid
+  itemId               String?          @map("item_id") @db.Uuid
+  description          String?          @map("description") @db.VarChar(255)
+  quantity             Decimal          @default(1.0000) @db.Decimal(15, 4)
   unitPrice            Decimal          @map("unit_price") @db.Decimal(15, 4)
   taxableAmount        Decimal          @map("taxable_amount") @db.Decimal(15, 2)
   taxRate              Decimal          @map("tax_rate") @db.Decimal(5, 2)
@@ -999,8 +1015,8 @@ model SalesReturnItem {
   totalAmount          Decimal          @map("total_amount") @db.Decimal(15, 2)
 
   returnDoc            SalesReturn      @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  salesItem            SalesInvoiceItem @relation(fields: [salesItemId], references: [id], onDelete: Restrict)
-  item                 Item             @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  salesItem            SalesInvoiceItem? @relation(fields: [salesItemId], references: [id], onDelete: Restrict)
+  item                 Item?            @relation(fields: [itemId], references: [id], onDelete: Restrict)
 
   @@index([returnId])
   @@index([salesItemId])

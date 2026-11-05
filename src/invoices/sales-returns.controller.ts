@@ -78,6 +78,22 @@ export class SalesReturnsController {
     return await this.invoicesService.createSalesReturn(invoiceId, dto, tenant);
   }
 
+  @Post(":id/create-credit-note")
+  @HttpCode(HttpStatus.CREATED)
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+    UserRole.BRANCH_MANAGER,
+  )
+  async createCreditNoteFromSalesReturn(
+    @Param("id") id: string,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.invoicesService.createCreditNoteFromSalesReturn(id, tenant);
+  }
+
   @Delete(":id")
   @Roles(
     UserRole.SUPER_ADMIN,
