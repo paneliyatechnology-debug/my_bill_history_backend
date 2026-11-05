@@ -115,7 +115,7 @@ describe("Notifications & Reminders Test Suite", () => {
   });
 
   it("3. Should mark single notification as read and update unread count", async () => {
-    const updated = await notificationsService.markAsRead(testNotificationId, tenant);
+    const updated: any = await notificationsService.markAsRead(testNotificationId, tenant);
     expect(updated.isRead).toBe(true);
     expect(updated.readAt).toBeDefined();
 
@@ -153,7 +153,7 @@ describe("Notifications & Reminders Test Suite", () => {
         token: "test-fcm-device-token-abc123xyz",
         platform: DevicePlatform.ANDROID,
         provider: PushProvider.FCM,
-        deviceName: "Test Android Device Pixel 8",
+        deviceId: "Test Android Device Pixel 8",
         appVersion: "1.0.0",
       },
       tenant,
@@ -336,17 +336,17 @@ describe("Notifications & Reminders Test Suite", () => {
     });
 
     // Mark as read
-    const markedRead = await notificationsService.markAsRead(notif.id, tenant);
+    const markedRead: any = await notificationsService.markAsRead(notif.id, tenant);
     expect(markedRead.isRead).toBe(true);
     expect(markedRead.readAt).not.toBeNull();
 
     // Mark as unread using markAsUnread
-    const markedUnread = await notificationsService.markAsUnread(notif.id, tenant);
+    const markedUnread: any = await notificationsService.markAsUnread(notif.id, tenant);
     expect(markedUnread.isRead).toBe(false);
     expect(markedUnread.readAt).toBeNull();
 
     // Update using unified updateNotification({ isRead: true })
-    const updatedToRead = await notificationsService.updateNotification(
+    const updatedToRead: any = await notificationsService.updateNotification(
       notif.id,
       { isRead: true },
       tenant,
@@ -355,7 +355,7 @@ describe("Notifications & Reminders Test Suite", () => {
     expect(updatedToRead.readAt).not.toBeNull();
 
     // Update using unified updateNotification({ isRead: false })
-    const updatedToUnread = await notificationsService.updateNotification(
+    const updatedToUnread: any = await notificationsService.updateNotification(
       notif.id,
       { isRead: false },
       tenant,
