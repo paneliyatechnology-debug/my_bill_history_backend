@@ -308,6 +308,7 @@ export class PurchasesService {
           partyId: dto.partyId,
           vendorInvoiceNumber: dto.vendorInvoiceNumber.trim(),
           invoiceDate,
+          dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
           placeOfSupply,
           taxableAmount: sumTaxable.toFixed(2),
           cgstAmount: sumCgst.toFixed(2),

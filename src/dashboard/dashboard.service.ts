@@ -24,7 +24,7 @@ export class DashboardService {
     private readonly prisma: DatabaseService,
     private readonly reportsService: ReportsService,
     private readonly vouchersService: VouchersService,
-  ) {}
+  ) { }
 
   async getSummary(tenant: TenantContext, query?: any) {
     return await this.reportsService.getFinancialSummary(tenant, query);
@@ -382,8 +382,8 @@ export class DashboardService {
         query?.item_id ||
         query?.id ||
         (query?.itemWise &&
-        String(query.itemWise) !== "true" &&
-        String(query.itemWise) !== "false"
+          String(query.itemWise) !== "true" &&
+          String(query.itemWise) !== "false"
           ? String(query.itemWise).trim()
           : undefined);
 
@@ -502,35 +502,35 @@ export class DashboardService {
       const voucherPromise = hasItemFilter
         ? Promise.resolve([])
         : tx.voucher.findMany({
-            where: voucherWhere,
-            orderBy: [{ voucherDate: "desc" }, { createdAt: "desc" }],
-            include: {
-              journalEntries: {
-                include: {
-                  account: {
-                    select: {
-                      id: true,
-                      name: true,
-                      partyId: true,
-                      isPartyLedger: true,
-                      isCashLedger: true,
-                      isBankLedger: true,
-                      party: { select: { id: true, name: true, phone: true } },
-                      group: { select: { id: true, name: true, nature: true } },
-                    },
+          where: voucherWhere,
+          orderBy: [{ voucherDate: "desc" }, { createdAt: "desc" }],
+          include: {
+            journalEntries: {
+              include: {
+                account: {
+                  select: {
+                    id: true,
+                    name: true,
+                    partyId: true,
+                    isPartyLedger: true,
+                    isCashLedger: true,
+                    isBankLedger: true,
+                    party: { select: { id: true, name: true, phone: true } },
+                    group: { select: { id: true, name: true, nature: true } },
                   },
                 },
-                orderBy: { sequenceOrder: "asc" },
               },
-              allocations: {
-                include: {
-                  salesInvoice: { select: { id: true, invoiceNumber: true, party: { select: { id: true, name: true } } } },
-                  purchaseInvoice: { select: { id: true, vendorInvoiceNumber: true, party: { select: { id: true, name: true } } } },
-                },
+              orderBy: { sequenceOrder: "asc" },
+            },
+            allocations: {
+              include: {
+                salesInvoice: { select: { id: true, invoiceNumber: true, party: { select: { id: true, name: true } } } },
+                purchaseInvoice: { select: { id: true, vendorInvoiceNumber: true, party: { select: { id: true, name: true } } } },
               },
             },
-            take: 300,
-          });
+          },
+          take: 300,
+        });
 
       // 4. Delivery Challans
       const challanWhere: any = {

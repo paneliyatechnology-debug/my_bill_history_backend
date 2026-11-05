@@ -10,6 +10,7 @@ export interface CreatePurchaseInvoiceDto {
   partyId: string;
   vendorInvoiceNumber: string;
   invoiceDate?: string;
+  dueDate?: string;
   placeOfSupply?: string;
   warehouseId?: string;
   itcEligibility?: string;
