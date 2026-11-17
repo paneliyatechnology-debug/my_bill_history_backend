@@ -225,5 +225,23 @@
     "sortOrder": 18,
     "createdAt": "2026-11-17T04:05:28.916Z",
     "updatedAt": "2026-11-17T04:05:28.916Z"
+  },
+  {
+    "id": "2027_9769",
+    "name": "2027",
+    "category": "festive",
+    "festivalName": "2027",
+    "description": "",
+    "primaryColor": "#F97316",
+    "badge": "FESTIVE",
+    "thumbnail": "/themes/invoice_republic_day_1794897783035.png",
+    "variants": [
+      "/themes/invoice_republic_day_1794897751526.png",
+      "/themes/invoice_republic_day_1794897761478.png"
+    ],
+    "isActive": true,
+    "sortOrder": 16,
+    "createdAt": "2026-11-17T06:42:49.769Z",
+    "updatedAt": "2026-11-17T06:43:06.064Z"
   }
 ]
