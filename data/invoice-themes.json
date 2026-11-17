@@ -11,8 +11,8 @@
     "variants": [],
     "isActive": true,
     "sortOrder": 1,
-    "createdAt": "2026-10-29T05:43:38.593Z",
-    "updatedAt": "2026-10-29T05:43:38.593Z"
+    "createdAt": "2026-11-17T04:05:28.916Z",
+    "updatedAt": "2026-11-17T04:05:28.916Z"
   },
   {
     "id": "navratri",
@@ -29,8 +29,8 @@
     ],
     "isActive": true,
     "sortOrder": 2,
-    "createdAt": "2026-10-29T05:43:38.593Z",
-    "updatedAt": "2026-10-29T05:43:38.593Z"
+    "createdAt": "2026-11-17T04:05:28.916Z",
+    "updatedAt": "2026-11-17T04:05:28.916Z"
   },
   {
     "id": "durga_puja",
@@ -46,8 +46,8 @@
     ],
     "isActive": true,
     "sortOrder": 3,
-    "createdAt": "2026-10-29T05:43:38.593Z",
-    "updatedAt": "2026-10-29T05:43:38.593Z"
+    "createdAt": "2026-11-17T04:05:28.916Z",
+    "updatedAt": "2026-11-17T04:05:28.916Z"
   },
   {
     "id": "dussehra",
@@ -63,8 +63,8 @@
     ],
     "isActive": true,
     "sortOrder": 4,
-    "createdAt": "2026-10-29T05:43:38.593Z",
-    "updatedAt": "2026-10-29T05:43:38.593Z"
+    "createdAt": "2026-11-17T04:05:28.916Z",
+    "updatedAt": "2026-11-17T04:05:28.916Z"
   },
   {
     "id": "dhanteras",
@@ -72,7 +72,7 @@
     "category": "festive",
     "festivalName": "Dhanteras",
     "description": "Golden kalash, overflowing gold coins and auspicious Lakshmi Puja festive letterhead stationery.",
-    "primaryColor": "#911a12",
+    "primaryColor": "#CA8A04",
     "badge": "FESTIVE",
     "thumbnail": "/themes/dhanteras_1.jpg",
     "variants": [
@@ -80,8 +80,8 @@
     ],
     "isActive": true,
     "sortOrder": 5,
-    "createdAt": "2026-10-29T05:43:38.593Z",
-    "updatedAt": "2026-10-29T06:13:03.656Z"
+    "createdAt": "2026-11-17T04:05:28.916Z",
+    "updatedAt": "2026-11-17T04:05:28.916Z"
   },
   {
     "id": "diwali",
@@ -97,8 +97,8 @@
     ],
     "isActive": true,
     "sortOrder": 6,
-    "createdAt": "2026-10-29T05:43:38.593Z",
-    "updatedAt": "2026-10-29T05:43:38.593Z"
+    "createdAt": "2026-11-17T04:05:28.916Z",
+    "updatedAt": "2026-11-17T04:05:28.916Z"
   },
   {
     "id": "stylish",
@@ -111,8 +111,8 @@
     "variants": [],
     "isActive": true,
     "sortOrder": 10,
-    "createdAt": "2026-10-29T05:43:38.593Z",
-    "updatedAt": "2026-10-29T05:43:38.593Z"
+    "createdAt": "2026-11-17T04:05:28.916Z",
+    "updatedAt": "2026-11-17T04:05:28.916Z"
   },
   {
     "id": "luxury",
@@ -125,8 +125,8 @@
     "variants": [],
     "isActive": true,
     "sortOrder": 11,
-    "createdAt": "2026-10-29T05:43:38.593Z",
-    "updatedAt": "2026-10-29T05:43:38.593Z"
+    "createdAt": "2026-11-17T04:05:28.916Z",
+    "updatedAt": "2026-11-17T04:05:28.916Z"
   },
   {
     "id": "advanced_gst_tally",
@@ -139,7 +139,24 @@
     "variants": [],
     "isActive": true,
     "sortOrder": 12,
-    "createdAt": "2026-10-29T05:43:38.593Z",
-    "updatedAt": "2026-10-29T05:43:38.593Z"
+    "createdAt": "2026-11-17T04:05:28.916Z",
+    "updatedAt": "2026-11-17T04:05:28.916Z"
+  },
+  {
+    "id": "2027_8079",
+    "name": "2027",
+    "category": "festive",
+    "festivalName": "2027",
+    "description": "",
+    "primaryColor": "#e69a3d",
+    "badge": "FESTIVE",
+    "thumbnail": "/themes/invoice_diwali_1794889652023.png",
+    "variants": [
+      "/themes/2027invoice_1794889331402.png"
+    ],
+    "isActive": true,
+    "sortOrder": 10,
+    "createdAt": "2026-11-17T04:24:48.079Z",
+    "updatedAt": "2026-11-17T04:27:34.814Z"
   }
 ]
