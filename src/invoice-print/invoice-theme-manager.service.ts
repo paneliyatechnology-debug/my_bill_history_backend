@@ -236,6 +236,21 @@ export class InvoiceThemeManagerService implements OnModuleInit {
       // Ignore if frontend dir does not exist
     }
 
+    try {
+      const superadminDir = path.resolve(
+        process.cwd(),
+        "..",
+        "billing_superadmin",
+        "public",
+        "themes",
+      );
+      if (fs.existsSync(superadminDir)) {
+        fs.writeFileSync(path.join(superadminDir, fileName), buffer);
+      }
+    } catch {
+      // Ignore if superadmin dir does not exist
+    }
+
     this.logger.log(`Saved theme asset file: ${fileName} (${buffer.length} bytes)`);
 
     return {
