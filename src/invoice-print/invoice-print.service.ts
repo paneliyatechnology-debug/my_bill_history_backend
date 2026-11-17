@@ -123,7 +123,7 @@ export class InvoicePrintService {
       const themeId = THEME_ALIASES[rawThemeId] || rawThemeId;
       const isKnownTheme =
         INVOICE_THEMES.some((t) => t.id === themeId) ||
-        (this.themeManager ? this.themeManager.getThemeById(themeId) !== undefined : false) ||
+        (this.themeManager ? (await this.themeManager.getThemeById(themeId)) !== null : false) ||
         themeId === "custom";
       if (!isKnownTheme) {
         throw new BadRequestException("Unknown invoice theme.");

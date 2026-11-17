@@ -2239,6 +2239,26 @@ model ScheduledReminderLog {
   @@map("scheduled_reminder_logs")
 }
 
+model InvoiceTheme {
+  id           String   @id @db.VarChar(100)
+  name         String   @db.VarChar(150)
+  category     String   @default("festive") @db.VarChar(50)
+  festivalName String?  @map("festival_name") @db.VarChar(150)
+  description  String?  @db.Text
+  primaryColor String   @default("#F97316") @map("primary_color") @db.VarChar(30)
+  badge        String?  @db.VarChar(50)
+  thumbnail    String   @db.Text
+  variants     Json     @default("[]")
+  isActive     Boolean  @default(true) @map("is_active")
+  sortOrder    Int      @default(1) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive, sortOrder])
+  @@map("invoice_themes")
+}
+
+
 
 
 

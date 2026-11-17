@@ -31,9 +31,9 @@ export class InvoicePrintSettingsController {
 
   @Get("themes")
   @Public()
-  getCatalog() {
+  async getCatalog() {
     const defaultCatalog = this.printService.catalog();
-    const managedThemes = this.themeManager.getAllThemes(true);
+    const managedThemes = await this.themeManager.getAllThemes(true);
     return {
       ...defaultCatalog,
       managedThemes,
@@ -42,39 +42,39 @@ export class InvoicePrintSettingsController {
 
   @Get("theme-list")
   @Public()
-  getActiveThemes() {
+  async getActiveThemes() {
     return this.themeManager.getAllThemes(true);
   }
 
   // Superadmin endpoints for managing themes
   @Get("superadmin/themes")
   @Roles(UserRole.SUPER_ADMIN)
-  getSuperadminThemes() {
+  async getSuperadminThemes() {
     return this.themeManager.getAllThemes(false);
   }
 
   @Post("superadmin/themes")
   @Roles(UserRole.SUPER_ADMIN)
-  createSuperadminTheme(@Body() body: any) {
+  async createSuperadminTheme(@Body() body: any) {
     return this.themeManager.createTheme(body);
   }
 
   @Put("superadmin/themes/:id")
   @Roles(UserRole.SUPER_ADMIN)
-  updateSuperadminTheme(@Param("id") id: string, @Body() body: any) {
+  async updateSuperadminTheme(@Param("id") id: string, @Body() body: any) {
     return this.themeManager.updateTheme(id, body);
   }
 
   @Delete("superadmin/themes/:id")
   @Roles(UserRole.SUPER_ADMIN)
-  deleteSuperadminTheme(@Param("id") id: string) {
-    const success = this.themeManager.deleteTheme(id);
+  async deleteSuperadminTheme(@Param("id") id: string) {
+    const success = await this.themeManager.deleteTheme(id);
     return { success, id };
   }
 
   @Post("superadmin/themes/reset")
   @Roles(UserRole.SUPER_ADMIN)
-  resetSuperadminThemes() {
+  async resetSuperadminThemes() {
     return this.themeManager.resetToDefaults();
   }
 

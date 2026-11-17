@@ -47,5 +47,9 @@ storage/bill-scans/*
 storage/company-assets/*
 !storage/company-assets/.gitkeep
 
+# Local data cache
+data/
+
+
 
 

@@ -1,6 +1,12 @@
-import { Injectable, Logger } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from "@nestjs/common";
 import * as fs from "fs";
 import * as path from "path";
+import { DatabaseService } from "../database/database.service";
 
 export interface InvoiceThemeRecord {
   id: string;
@@ -9,298 +15,90 @@ export interface InvoiceThemeRecord {
   festivalName?: string;
   description?: string;
   primaryColor: string;
-  badge?: string; // "NEW" | "FESTIVE" | "POPULAR" | null
+  badge?: string | null;
   thumbnail: string;
-  variants: string[]; // background image URLs
+  variants: string[];
   isActive: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
 }
 
-export const INITIAL_DEFAULT_THEMES: InvoiceThemeRecord[] = [
-  {
-    id: "logo",
-    name: "Your logo",
-    category: "branding",
-    festivalName: "Your Logo",
-    description: "Display your prominent company watermark and clean brand framing.",
-    primaryColor: "#111827",
-    badge: "BRAND",
-    thumbnail: "/themes/navaratri_1.jpg",
-    variants: [],
-    isActive: true,
-    sortOrder: 1,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "navratri",
-    name: "Navaratri",
-    category: "festive",
-    festivalName: "Navaratri",
-    description: "Auspicious hanging temple bells, marigold genda phool toran & warm celebratory watercolor artwork.",
-    primaryColor: "#F97316",
-    badge: "FESTIVE",
-    thumbnail: "/themes/navaratri_1.jpg",
-    variants: ["/themes/navaratri_1.jpg", "/themes/navaratri_2.jpg"],
-    isActive: true,
-    sortOrder: 2,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "durga_puja",
-    name: "Durga Puja",
-    category: "festive",
-    festivalName: "Durga Puja",
-    description: "Auspicious crimson red drapes, golden trishul, conch watermark and festive lotus motifs.",
-    primaryColor: "#DC2626",
-    badge: "FESTIVE",
-    thumbnail: "/themes/durga_puja_1.jpg",
-    variants: ["/themes/durga_puja_1.jpg"],
-    isActive: true,
-    sortOrder: 3,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "dussehra",
-    name: "Dussehra",
-    category: "festive",
-    festivalName: "Dussehra",
-    description: "Vijayadashami royal palace silhouette, golden bow & arrow victory frame and saffron toran.",
-    primaryColor: "#EA580C",
-    badge: "FESTIVE",
-    thumbnail: "/themes/dussehra_1.jpg",
-    variants: ["/themes/dussehra_1.jpg"],
-    isActive: true,
-    sortOrder: 4,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "dhanteras",
-    name: "Dhanteras",
-    category: "festive",
-    festivalName: "Dhanteras",
-    description: "Golden kalash, overflowing gold coins and auspicious Lakshmi Puja festive letterhead stationery.",
-    primaryColor: "#CA8A04",
-    badge: "FESTIVE",
-    thumbnail: "/themes/dhanteras_1.jpg",
-    variants: ["/themes/dhanteras_1.jpg"],
-    isActive: true,
-    sortOrder: 5,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "diwali",
-    name: "Diwali",
-    category: "festive",
-    festivalName: "Diwali",
-    description: "Row of glowing golden clay diyas, fairy light sparkles and magnificent warm festive atmosphere.",
-    primaryColor: "#7C3AED",
-    badge: "POPULAR",
-    thumbnail: "/themes/diwali_1.jpg",
-    variants: ["/themes/diwali_1.jpg"],
-    isActive: true,
-    sortOrder: 6,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "stylish",
-    name: "Stylish",
-    category: "standard",
-    description: "Clean modern bill without heavy boxes.",
-    primaryColor: "#111827",
-    badge: null,
-    thumbnail: "/themes/navaratri_1.jpg",
-    variants: [],
-    isActive: true,
-    sortOrder: 10,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "luxury",
-    name: "Luxury",
-    category: "standard",
-    description: "Ornate double border, premium header and gold accent rules.",
-    primaryColor: "#D97706",
-    badge: "NEW",
-    thumbnail: "/themes/navaratri_1.jpg",
-    variants: [],
-    isActive: true,
-    sortOrder: 11,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "advanced_gst_tally",
-    name: "Advanced GST (Tally)",
-    category: "standard",
-    description: "Full-height ruled GST invoice with rate lines and HSN summary, like Tally.",
-    primaryColor: "#111827",
-    badge: null,
-    thumbnail: "/themes/navaratri_1.jpg",
-    variants: [],
-    isActive: true,
-    sortOrder: 12,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "advanced_gst",
-    name: "Advanced GST",
-    category: "standard",
-    description: "Colour banner with comprehensive tax breakdown column.",
-    primaryColor: "#0284C7",
-    badge: null,
-    thumbnail: "/themes/navaratri_1.jpg",
-    variants: [],
-    isActive: true,
-    sortOrder: 13,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "billbook",
-    name: "Billbook",
-    category: "standard",
-    description: "Logo mark header with clean modern totals and footer styling.",
-    primaryColor: "#4338CA",
-    badge: null,
-    thumbnail: "/themes/navaratri_1.jpg",
-    variants: [],
-    isActive: true,
-    sortOrder: 14,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "advanced_compact",
-    name: "Advanced GST (A5)",
-    category: "standard",
-    description: "Tight, high-density GST bill formatted for A5 paper print.",
-    primaryColor: "#111827",
-    badge: null,
-    thumbnail: "/themes/navaratri_1.jpg",
-    variants: [],
-    isActive: true,
-    sortOrder: 15,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "tallybook_lite",
-    name: "Billbook (A5)",
-    category: "standard",
-    description: "Lightweight A5 bill format with streamlined lines.",
-    primaryColor: "#111827",
-    badge: null,
-    thumbnail: "/themes/navaratri_1.jpg",
-    variants: [],
-    isActive: true,
-    sortOrder: 16,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "modern",
-    name: "Modern",
-    category: "standard",
-    description: "Accent vertical rail with pill bars and soft borders.",
-    primaryColor: "#7C3AED",
-    badge: null,
-    thumbnail: "/themes/navaratri_1.jpg",
-    variants: [],
-    isActive: true,
-    sortOrder: 17,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "simple",
-    name: "Simple",
-    category: "standard",
-    description: "Hairline rules only, minimalist and ink-efficient.",
-    primaryColor: "#111827",
-    badge: null,
-    thumbnail: "/themes/navaratri_1.jpg",
-    variants: [],
-    isActive: true,
-    sortOrder: 18,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
-
 function cleanThemeUrl(u?: string): string {
   if (!u) return "";
   const t = u.trim();
   if (!t) return "";
-  if (t.startsWith("/") || t.startsWith("http://") || t.startsWith("https://") || t.startsWith("data:")) return t;
+  if (
+    t.startsWith("/") ||
+    t.startsWith("http://") ||
+    t.startsWith("https://") ||
+    t.startsWith("data:")
+  )
+    return t;
   return `/${t}`;
 }
 
 @Injectable()
-export class InvoiceThemeManagerService {
+export class InvoiceThemeManagerService implements OnModuleInit {
   private readonly logger = new Logger(InvoiceThemeManagerService.name);
-  private readonly dataFilePath = path.join(process.cwd(), "data", "invoice-themes.json");
-  private themes: InvoiceThemeRecord[] = [];
 
-  constructor() {
-    this.loadThemes();
-  }
+  constructor(private readonly prisma: DatabaseService) {}
 
-  private loadThemes() {
+  async onModuleInit() {
     try {
-      const dataDir = path.dirname(this.dataFilePath);
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-
-      if (fs.existsSync(this.dataFilePath)) {
-        const raw = fs.readFileSync(this.dataFilePath, "utf-8");
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          this.themes = parsed;
-          this.logger.log(`Loaded ${this.themes.length} invoice themes from file.`);
-          return;
-        }
-      }
+      const count = await this.prisma.invoiceTheme.count();
+      this.logger.log(`InvoiceThemeManager initialized. Total DB themes: ${count}`);
     } catch (err: any) {
-      this.logger.warn(`Failed reading theme file, fallback to defaults: ${err?.message}`);
-    }
-
-    this.themes = [...INITIAL_DEFAULT_THEMES];
-    this.persist();
-  }
-
-  private persist() {
-    try {
-      const dataDir = path.dirname(this.dataFilePath);
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-      fs.writeFileSync(this.dataFilePath, JSON.stringify(this.themes, null, 2), "utf-8");
-    } catch (err: any) {
-      this.logger.error(`Failed persisting themes to file: ${err?.message}`);
+      this.logger.error(`Error initializing invoice themes table: ${err?.message}`);
     }
   }
 
-  getAllThemes(onlyActive = false): InvoiceThemeRecord[] {
-    const list = onlyActive ? this.themes.filter((t) => t.isActive) : this.themes;
-    return [...list].sort((a, b) => a.sortOrder - b.sortOrder);
+  private mapToRecord(entity: any): InvoiceThemeRecord {
+    const rawVariants = Array.isArray(entity.variants)
+      ? entity.variants
+      : typeof entity.variants === "string"
+      ? JSON.parse(entity.variants || "[]")
+      : [];
+
+    return {
+      id: entity.id,
+      name: entity.name,
+      category: (entity.category as any) || "festive",
+      festivalName: entity.festivalName || undefined,
+      description: entity.description || undefined,
+      primaryColor: entity.primaryColor || "#F97316",
+      badge: entity.badge || null,
+      thumbnail: entity.thumbnail || "",
+      variants: Array.isArray(rawVariants) ? rawVariants : [],
+      isActive: entity.isActive,
+      sortOrder: entity.sortOrder,
+      createdAt:
+        entity.createdAt instanceof Date
+          ? entity.createdAt.toISOString()
+          : String(entity.createdAt),
+      updatedAt:
+        entity.updatedAt instanceof Date
+          ? entity.updatedAt.toISOString()
+          : String(entity.updatedAt),
+    };
   }
 
-  getThemeById(id: string): InvoiceThemeRecord | undefined {
-    return this.themes.find((t) => t.id === id);
+  async getAllThemes(onlyActive = false): Promise<InvoiceThemeRecord[]> {
+    const list = await this.prisma.invoiceTheme.findMany({
+      where: onlyActive ? { isActive: true } : undefined,
+      orderBy: { sortOrder: "asc" },
+    });
+    return list.map((item) => this.mapToRecord(item));
   }
 
-  createTheme(data: Partial<InvoiceThemeRecord>): InvoiceThemeRecord {
+  async getThemeById(id: string): Promise<InvoiceThemeRecord | null> {
+    const found = await this.prisma.invoiceTheme.findUnique({
+      where: { id },
+    });
+    return found ? this.mapToRecord(found) : null;
+  }
+
+  async createTheme(data: Partial<InvoiceThemeRecord>): Promise<InvoiceThemeRecord> {
     const id =
       data.id?.trim() ||
       (data.name || "theme")
@@ -308,80 +106,91 @@ export class InvoiceThemeManagerService {
         .replace(/[^a-z0-9]+/g, "_")
         .replace(/^_+|_+$/g, "") + `_${Date.now().toString().slice(-4)}`;
 
-    const rawVariants = Array.isArray(data.variants) && data.variants.length > 0 ? data.variants : [data.thumbnail || "/themes/navaratri_1.jpg"];
+    const rawVariants =
+      Array.isArray(data.variants) && data.variants.length > 0
+        ? data.variants
+        : [data.thumbnail || "/themes/navaratri_1.jpg"];
     const variants = rawVariants.map(cleanThemeUrl).filter(Boolean);
-    const thumbnail = cleanThemeUrl(data.thumbnail) || variants[0] || "/themes/navaratri_1.jpg";
+    const thumbnail =
+      cleanThemeUrl(data.thumbnail) || variants[0] || "/themes/navaratri_1.jpg";
 
-    const newRecord: InvoiceThemeRecord = {
-      id,
-      name: data.name?.trim() || "New Theme",
-      category: data.category || "festive",
-      festivalName: data.festivalName || data.name || "Festive",
-      description: data.description || "",
-      primaryColor: data.primaryColor || "#F97316",
-      badge: data.badge || "NEW",
-      thumbnail,
-      variants,
-      isActive: data.isActive !== undefined ? data.isActive : true,
-      sortOrder: data.sortOrder || this.themes.length + 1,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const count = await this.prisma.invoiceTheme.count();
+    const created = await this.prisma.invoiceTheme.create({
+      data: {
+        id,
+        name: data.name?.trim() || "New Theme",
+        category: data.category || "festive",
+        festivalName: data.festivalName?.trim() || data.name?.trim() || "Festive",
+        description: data.description?.trim() || "",
+        primaryColor: data.primaryColor || "#F97316",
+        badge: data.badge?.trim() || "NEW",
+        thumbnail,
+        variants: variants as any,
+        isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
+        sortOrder: data.sortOrder || count + 1,
+      },
+    });
 
-    // check if id already exists
-    const idx = this.themes.findIndex((t) => t.id === id);
-    if (idx >= 0) {
-      this.themes[idx] = { ...this.themes[idx], ...newRecord, updatedAt: new Date().toISOString() };
-    } else {
-      this.themes.push(newRecord);
-    }
-
-    this.persist();
-    return newRecord;
+    this.logger.log(`Created theme in DB: ${created.name} (${created.id})`);
+    return this.mapToRecord(created);
   }
 
-  updateTheme(id: string, updates: Partial<InvoiceThemeRecord>): InvoiceThemeRecord {
-    const idx = this.themes.findIndex((t) => t.id === id);
-    if (idx === -1) {
-      throw new Error(`Theme with id "${id}" not found`);
+  async updateTheme(
+    id: string,
+    data: Partial<InvoiceThemeRecord>,
+  ): Promise<InvoiceThemeRecord> {
+    const existing = await this.prisma.invoiceTheme.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`Invoice theme "${id}" not found.`);
     }
 
-    const current = this.themes[idx];
-    const variants = Array.isArray(updates.variants)
-      ? updates.variants.map(cleanThemeUrl).filter(Boolean)
-      : current.variants;
-    const thumbnail = updates.thumbnail !== undefined
-      ? (cleanThemeUrl(updates.thumbnail) || variants[0] || current.thumbnail)
-      : current.thumbnail;
+    const updateData: any = {};
+    if (data.name !== undefined) updateData.name = data.name.trim();
+    if (data.category !== undefined) updateData.category = data.category;
+    if (data.festivalName !== undefined)
+      updateData.festivalName = data.festivalName.trim();
+    if (data.description !== undefined)
+      updateData.description = data.description.trim();
+    if (data.primaryColor !== undefined)
+      updateData.primaryColor = data.primaryColor;
+    if (data.badge !== undefined)
+      updateData.badge = data.badge?.trim() || null;
+    if (data.isActive !== undefined)
+      updateData.isActive = Boolean(data.isActive);
+    if (data.sortOrder !== undefined)
+      updateData.sortOrder = Number(data.sortOrder);
+    if (data.variants !== undefined && Array.isArray(data.variants)) {
+      updateData.variants = data.variants.map(cleanThemeUrl).filter(Boolean);
+    }
+    if (data.thumbnail !== undefined) {
+      updateData.thumbnail = cleanThemeUrl(data.thumbnail);
+    }
 
-    const updated: InvoiceThemeRecord = {
-      ...current,
-      ...updates,
-      id: current.id, // don't mutate primary id
-      thumbnail,
-      variants,
-      updatedAt: new Date().toISOString(),
-    };
+    const updated = await this.prisma.invoiceTheme.update({
+      where: { id },
+      data: updateData,
+    });
 
-    this.themes[idx] = updated;
-    this.persist();
-    return updated;
+    this.logger.log(`Updated theme in DB: ${updated.name} (${updated.id})`);
+    return this.mapToRecord(updated);
   }
 
-  deleteTheme(id: string): boolean {
-    const prevLen = this.themes.length;
-    this.themes = this.themes.filter((t) => t.id !== id);
-    if (this.themes.length !== prevLen) {
-      this.persist();
+  async deleteTheme(id: string): Promise<boolean> {
+    try {
+      await this.prisma.invoiceTheme.delete({
+        where: { id },
+      });
+      this.logger.log(`Deleted theme from DB: ${id}`);
       return true;
+    } catch (err: any) {
+      this.logger.warn(`Could not delete theme ${id}: ${err?.message}`);
+      return false;
     }
-    return false;
   }
 
-  resetToDefaults(): InvoiceThemeRecord[] {
-    this.themes = [...INITIAL_DEFAULT_THEMES];
-    this.persist();
-    return this.themes;
+  async resetToDefaults(): Promise<InvoiceThemeRecord[]> {
+    // Return all currently active themes from DB
+    return this.getAllThemes(false);
   }
 
   saveUploadedThemeFile(
