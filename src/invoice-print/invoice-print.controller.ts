@@ -1,5 +1,17 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, Res } from "@nestjs/common";
-import { FastifyReply } from "fastify";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  Res,
+} from "@nestjs/common";
+import { FastifyReply, FastifyRequest } from "fastify";
 import { TenantContext, UserRole } from "@billing/shared-types";
 import { Roles } from "../common/decorators/roles.decorator";
 import { Public } from "../common/decorators/public.decorator";
@@ -64,6 +76,43 @@ export class InvoicePrintSettingsController {
   @Roles(UserRole.SUPER_ADMIN)
   resetSuperadminThemes() {
     return this.themeManager.resetToDefaults();
+  }
+
+  @Post("superadmin/themes/upload")
+  @Roles(UserRole.SUPER_ADMIN)
+  async uploadThemeImage(@Req() req: FastifyRequest) {
+    let buffer: Buffer | null = null;
+    let fileName = `theme_${Date.now()}.jpg`;
+
+    if ((req as any).isMultipart && (req as any).isMultipart()) {
+      const parts = (req as any).parts();
+      for await (const part of parts) {
+        if (part.type === "file") {
+          fileName = part.filename || fileName;
+          buffer = await part.toBuffer();
+          break;
+        }
+      }
+    } else {
+      const body = (req.body || {}) as any;
+      if (body?.fileBase64) {
+        const raw = String(body.fileBase64);
+        const match = raw.match(/^data:image\/(\w+);base64,/);
+        if (match) {
+          fileName = `theme_${Date.now()}.${match[1] === "jpeg" ? "jpg" : match[1]}`;
+        }
+        buffer = Buffer.from(
+          raw.replace(/^data:image\/\w+;base64,/, ""),
+          "base64",
+        );
+      }
+    }
+
+    if (!buffer || buffer.length === 0) {
+      throw new BadRequestException("No image file or fileBase64 provided.");
+    }
+
+    return this.themeManager.saveUploadedThemeFile(fileName, buffer);
   }
 
   @Get()

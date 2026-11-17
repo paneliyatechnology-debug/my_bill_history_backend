@@ -383,4 +383,48 @@ export class InvoiceThemeManagerService {
     this.persist();
     return this.themes;
   }
+
+  saveUploadedThemeFile(
+    originalFilename: string,
+    buffer: Buffer,
+  ): { url: string; fileName: string } {
+    const ext = (path.extname(originalFilename || "") || ".jpg").toLowerCase();
+    const safeExt = [".jpg", ".jpeg", ".png", ".webp"].includes(ext)
+      ? ext
+      : ".jpg";
+    const baseName = path
+      .basename(originalFilename || "theme", ext)
+      .replace(/[^a-zA-Z0-9_-]/g, "_")
+      .substring(0, 40)
+      .toLowerCase();
+    const fileName = `${baseName || "theme"}_${Date.now()}${safeExt}`;
+
+    const targetDir = path.join(process.cwd(), "public", "themes");
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    fs.writeFileSync(path.join(targetDir, fileName), buffer);
+
+    try {
+      const frontendDir = path.resolve(
+        process.cwd(),
+        "..",
+        "Billing_frontend",
+        "public",
+        "themes",
+      );
+      if (fs.existsSync(frontendDir)) {
+        fs.writeFileSync(path.join(frontendDir, fileName), buffer);
+      }
+    } catch {
+      // Ignore if frontend dir does not exist
+    }
+
+    this.logger.log(`Saved theme asset file: ${fileName} (${buffer.length} bytes)`);
+
+    return {
+      url: `/themes/${fileName}`,
+      fileName,
+    };
+  }
 }
