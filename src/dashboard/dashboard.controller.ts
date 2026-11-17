@@ -32,6 +32,15 @@ export class DashboardController {
     private readonly notificationsService: NotificationsService,
   ) {}
 
+  @Get(["search", "global-search"])
+  async globalSearch(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("q") query: string,
+    @Query("limit") limit?: number,
+  ) {
+    return await this.dashboardService.globalSearch(tenant, query, limit);
+  }
+
   @Get(["recent-activity", "activities"])
   async getRecentActivity(
     @CurrentTenant() tenant: TenantContext,

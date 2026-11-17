@@ -1866,4 +1866,284 @@ export class DashboardService {
 
     throw new NotFoundException(`Transaction with ID ${id} not found.`);
   }
+
+  /**
+   * Unified Multi-Entity Global Search across Parties, Sales Invoices, Purchase Invoices, Items, and Vouchers.
+   * Scoped strictly by companyId and tenant context.
+   */
+  async globalSearch(tenant: TenantContext, query: string, limit?: number) {
+    if (!query || typeof query !== "string") {
+      return {
+        query: "",
+        totalMatches: 0,
+        parties: [],
+        salesInvoices: [],
+        purchaseInvoices: [],
+        items: [],
+        vouchers: [],
+      };
+    }
+
+    const trimmed = query.trim();
+    if (trimmed.length === 0) {
+      return {
+        query: "",
+        totalMatches: 0,
+        parties: [],
+        salesInvoices: [],
+        purchaseInvoices: [],
+        items: [],
+        vouchers: [],
+      };
+    }
+
+    const maxItems = Math.min(Math.max(Number(limit) || 6, 1), 20);
+
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const companyId = tenant.companyId;
+
+      // 1. Parties: Customers, Suppliers, Vendors, Brokers
+      const partiesPromise = tx.party.findMany({
+        where: {
+          companyId,
+          isActive: true,
+          OR: [
+            { name: { contains: trimmed, mode: "insensitive" } },
+            { nameGujarati: { contains: trimmed, mode: "insensitive" } },
+            { phone: { contains: trimmed } },
+            { email: { contains: trimmed, mode: "insensitive" } },
+            { gstin: { contains: trimmed, mode: "insensitive" } },
+            { contactPerson: { contains: trimmed, mode: "insensitive" } },
+          ],
+        },
+        take: maxItems,
+        orderBy: { updatedAt: "desc" },
+        select: {
+          id: true,
+          type: true,
+          name: true,
+          nameGujarati: true,
+          phone: true,
+          email: true,
+          gstin: true,
+          billingAddress: true,
+        },
+      });
+
+      // 2. Sales Invoices
+      const salesInvoicesPromise = tx.salesInvoice.findMany({
+        where: {
+          companyId,
+          OR: [
+            { invoiceNumber: { contains: trimmed, mode: "insensitive" } },
+            { party: { name: { contains: trimmed, mode: "insensitive" } } },
+            { party: { nameGujarati: { contains: trimmed, mode: "insensitive" } } },
+            { party: { phone: { contains: trimmed } } },
+          ],
+        },
+        take: maxItems,
+        orderBy: { invoiceDate: "desc" },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          invoiceDate: true,
+          status: true,
+          paymentMode: true,
+          grandTotal: true,
+          paidAmount: true,
+          balanceAmount: true,
+          party: {
+            select: {
+              id: true,
+              name: true,
+              nameGujarati: true,
+              phone: true,
+            },
+          },
+        },
+      });
+
+      // 3. Purchase Invoices
+      const purchaseInvoicesPromise = tx.purchaseInvoice.findMany({
+        where: {
+          companyId,
+          OR: [
+            { vendorInvoiceNumber: { contains: trimmed, mode: "insensitive" } },
+            { party: { name: { contains: trimmed, mode: "insensitive" } } },
+            { party: { nameGujarati: { contains: trimmed, mode: "insensitive" } } },
+            { party: { phone: { contains: trimmed } } },
+          ],
+        },
+        take: maxItems,
+        orderBy: { invoiceDate: "desc" },
+        select: {
+          id: true,
+          vendorInvoiceNumber: true,
+          invoiceDate: true,
+          grandTotal: true,
+          paidAmount: true,
+          balanceAmount: true,
+          party: {
+            select: {
+              id: true,
+              name: true,
+              nameGujarati: true,
+              phone: true,
+            },
+          },
+        },
+      });
+
+      // 4. Items / Inventory Products
+      const itemsPromise = tx.item.findMany({
+        where: {
+          companyId,
+          isActive: true,
+          OR: [
+            { name: { contains: trimmed, mode: "insensitive" } },
+            { nameGujarati: { contains: trimmed, mode: "insensitive" } },
+            { sku: { contains: trimmed, mode: "insensitive" } },
+            { barcode: { contains: trimmed, mode: "insensitive" } },
+            { hsnCode: { contains: trimmed, mode: "insensitive" } },
+            { description: { contains: trimmed, mode: "insensitive" } },
+          ],
+        },
+        take: maxItems,
+        orderBy: { updatedAt: "desc" },
+        select: {
+          id: true,
+          type: true,
+          name: true,
+          nameGujarati: true,
+          sku: true,
+          barcode: true,
+          hsnCode: true,
+          retailPrice: true,
+          purchaseRate: true,
+        },
+      });
+
+      // 5. Vouchers (Payment, Receipt, Journal, Contra, etc.)
+      const vouchersPromise = tx.voucher.findMany({
+        where: {
+          companyId,
+          isCancelled: false,
+          OR: [
+            { voucherNumber: { contains: trimmed, mode: "insensitive" } },
+            { referenceNo: { contains: trimmed, mode: "insensitive" } },
+            { narration: { contains: trimmed, mode: "insensitive" } },
+          ],
+        },
+        take: maxItems,
+        orderBy: { voucherDate: "desc" },
+        select: {
+          id: true,
+          voucherType: true,
+          voucherNumber: true,
+          voucherDate: true,
+          totalAmount: true,
+          paymentMode: true,
+          referenceNo: true,
+          narration: true,
+        },
+      });
+
+      const [parties, salesInvoices, purchaseInvoices, items, vouchers] = await Promise.all([
+        partiesPromise,
+        salesInvoicesPromise,
+        purchaseInvoicesPromise,
+        itemsPromise,
+        vouchersPromise,
+      ]);
+
+      const formattedParties = parties.map((p) => {
+        const address = p.billingAddress as any;
+        const city = address?.city || address?.district || "";
+        return {
+          id: p.id,
+          entityType: "PARTY" as const,
+          name: p.name,
+          nameGujarati: p.nameGujarati,
+          type: p.type,
+          phone: p.phone,
+          email: p.email,
+          gstin: p.gstin,
+          city,
+          link: `/masters/parties?partyId=${p.id}&search=${encodeURIComponent(p.name)}`,
+        };
+      });
+
+      const formattedSalesInvoices = salesInvoices.map((s) => ({
+        id: s.id,
+        entityType: "SALES_INVOICE" as const,
+        invoiceNumber: s.invoiceNumber,
+        invoiceDate: s.invoiceDate ? new Date(s.invoiceDate).toISOString().slice(0, 10) : "",
+        status: s.status,
+        paymentMode: s.paymentMode,
+        grandTotal: Number(s.grandTotal || 0),
+        paidAmount: Number(s.paidAmount || 0),
+        balanceAmount: Number(s.balanceAmount || 0),
+        partyName: s.party?.name || "",
+        partyPhone: s.party?.phone || "",
+        link: `/sales/invoices/${s.id}`,
+      }));
+
+      const formattedPurchaseInvoices = purchaseInvoices.map((p) => ({
+        id: p.id,
+        entityType: "PURCHASE_INVOICE" as const,
+        invoiceNumber: p.vendorInvoiceNumber,
+        invoiceDate: p.invoiceDate ? new Date(p.invoiceDate).toISOString().slice(0, 10) : "",
+        grandTotal: Number(p.grandTotal || 0),
+        paidAmount: Number(p.paidAmount || 0),
+        balanceAmount: Number(p.balanceAmount || 0),
+        partyName: p.party?.name || "",
+        partyPhone: p.party?.phone || "",
+        link: `/purchases/${p.id}`,
+      }));
+
+      const formattedItems = items.map((it) => ({
+        id: it.id,
+        entityType: "ITEM" as const,
+        name: it.name,
+        nameGujarati: it.nameGujarati,
+        type: it.type,
+        sku: it.sku,
+        barcode: it.barcode,
+        hsnCode: it.hsnCode,
+        retailPrice: Number(it.retailPrice || 0),
+        purchaseRate: Number(it.purchaseRate || 0),
+        link: `/masters/items/${it.id}`,
+      }));
+
+      const formattedVouchers = vouchers.map((v) => ({
+        id: v.id,
+        entityType: "VOUCHER" as const,
+        voucherNumber: v.voucherNumber,
+        voucherType: v.voucherType,
+        voucherDate: v.voucherDate ? new Date(v.voucherDate).toISOString().slice(0, 10) : "",
+        totalAmount: Number(v.totalAmount || 0),
+        paymentMode: v.paymentMode,
+        referenceNo: v.referenceNo,
+        narration: v.narration,
+        link: `/vouchers/all_transactions?search=${encodeURIComponent(v.voucherNumber)}`,
+      }));
+
+      const totalMatches =
+        formattedParties.length +
+        formattedSalesInvoices.length +
+        formattedPurchaseInvoices.length +
+        formattedItems.length +
+        formattedVouchers.length;
+
+      return {
+        query: trimmed,
+        totalMatches,
+        parties: formattedParties,
+        salesInvoices: formattedSalesInvoices,
+        purchaseInvoices: formattedPurchaseInvoices,
+        items: formattedItems,
+        vouchers: formattedVouchers,
+      };
+    });
+  }
 }
