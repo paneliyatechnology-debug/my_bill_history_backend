@@ -215,43 +215,23 @@ export class InvoiceThemeManagerService implements OnModuleInit {
       .toLowerCase();
     const fileName = `${baseName || "theme"}_${Date.now()}${safeExt}`;
 
-    const targetDir = path.join(process.cwd(), "public", "themes");
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
+    // 1. Primary storage: storage/themes (persisted storage outside git tracking)
+    const storageDir = path.join(process.cwd(), "storage", "themes");
+    if (!fs.existsSync(storageDir)) {
+      fs.mkdirSync(storageDir, { recursive: true });
     }
-    fs.writeFileSync(path.join(targetDir, fileName), buffer);
+    fs.writeFileSync(path.join(storageDir, fileName), buffer);
 
-    try {
-      const frontendDir = path.resolve(
-        process.cwd(),
-        "..",
-        "Billing_frontend",
-        "public",
-        "themes",
-      );
-      if (fs.existsSync(frontendDir)) {
-        fs.writeFileSync(path.join(frontendDir, fileName), buffer);
-      }
-    } catch {
-      // Ignore if frontend dir does not exist
+    // 2. Also keep in public/themes so existing /themes/... URLs continue to serve seamlessly
+    const publicDir = path.join(process.cwd(), "public", "themes");
+    if (!fs.existsSync(publicDir)) {
+      fs.mkdirSync(publicDir, { recursive: true });
     }
+    fs.writeFileSync(path.join(publicDir, fileName), buffer);
 
-    try {
-      const superadminDir = path.resolve(
-        process.cwd(),
-        "..",
-        "billing_superadmin",
-        "public",
-        "themes",
-      );
-      if (fs.existsSync(superadminDir)) {
-        fs.writeFileSync(path.join(superadminDir, fileName), buffer);
-      }
-    } catch {
-      // Ignore if superadmin dir does not exist
-    }
-
-    this.logger.log(`Saved theme asset file: ${fileName} (${buffer.length} bytes)`);
+    this.logger.log(
+      `Saved theme asset file to storage/themes: ${fileName} (${buffer.length} bytes)`,
+    );
 
     return {
       url: `/themes/${fileName}`,

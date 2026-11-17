@@ -61,12 +61,15 @@ async function bootstrap() {
     },
   });
 
-  // Register static file serving for public themes and assets
+  // Register static file serving for public themes and storage assets
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const path = require("path");
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   await app.register(require("@fastify/static"), {
-    root: path.join(__dirname, "..", "public"),
+    root: [
+      path.join(__dirname, "..", "public"),
+      path.join(__dirname, "..", "storage"),
+    ],
     prefix: "/",
     decorateReply: false,
   });

@@ -46,9 +46,21 @@ storage/bill-scans/*
 !storage/bill-scans/.gitkeep
 storage/company-assets/*
 !storage/company-assets/.gitkeep
+storage/themes/*
+!storage/themes/.gitkeep
 
 # Local data cache
 data/
+
+# Dynamically uploaded theme artwork (keeps built-in festival presets tracked)
+public/themes/*_*.*
+public/themes/*-*.*
+!public/themes/navaratri*
+!public/themes/diwali*
+!public/themes/durga_puja*
+!public/themes/dussehra*
+!public/themes/dhanteras*
+
 
 
 
