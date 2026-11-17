@@ -44,9 +44,16 @@ export class InvoiceThemeManagerService implements OnModuleInit {
 
   constructor(private readonly prisma: DatabaseService) {}
 
+  /**
+   * Access the Prisma InvoiceTheme delegate safely across all IDE TypeScript language server versions
+   */
+  private get themeModel(): any {
+    return (this.prisma as any).invoiceTheme;
+  }
+
   async onModuleInit() {
     try {
-      const count = await this.prisma.invoiceTheme.count();
+      const count = await this.themeModel.count();
       this.logger.log(`InvoiceThemeManager initialized. Total DB themes: ${count}`);
     } catch (err: any) {
       this.logger.error(`Error initializing invoice themes table: ${err?.message}`);
@@ -84,15 +91,15 @@ export class InvoiceThemeManagerService implements OnModuleInit {
   }
 
   async getAllThemes(onlyActive = false): Promise<InvoiceThemeRecord[]> {
-    const list = await this.prisma.invoiceTheme.findMany({
+    const list = await this.themeModel.findMany({
       where: onlyActive ? { isActive: true } : undefined,
       orderBy: { sortOrder: "asc" },
     });
-    return list.map((item) => this.mapToRecord(item));
+    return list.map((item: any) => this.mapToRecord(item));
   }
 
   async getThemeById(id: string): Promise<InvoiceThemeRecord | null> {
-    const found = await this.prisma.invoiceTheme.findUnique({
+    const found = await this.themeModel.findUnique({
       where: { id },
     });
     return found ? this.mapToRecord(found) : null;
@@ -114,8 +121,8 @@ export class InvoiceThemeManagerService implements OnModuleInit {
     const thumbnail =
       cleanThemeUrl(data.thumbnail) || variants[0] || "/themes/navaratri_1.jpg";
 
-    const count = await this.prisma.invoiceTheme.count();
-    const created = await this.prisma.invoiceTheme.create({
+    const count = await this.themeModel.count();
+    const created = await this.themeModel.create({
       data: {
         id,
         name: data.name?.trim() || "New Theme",
@@ -139,7 +146,7 @@ export class InvoiceThemeManagerService implements OnModuleInit {
     id: string,
     data: Partial<InvoiceThemeRecord>,
   ): Promise<InvoiceThemeRecord> {
-    const existing = await this.prisma.invoiceTheme.findUnique({ where: { id } });
+    const existing = await this.themeModel.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException(`Invoice theme "${id}" not found.`);
     }
@@ -166,7 +173,7 @@ export class InvoiceThemeManagerService implements OnModuleInit {
       updateData.thumbnail = cleanThemeUrl(data.thumbnail);
     }
 
-    const updated = await this.prisma.invoiceTheme.update({
+    const updated = await this.themeModel.update({
       where: { id },
       data: updateData,
     });
@@ -177,7 +184,7 @@ export class InvoiceThemeManagerService implements OnModuleInit {
 
   async deleteTheme(id: string): Promise<boolean> {
     try {
-      await this.prisma.invoiceTheme.delete({
+      await this.themeModel.delete({
         where: { id },
       });
       this.logger.log(`Deleted theme from DB: ${id}`);
