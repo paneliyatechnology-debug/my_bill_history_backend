@@ -151,7 +151,99 @@ export const INITIAL_DEFAULT_THEMES: InvoiceThemeRecord[] = [
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
+  {
+    id: "advanced_gst",
+    name: "Advanced GST",
+    category: "standard",
+    description: "Colour banner with comprehensive tax breakdown column.",
+    primaryColor: "#0284C7",
+    badge: null,
+    thumbnail: "/themes/navaratri_1.jpg",
+    variants: [],
+    isActive: true,
+    sortOrder: 13,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "billbook",
+    name: "Billbook",
+    category: "standard",
+    description: "Logo mark header with clean modern totals and footer styling.",
+    primaryColor: "#4338CA",
+    badge: null,
+    thumbnail: "/themes/navaratri_1.jpg",
+    variants: [],
+    isActive: true,
+    sortOrder: 14,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "advanced_compact",
+    name: "Advanced GST (A5)",
+    category: "standard",
+    description: "Tight, high-density GST bill formatted for A5 paper print.",
+    primaryColor: "#111827",
+    badge: null,
+    thumbnail: "/themes/navaratri_1.jpg",
+    variants: [],
+    isActive: true,
+    sortOrder: 15,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "tallybook_lite",
+    name: "Billbook (A5)",
+    category: "standard",
+    description: "Lightweight A5 bill format with streamlined lines.",
+    primaryColor: "#111827",
+    badge: null,
+    thumbnail: "/themes/navaratri_1.jpg",
+    variants: [],
+    isActive: true,
+    sortOrder: 16,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "modern",
+    name: "Modern",
+    category: "standard",
+    description: "Accent vertical rail with pill bars and soft borders.",
+    primaryColor: "#7C3AED",
+    badge: null,
+    thumbnail: "/themes/navaratri_1.jpg",
+    variants: [],
+    isActive: true,
+    sortOrder: 17,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "simple",
+    name: "Simple",
+    category: "standard",
+    description: "Hairline rules only, minimalist and ink-efficient.",
+    primaryColor: "#111827",
+    badge: null,
+    thumbnail: "/themes/navaratri_1.jpg",
+    variants: [],
+    isActive: true,
+    sortOrder: 18,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
 ];
+
+function cleanThemeUrl(u?: string): string {
+  if (!u) return "";
+  const t = u.trim();
+  if (!t) return "";
+  if (t.startsWith("/") || t.startsWith("http://") || t.startsWith("https://") || t.startsWith("data:")) return t;
+  return `/${t}`;
+}
 
 @Injectable()
 export class InvoiceThemeManagerService {
@@ -216,6 +308,10 @@ export class InvoiceThemeManagerService {
         .replace(/[^a-z0-9]+/g, "_")
         .replace(/^_+|_+$/g, "") + `_${Date.now().toString().slice(-4)}`;
 
+    const rawVariants = Array.isArray(data.variants) && data.variants.length > 0 ? data.variants : [data.thumbnail || "/themes/navaratri_1.jpg"];
+    const variants = rawVariants.map(cleanThemeUrl).filter(Boolean);
+    const thumbnail = cleanThemeUrl(data.thumbnail) || variants[0] || "/themes/navaratri_1.jpg";
+
     const newRecord: InvoiceThemeRecord = {
       id,
       name: data.name?.trim() || "New Theme",
@@ -224,8 +320,8 @@ export class InvoiceThemeManagerService {
       description: data.description || "",
       primaryColor: data.primaryColor || "#F97316",
       badge: data.badge || "NEW",
-      thumbnail: data.thumbnail || data.variants?.[0] || "/themes/navaratri_1.jpg",
-      variants: Array.isArray(data.variants) && data.variants.length > 0 ? data.variants : [data.thumbnail || "/themes/navaratri_1.jpg"],
+      thumbnail,
+      variants,
       isActive: data.isActive !== undefined ? data.isActive : true,
       sortOrder: data.sortOrder || this.themes.length + 1,
       createdAt: new Date().toISOString(),
@@ -251,11 +347,19 @@ export class InvoiceThemeManagerService {
     }
 
     const current = this.themes[idx];
+    const variants = Array.isArray(updates.variants)
+      ? updates.variants.map(cleanThemeUrl).filter(Boolean)
+      : current.variants;
+    const thumbnail = updates.thumbnail !== undefined
+      ? (cleanThemeUrl(updates.thumbnail) || variants[0] || current.thumbnail)
+      : current.thumbnail;
+
     const updated: InvoiceThemeRecord = {
       ...current,
       ...updates,
       id: current.id, // don't mutate primary id
-      variants: Array.isArray(updates.variants) ? updates.variants : current.variants,
+      thumbnail,
+      variants,
       updatedAt: new Date().toISOString(),
     };
 
