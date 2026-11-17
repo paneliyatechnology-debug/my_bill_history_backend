@@ -183,6 +183,15 @@ model Company {
   notifications            Notification[]
   notificationPreferences  NotificationPreference[]
   scheduledReminderLogs    ScheduledReminderLog[]
+  aiCollectionSettings     AiCollectionSettings?
+  aiCollectionCampaigns    AiCollectionCampaign[]
+  aiCollectionQueues       AiCollectionQueue[]
+  aiCollectionCalls        AiCollectionCall[]
+  aiCollectionCommitments  AiCollectionCommitment[]
+  aiCollectionFollowUps    AiCollectionFollowUp[]
+  aiCollectionEvents       AiCollectionEvent[]
+  customerCallingPreferences CustomerCallingPreference[]
+  aiCollectionStaffTasks   AiCollectionStaffTask[]
 
   @@unique([gstin, organizationId])
   @@index([organizationId])
@@ -344,6 +353,7 @@ model User {
   notifications             Notification[]
   notificationDevices       NotificationDevice[]
   notificationPreferences   NotificationPreference[]
+  assignedAiCollectionStaffTasks AiCollectionStaffTask[]
 
   @@index([organizationId])
   @@map("users")
@@ -585,6 +595,12 @@ model Party {
   appointments     PartyAppointment[]
   sharedLedgerConnections SharedLedgerConnection[]
   automatedBillingSchedules AutomatedBillingSchedule[]
+  aiCollectionCalls AiCollectionCall[]
+  aiCollectionQueues AiCollectionQueue[]
+  aiCollectionCommitments AiCollectionCommitment[]
+  aiCollectionFollowUps AiCollectionFollowUp[]
+  callingPreference CustomerCallingPreference?
+  aiCollectionStaffTasks AiCollectionStaffTask[]
 
   @@index([organizationId, companyId])
   @@index([phone])
@@ -911,6 +927,8 @@ model SalesInvoice {
   eInvoiceRecord       EInvoiceRecord?
   eWayBillRecord       EWayBillRecord?
   automatedBillingRuns AutomatedBillingRun[]
+  aiCollectionCalls    AiCollectionCall[]
+  aiCollectionCommitments AiCollectionCommitment[]
 
   @@unique([companyId, financialYearId, invoiceNumber])
   @@index([organizationId, companyId, invoiceDate])
@@ -2256,6 +2274,330 @@ model InvoiceTheme {
 
   @@index([isActive, sortOrder])
   @@map("invoice_themes")
+}
+
+// ============================================================================
+// AI Collections & Automated Voice Calling Models
+// ============================================================================
+
+model AiCollectionSettings {
+  id                         String   @id @default(uuid()) @db.Uuid
+  organizationId             String   @map("organization_id") @db.Uuid
+  companyId                  String   @unique @map("company_id") @db.Uuid
+
+  // AI Calling Configuration
+  isEnabled                  Boolean  @default(true) @map("is_enabled")
+  assistantName              String   @default("Maya") @map("assistant_name") @db.VarChar(100)
+  businessIntro              String   @default("Payment Reminder Assistant") @map("business_intro") @db.VarChar(255)
+  defaultLanguage            String   @default("gujarati") @map("default_language") @db.VarChar(20) // "gujarati" | "hindi" | "english"
+  callingWindowStart         String   @default("09:30") @map("calling_window_start") @db.VarChar(10)
+  callingWindowEnd           String   @default("19:00") @map("calling_window_end") @db.VarChar(10)
+  timezone                   String   @default("Asia/Kolkata") @map("timezone") @db.VarChar(50)
+  maxRetries                 Int      @default(3) @map("max_retries")
+  retryIntervalMinutes       Int      @default(120) @map("retry_interval_minutes")
+  followUpAfterDays          Int      @default(3) @map("follow_up_after_days")
+  maxCallsPerCustomerPerDay  Int      @default(2) @map("max_calls_per_customer_per_day")
+  maxCallsPerCampaign        Int      @default(50) @map("max_calls_per_campaign")
+
+  // Voice Provider Configuration
+  voiceProvider              String   @default("twilio") @map("voice_provider") @db.VarChar(50) // "twilio" | "exotel" | "knowlarity" | "simulator"
+  providerApiKey             String?  @map("provider_api_key") @db.Text
+  providerApiSecret          String?  @map("provider_api_secret") @db.Text
+  providerAccountSid         String?  @map("provider_account_sid") @db.VarChar(255)
+  providerVirtualNumber      String?  @map("provider_virtual_number") @db.VarChar(50)
+  webhookSecret              String?  @map("webhook_secret") @db.VarChar(255)
+  telephonyStatus            String   @default("CONFIGURED") @map("telephony_status") @db.VarChar(50)
+
+  // AI Provider Configuration
+  aiModel                    String   @default("gemini-2.5-flash") @map("ai_model") @db.VarChar(100)
+  sttProvider                String   @default("google") @map("stt_provider") @db.VarChar(50)
+  ttsProvider                String   @default("google") @map("tts_provider") @db.VarChar(50)
+  voiceGender                String   @default("FEMALE") @map("voice_gender") @db.VarChar(20)
+  responseSpeed              Decimal  @default(1.00) @map("response_speed") @db.Decimal(3, 2)
+  conversationTimeoutSeconds Int      @default(300) @map("conversation_timeout_seconds")
+  maxDurationSeconds         Int      @default(600) @map("max_duration_seconds")
+  fallbackResponse           String?  @map("fallback_response") @db.Text
+
+  // Bank & Payment Details
+  bankName                   String?  @map("bank_name") @db.VarChar(100)
+  bankAccountNumber          String?  @map("bank_account_number") @db.VarChar(50)
+  bankIfsc                   String?  @map("bank_ifsc") @db.VarChar(20)
+  bankAccountHolder          String?  @map("bank_account_holder") @db.VarChar(150)
+  upiId                      String?  @map("upi_id") @db.VarChar(100)
+  shareBankDetailsOnCall     Boolean  @default(true) @map("share_bank_details_on_call")
+  sendWhatsappFollowup       Boolean  @default(true) @map("send_whatsapp_followup")
+  sendSmsFollowup            Boolean  @default(true) @map("send_sms_followup")
+
+  // Automation & Compliance
+  autoScheduleCalls          Boolean  @default(true) @map("auto_schedule_calls")
+  autoFollowUpCalls          Boolean  @default(true) @map("auto_follow_up_calls")
+  stopCallsWhenInvoicePaid   Boolean  @default(true) @map("stop_calls_when_invoice_paid")
+  stopCallsWhenCustomerOptsOut Boolean @default(true) @map("stop_calls_when_customer_opts_out")
+  requireHumanApproval       Boolean  @default(false) @map("require_human_approval")
+  notifyStaffOnDispute       Boolean  @default(true) @map("notify_staff_on_dispute")
+  recordConsentAudit         Boolean  @default(true) @map("record_consent_audit")
+
+  createdAt                  DateTime @default(now()) @map("created_at")
+  updatedAt                  DateTime @updatedAt @map("updated_at")
+
+  company                    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, companyId])
+  @@map("ai_collection_settings")
+}
+
+model AiCollectionCampaign {
+  id                String              @id @default(uuid()) @db.Uuid
+  organizationId    String              @map("organization_id") @db.Uuid
+  companyId         String              @map("company_id") @db.Uuid
+  name              String              @db.VarChar(200)
+  status            String              @default("DRAFT") @db.VarChar(50) // DRAFT, SCHEDULED, RUNNING, COMPLETED, PAUSED, CANCELLED
+  totalCustomers    Int                 @default(0) @map("total_customers")
+  totalCalls        Int                 @default(0) @map("total_calls")
+  successfulCalls   Int                 @default(0) @map("successful_calls")
+  totalOutstanding  Decimal             @default(0.00) @map("total_outstanding") @db.Decimal(15, 2)
+  totalRecovered    Decimal             @default(0.00) @map("total_recovered") @db.Decimal(15, 2)
+  scheduledFor      DateTime?           @map("scheduled_for")
+  startedAt         DateTime?           @map("started_at")
+  completedAt       DateTime?           @map("completed_at")
+  createdBy         String?             @map("created_by") @db.Uuid
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  queues            AiCollectionQueue[]
+  calls             AiCollectionCall[]
+
+  @@index([organizationId, companyId, status])
+  @@map("ai_collection_campaigns")
+}
+
+model AiCollectionQueue {
+  id               String                @id @default(uuid()) @db.Uuid
+  organizationId   String                @map("organization_id") @db.Uuid
+  companyId        String                @map("company_id") @db.Uuid
+  campaignId       String?               @map("campaign_id") @db.Uuid
+  partyId          String                @map("party_id") @db.Uuid
+  invoiceIds       Json                  @default("[]") @map("invoice_ids")
+  totalOutstanding Decimal               @map("total_outstanding") @db.Decimal(15, 2)
+  priority         Int                   @default(100)
+  status           String                @default("QUEUED") @db.VarChar(50) // QUEUED, PROCESSING, COMPLETED, FAILED, CANCELLED
+  attempts         Int                   @default(0)
+  maxAttempts      Int                   @default(3) @map("max_attempts")
+  scheduledAt      DateTime              @map("scheduled_at")
+  lockedAt         DateTime?             @map("locked_at")
+  lockedBy         String?               @map("locked_by") @db.VarChar(100)
+  lastError        String?               @map("last_error") @db.Text
+  callId           String?               @map("call_id") @db.Uuid
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+
+  company          Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party            Party                 @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  campaign         AiCollectionCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, companyId, status])
+  @@index([partyId])
+  @@index([scheduledAt, status])
+  @@map("ai_collection_queues")
+}
+
+model AiCollectionCall {
+  id                 String                     @id @default(uuid()) @db.Uuid
+  organizationId     String                     @map("organization_id") @db.Uuid
+  companyId          String                     @map("company_id") @db.Uuid
+  campaignId         String?                    @map("campaign_id") @db.Uuid
+  queueId            String?                    @map("queue_id") @db.Uuid
+  partyId            String                     @map("party_id") @db.Uuid
+  partyName          String                     @map("party_name") @db.VarChar(200)
+  partyPhone         String                     @map("party_phone") @db.VarChar(30)
+  invoiceId          String?                    @map("invoice_id") @db.Uuid
+  invoiceNumber      String?                    @map("invoice_number") @db.VarChar(100)
+  invoiceIds         Json                       @default("[]") @map("invoice_ids")
+  outstandingAmount  Decimal                    @map("outstanding_amount") @db.Decimal(15, 2)
+  discussedAmount    Decimal?                   @map("discussed_amount") @db.Decimal(15, 2)
+  status             String                     @default("SCHEDULED") @db.VarChar(50) // SCHEDULED, RINGING, IN_PROGRESS, COMPLETED, FAILED, BUSY, NO_ANSWER, CANCELLED
+  provider           String                     @default("twilio") @db.VarChar(50)
+  providerCallSid    String?                    @map("provider_call_sid") @db.VarChar(255)
+  direction          String                     @default("outbound") @db.VarChar(20)
+  language           String                     @default("gujarati") @db.VarChar(20)
+  durationSeconds    Int                        @default(0) @map("duration_seconds")
+  recordingUrl       String?                    @map("recording_url") @db.Text
+  recordingDuration  Int?                       @map("recording_duration")
+  customerIntent     String?                    @map("customer_intent") @db.VarChar(100) // PROMISE_TO_PAY, ALREADY_PAID, REQUEST_MORE_TIME, DISPUTED, etc.
+  customerResponse   String?                    @map("customer_response") @db.Text
+  promisedAmount     Decimal?                   @map("promised_amount") @db.Decimal(15, 2)
+  promisedDate       DateTime?                  @map("promised_date")
+  paymentReference   String?                    @map("payment_reference") @db.VarChar(100)
+  summary            String?                    @db.Text
+  nextAction         String?                    @map("next_action") @db.VarChar(100)
+  nextFollowUpDate   DateTime?                  @map("next_follow_up_date")
+  initiatedAt        DateTime                   @default(now()) @map("initiated_at")
+  answeredAt         DateTime?                  @map("answered_at")
+  endedAt            DateTime?                  @map("ended_at")
+  createdAt          DateTime                   @default(now()) @map("created_at")
+  updatedAt          DateTime                   @updatedAt @map("updated_at")
+
+  company            Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party              Party                      @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  invoice            SalesInvoice?              @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  campaign           AiCollectionCampaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  conversations      AiCollectionConversation[]
+  commitments        AiCollectionCommitment[]
+  followUps          AiCollectionFollowUp[]
+  staffTasks         AiCollectionStaffTask[]
+
+  @@index([organizationId, companyId, status])
+  @@index([partyId])
+  @@index([providerCallSid])
+  @@index([createdAt])
+  @@map("ai_collection_calls")
+}
+
+model AiCollectionConversation {
+  id                 String           @id @default(uuid()) @db.Uuid
+  callId             String           @map("call_id") @db.Uuid
+  role               String           @db.VarChar(20) // system, assistant, user
+  content            String           @db.Text
+  language           String?          @db.VarChar(20)
+  turnIndex          Int              @default(0) @map("turn_index")
+  confidence         Decimal?         @db.Decimal(5, 4)
+  rawProviderPayload Json?            @map("raw_provider_payload")
+  createdAt          DateTime         @default(now()) @map("created_at")
+
+  call               AiCollectionCall @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([callId, turnIndex])
+  @@map("ai_collection_conversations")
+}
+
+model AiCollectionCommitment {
+  id                 String           @id @default(uuid()) @db.Uuid
+  organizationId     String           @map("organization_id") @db.Uuid
+  companyId          String           @map("company_id") @db.Uuid
+  callId             String           @map("call_id") @db.Uuid
+  partyId            String           @map("party_id") @db.Uuid
+  invoiceId          String?          @map("invoice_id") @db.Uuid
+  promisedAmount     Decimal          @map("promised_amount") @db.Decimal(15, 2)
+  promisedDate       DateTime         @map("promised_date")
+  paymentMethod      String?          @map("payment_method") @db.VarChar(50)
+  paymentReference   String?          @map("payment_reference") @db.VarChar(100)
+  status             String           @default("PENDING") @db.VarChar(50) // PENDING, FULFILLED, PARTIALLY_FULFILLED, BROKEN, CANCELLED
+  fulfilledAmount    Decimal          @default(0.00) @map("fulfilled_amount") @db.Decimal(15, 2)
+  fulfilledAt        DateTime?        @map("fulfilled_at")
+  notes              String?          @db.Text
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  company            Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  call               AiCollectionCall @relation(fields: [callId], references: [id], onDelete: Cascade)
+  party              Party            @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  invoice            SalesInvoice?    @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, companyId, status])
+  @@index([partyId])
+  @@index([promisedDate])
+  @@map("ai_collection_commitments")
+}
+
+model AiCollectionFollowUp {
+  id               String            @id @default(uuid()) @db.Uuid
+  organizationId   String            @map("organization_id") @db.Uuid
+  companyId        String            @map("company_id") @db.Uuid
+  partyId          String            @map("party_id") @db.Uuid
+  callId           String?           @map("call_id") @db.Uuid
+  commitmentId     String?           @map("commitment_id") @db.Uuid
+  scheduledDate    DateTime          @map("scheduled_date")
+  reason           String            @db.VarChar(255)
+  actionType       String            @default("CALL") @map("action_type") @db.VarChar(50) // CALL, WHATSAPP, SMS, STAFF_REVIEW
+  status           String            @default("PENDING") @db.VarChar(30) // PENDING, COMPLETED, CANCELLED, SKIPPED
+  completedAt      DateTime?         @map("completed_at")
+  assignedToUserId String?           @map("assigned_to_user_id") @db.Uuid
+  notes            String?           @db.Text
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party            Party             @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  call             AiCollectionCall? @relation(fields: [callId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, companyId, status])
+  @@index([partyId])
+  @@index([scheduledDate])
+  @@map("ai_collection_follow_ups")
+}
+
+model AiCollectionEvent {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  companyId      String    @map("company_id") @db.Uuid
+  callId         String?   @map("call_id") @db.Uuid
+  eventType      String    @map("event_type") @db.VarChar(100)
+  payload        Json
+  source         String    @db.VarChar(50)
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, companyId, eventType])
+  @@index([callId])
+  @@map("ai_collection_events")
+}
+
+model CustomerCallingPreference {
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @map("organization_id") @db.Uuid
+  companyId          String    @map("company_id") @db.Uuid
+  partyId            String    @unique @map("party_id") @db.Uuid
+  isOptedOut         Boolean   @default(false) @map("is_opted_out")
+  optedOutAt         DateTime? @map("opted_out_at")
+  optOutReason       String?   @map("opt_out_reason") @db.Text
+  optOutSource       String?   @map("opt_out_source") @db.VarChar(100)
+  preferredLanguage  String    @default("gujarati") @map("preferred_language") @db.VarChar(20)
+  preferredCallTime  String    @default("MORNING") @map("preferred_call_time") @db.VarChar(20)
+  doNotCallBefore    String    @default("09:30") @map("do_not_call_before") @db.VarChar(10)
+  doNotCallAfter     String    @default("19:00") @map("do_not_call_after") @db.VarChar(10)
+  consentRecordedAt  DateTime  @default(now()) @map("consent_recorded_at")
+  lastCallAt         DateTime? @map("last_call_at")
+  totalCallsReceived Int       @default(0) @map("total_calls_received")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  company            Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party              Party     @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, partyId])
+  @@index([organizationId, companyId])
+  @@index([partyId])
+  @@map("customer_calling_preferences")
+}
+
+model AiCollectionStaffTask {
+  id              String            @id @default(uuid()) @db.Uuid
+  organizationId  String            @map("organization_id") @db.Uuid
+  companyId       String            @map("company_id") @db.Uuid
+  partyId         String            @map("party_id") @db.Uuid
+  callId          String?           @map("call_id") @db.Uuid
+  assignedUserId  String?           @map("assigned_user_id") @db.Uuid
+  taskType        String            @map("task_type") @db.VarChar(50) // DISPUTE_REVIEW, CALLBACK_REQUEST, UNVERIFIED_PAYMENT, HIGH_VALUE_FOLLOWUP
+  title           String            @db.VarChar(255)
+  description     String            @db.Text
+  priority        String            @default("HIGH") @db.VarChar(20) // LOW, MEDIUM, HIGH, URGENT
+  status          String            @default("OPEN") @db.VarChar(30) // OPEN, IN_PROGRESS, RESOLVED, DISMISSED
+  resolutionNotes String?           @map("resolution_notes") @db.Text
+  resolvedAt      DateTime?         @map("resolved_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party           Party             @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  call            AiCollectionCall? @relation(fields: [callId], references: [id], onDelete: SetNull)
+  assignedUser    User?             @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, companyId, status])
+  @@index([partyId])
+  @@index([assignedUserId])
+  @@map("ai_collection_staff_tasks")
 }
 
 

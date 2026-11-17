@@ -38,6 +38,7 @@ import { SharedLedgerModule } from "./shared-ledger/shared-ledger.module";
 import { SmsMarketingModule } from "./sms-marketing/sms-marketing.module";
 import { AutomatedBillingModule } from "./automated-billing/automated-billing.module";
 import { NotificationsModule } from "./notifications/notifications.module";
+import { AiCollectionsModule } from "./ai-collections/ai-collections.module";
 
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 
@@ -87,6 +88,7 @@ import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
     SmsMarketingModule,
     AutomatedBillingModule,
     NotificationsModule,
+    AiCollectionsModule,
     HealthModule,
   ],
   providers: [

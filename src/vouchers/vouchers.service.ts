@@ -1988,6 +1988,44 @@ export class VouchersService {
         });
       }
 
+      // 8b. Reconcile AI Collections for settled customer
+      const remainingUnpaidInvoices = await tx.salesInvoice.count({
+        where: {
+          companyId: tenant.companyId,
+          partyId: party.id,
+          status: { in: ["ISSUED", "PARTIALLY_PAID"] },
+          balanceAmount: { gt: 0 },
+        },
+      });
+
+      if (remainingUnpaidInvoices === 0) {
+        await tx.aiCollectionQueue.updateMany({
+          where: {
+            companyId: tenant.companyId,
+            partyId: party.id,
+            status: { in: ["QUEUED", "PROCESSING"] },
+          },
+          data: {
+            status: "CANCELLED",
+            lastError: "Auto-cancelled: All pending invoices have been fully paid.",
+          },
+        });
+
+        await tx.aiCollectionCommitment.updateMany({
+          where: {
+            companyId: tenant.companyId,
+            partyId: party.id,
+            status: "PENDING",
+          },
+          data: {
+            status: "FULFILLED",
+            fulfilledAt: new Date(),
+            fulfilledAmount: receivedAmount.toNumber(),
+            notes: `Settled via Receipt Voucher #${voucherNumber}`,
+          },
+        });
+      }
+
       // 9. Audit Log (atomic with receipt voucher posting)
       await this.audit.record(
         {

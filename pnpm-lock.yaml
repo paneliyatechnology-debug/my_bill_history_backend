@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@fastify/formbody':
+        specifier: ^7.4.0
+        version: 7.4.0
       '@fastify/multipart':
         specifier: ^8.3.0
         version: 8.3.1
