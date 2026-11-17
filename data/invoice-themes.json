@@ -236,11 +236,12 @@
     "badge": "FESTIVE",
     "thumbnail": "/themes/invoice_diwali_1794889652023.png",
     "variants": [
-      "/themes/2027invoice_1794889331402.png"
+      "/themes/invoice_dussehra_1794895195072.png",
+      "/themes/invoice_republic_day_1794895203162.png"
     ],
     "isActive": true,
     "sortOrder": 10,
     "createdAt": "2026-11-17T04:24:48.079Z",
-    "updatedAt": "2026-11-17T04:27:34.814Z"
+    "updatedAt": "2026-11-17T06:00:04.884Z"
   }
 ]
