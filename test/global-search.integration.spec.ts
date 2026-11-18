@@ -11,7 +11,6 @@ import {
   InvoiceStatus,
   PaymentMode,
   PartyType,
-  SupplyCategory,
 } from "@billing/shared-types";
 
 describe("Global Search (Multi-Entity Unified Search) Integration Suite", () => {

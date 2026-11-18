@@ -97,6 +97,11 @@ export class UnitsService {
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
       let list = await tx.unitOfMeasure.findMany({
         where: { companyId: ctx.companyId },
+        include: {
+          _count: {
+            select: { itemsPrimary: true, itemsSecondary: true },
+          },
+        },
         orderBy: { symbol: "asc" },
       });
 
@@ -129,11 +134,19 @@ export class UnitsService {
 
         list = await tx.unitOfMeasure.findMany({
           where: { companyId: ctx.companyId },
+          include: {
+            _count: {
+              select: { itemsPrimary: true, itemsSecondary: true },
+            },
+          },
           orderBy: { symbol: "asc" },
         });
       }
 
-      return list;
+      return list.map((u) => ({
+        ...u,
+        itemCount: (u._count?.itemsPrimary || 0) + (u._count?.itemsSecondary || 0),
+      }));
     });
   }
 
@@ -204,6 +217,11 @@ export class UnitsService {
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
       const existing = await tx.unitOfMeasure.findFirst({
         where: { id, companyId: ctx.companyId },
+        include: {
+          _count: {
+            select: { itemsPrimary: true, itemsSecondary: true },
+          },
+        },
       });
 
       if (!existing) {
@@ -211,6 +229,16 @@ export class UnitsService {
           statusCode: 404,
           message: `Unit of measure with ID '${id}' not found.`,
           messageGujarati: `આઈડી '${id}' ધરાવતો યુનિટ મળ્યો નથી.`,
+        });
+      }
+
+      const linkedCount = (existing._count?.itemsPrimary || 0) + (existing._count?.itemsSecondary || 0);
+      if (linkedCount > 0) {
+        throw new BadRequestException({
+          statusCode: 400,
+          error: "UNIT_IN_USE",
+          message: `Cannot delete unit '${existing.name}' (${existing.symbol}) because it is used by ${linkedCount} item(s) in your inventory. Reassign or remove items first.`,
+          messageGujarati: `યુનિટ '${existing.name}' (${existing.symbol}) કાઢી શકાતો નથી કારણ કે તે ઇન્વેન્ટરીમાં ${linkedCount} વસ્તુ(ઓ) સાથે જોડાયેલ છે. કૃપા કરીને પહેલા વસ્તુઓમાં યુનિટ બદલો.`,
         });
       }
 

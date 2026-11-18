@@ -113,7 +113,8 @@ export class ItemsController {
     @CurrentTenant() ctx: TenantContext,
     @Body() body: { ids: string[]; force?: boolean },
   ) {
-    return this.itemsService.bulkDelete(ctx, body.ids, Boolean(body.force));
+    const shouldForce = body.force === undefined || Boolean(body.force);
+    return this.itemsService.bulkDelete(ctx, body.ids, shouldForce);
   }
 
   @Roles(UserRole.COMPANY_ADMIN, UserRole.ACCOUNTANT)
@@ -123,6 +124,7 @@ export class ItemsController {
     @Param("id") id: string,
     @Query("force") force?: string,
   ) {
-    return this.itemsService.delete(ctx, id, force === "true" || force === "1");
+    const shouldForce = force === undefined || force === "true" || force === "1";
+    return this.itemsService.delete(ctx, id, shouldForce);
   }
 }

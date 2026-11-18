@@ -33,18 +33,51 @@ describe("email helpers", () => {
     expect(parsed.paragraphs).toEqual(["Please review it."]);
 
     const rendered = renderBrandedEmail({
-      heading: "Your verification code",
+      heading: "Verification Code",
       code: "123456",
-      copyUrl: "http://localhost:3000/copy-code?code=123456&mode=forgot",
+      actionUrl: "http://localhost:3000/login?mode=forgot&otp=123456",
       details: [{ label: "Party", value: "<script>" }],
     });
     expect(rendered.html).toContain("myown");
     expect(rendered.html).toContain("billbook");
     expect(rendered.html).toContain(">123456<");
-    expect(rendered.html).toContain("Copy code");
-    expect(rendered.html).toContain("http://localhost:3000/copy-code?code=123456");
+    expect(rendered.html).toContain("Security Verification Code");
+    expect(rendered.html).toContain("Click code to select");
     expect(rendered.html).toContain("&lt;script&gt;");
     expect(rendered.html).not.toContain("<script>");
-    expect(rendered.text).toContain("Copy this code: 123456");
+    expect(rendered.html).not.toContain("GST Verified");
+    // Ensure 100% English only - no Gujarati characters in email
+    expect(rendered.html).not.toMatch(/[\u0A80-\u0AFF]/);
+    expect(rendered.text).not.toMatch(/[\u0A80-\u0AFF]/);
+    expect(rendered.text).toContain("Verification Code: 123456");
+  });
+
+  it("renders an enterprise-grade sales invoice email with hero amount card and CTA", () => {
+    const rendered = renderBrandedEmail({
+      heading: "Invoice INV/26-27/0004",
+      intro: "JMK shared this tax invoice with you.",
+      companyName: "JMK",
+      actionUrl: "http://localhost:3000/sales/invoices/123",
+      actionLabel: "View & Download Invoice →",
+      details: [
+        { label: "Invoice Number", value: "INV/26-27/0004" },
+        { label: "Invoice Date", value: "18/11/2026" },
+        { label: "Billed To", value: "Jaydeep" },
+        { label: "Grand Total", value: "₹ 9,45,000.00" },
+        { label: "Balance", value: "₹ 0.00" },
+      ],
+      paragraphs: ["Thank you for your business. Please reach out if you have any questions."],
+    });
+
+    expect(rendered.html).toContain("Invoice INV/26-27/0004");
+    expect(rendered.html).toContain("JMK");
+    expect(rendered.html).toContain("₹ 9,45,000.00");
+    expect(rendered.html).toContain("Paid in Full");
+    expect(rendered.html).toContain("View &amp; Download Invoice");
+    expect(rendered.html).toContain("http://localhost:3000/sales/invoices/123");
+    // Explicitly verify AI-style badges and Gujarati text are completely absent
+    expect(rendered.html).not.toContain("GST Verified");
+    expect(rendered.html).not.toMatch(/[\u0A80-\u0AFF]/);
+    expect(rendered.text).not.toMatch(/[\u0A80-\u0AFF]/);
   });
 });

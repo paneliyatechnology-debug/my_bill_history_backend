@@ -823,6 +823,45 @@ describe("Phase 3: Master Data & Party/Item Catalogs (Integration)", () => {
       expect(res.statusCode).toBe(404);
       expect(JSON.parse(res.body).error).toBe("ITEM_NOT_FOUND");
     });
+
+    it("should permanently delete item and remove from database when delete is called", async () => {
+      // Create a test item
+      const createRes = await app.inject({
+        method: "POST",
+        url: "/api/v1/items",
+        headers: { authorization: `Bearer ${tenantAToken}` },
+        payload: {
+          type: ItemType.PRODUCT,
+          name: "Item To Delete",
+          sku: "DEL-TEST-001",
+          hsnCode: "2106",
+          primaryUomId: uomBoxId,
+          taxRate: 18.0,
+          retailPrice: 50,
+          openingStock: 10,
+        },
+      });
+      expect(createRes.statusCode).toBe(201);
+      const createdItem = JSON.parse(createRes.body);
+
+      // Delete the item
+      const deleteRes = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/items/${createdItem.id}`,
+        headers: { authorization: `Bearer ${tenantAToken}` },
+      });
+      expect(deleteRes.statusCode).toBe(200);
+      const deleteData = JSON.parse(deleteRes.body);
+      expect(deleteData.deleted).toBe(true);
+
+      // Verify item no longer exists in database
+      const lookupRes = await app.inject({
+        method: "GET",
+        url: `/api/v1/items/lookup?code=DEL-TEST-001`,
+        headers: { authorization: `Bearer ${tenantAToken}` },
+      });
+      expect(lookupRes.statusCode).toBe(404);
+    });
   });
 
   // ==========================================

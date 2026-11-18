@@ -927,7 +927,7 @@ export class ItemsService {
     });
   }
 
-  async delete(ctx: TenantContext, id: string, force = false) {
+  async delete(ctx: TenantContext, id: string, force = true) {
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
       const existing = await tx.item.findFirst({
         where: { id, companyId: ctx.companyId },
@@ -941,7 +941,7 @@ export class ItemsService {
         });
       }
 
-      // If user requested force deletion, or if the item is ALREADY inactive (user wants to completely purge it)
+      // If user requested force deletion (default), or if the item is ALREADY inactive (user wants to completely purge it)
       if (force || existing.isActive === false) {
         await tx.salesReturnItem.deleteMany({ where: { itemId: id } });
         await tx.purchaseReturnItem.deleteMany({ where: { itemId: id } });
@@ -950,6 +950,7 @@ export class ItemsService {
         await tx.deliveryChallanItem.deleteMany({ where: { itemId: id } });
         await tx.salesInvoiceItem.deleteMany({ where: { itemId: id } });
         await tx.purchaseInvoiceItem.deleteMany({ where: { itemId: id } });
+        await tx.automatedBillingLine.deleteMany({ where: { itemId: id } });
         await tx.bomItem.deleteMany({ where: { rawItemId: id } });
         await tx.billOfMaterial.deleteMany({ where: { finishedItemId: id } });
         await tx.stockTransaction.deleteMany({ where: { itemId: id } });
@@ -1077,7 +1078,7 @@ export class ItemsService {
     });
   }
 
-  async bulkDelete(ctx: TenantContext, ids: string[], force = false) {
+  async bulkDelete(ctx: TenantContext, ids: string[], force = true) {
     if (!Array.isArray(ids) || ids.length === 0) {
       throw new BadRequestException({
         statusCode: 400,

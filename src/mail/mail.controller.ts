@@ -21,6 +21,9 @@ interface SendMailDto {
   note?: string;
   details?: Array<{ label?: string; value?: string }>;
   replyTo?: string;
+  actionUrl?: string;
+  actionLabel?: string;
+  companyName?: string;
 }
 
 @Controller("mail")
@@ -89,6 +92,9 @@ export class MailController {
       heading: String(dto.heading || "").trim() || undefined,
       intro: String(dto.intro || "").trim() || undefined,
       note: String(dto.note || "").trim() || undefined,
+      actionUrl: String(dto.actionUrl || "").trim() || undefined,
+      actionLabel: String(dto.actionLabel || "").trim() || undefined,
+      companyName: String(dto.companyName || "").trim() || undefined,
       details,
       text,
     });

@@ -13,6 +13,9 @@ export interface EmailContent {
   code?: string;
   codeCaption?: string;
   copyUrl?: string;
+  actionUrl?: string;
+  actionLabel?: string;
+  companyName?: string;
   details?: EmailDetail[];
   paragraphs?: string[];
   note?: string;
@@ -69,6 +72,49 @@ export function renderBrandedEmail(content: EmailContent): { html: string; text:
   const details = (content.details || []).filter((row) => row.label.trim() && row.value.trim()).slice(0, 20);
   const paragraphs = (content.paragraphs || []).map((item) => item.trim()).filter(Boolean).slice(0, 12);
 
+  // Extract action URL from content or paragraphs if available
+  let actionUrl = content.actionUrl || "";
+  if (!actionUrl) {
+    for (const p of paragraphs) {
+      const match = p.match(/https?:\/\/[^\s<>'"]+/i);
+      if (match) {
+        actionUrl = match[0].replace(/[.,;)]+$/, "");
+        break;
+      }
+    }
+  }
+
+  // Determine button label
+  let actionLabel = content.actionLabel || "";
+  if (!actionLabel) {
+    if (/invoice/i.test(heading)) {
+      actionLabel = "View & Download Invoice →";
+    } else if (/credit\s*note/i.test(heading)) {
+      actionLabel = "View Credit Note →";
+    } else if (/return/i.test(heading)) {
+      actionLabel = "View Return Voucher →";
+    } else if (actionUrl) {
+      actionLabel = "Open in MyOwn BillBook →";
+    }
+  }
+
+  // Extract Grand Total and Balance for Hero Metric card if present
+  const grandTotalRow = details.find((d) => /grand\s*total|total\s*amount/i.test(d.label)) ||
+    details.find((d) => /^total$/i.test(d.label)) ||
+    details.find((d) => /amount/i.test(d.label));
+
+  const balanceRow = details.find((d) => /balance/i.test(d.label));
+
+  // Determine sender display name
+  const senderName = content.companyName ||
+    (content.intro && content.intro.includes(" shared ") ? content.intro.split(" shared ")[0].trim() : "") ||
+    appName;
+
+  // Filter out grand total and balance from standard table when rendered in Hero card
+  const filteredDetails = grandTotalRow
+    ? details.filter((d) => d !== grandTotalRow && d !== balanceRow)
+    : details;
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -76,47 +122,101 @@ export function renderBrandedEmail(content: EmailContent): { html: string; text:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(heading)}</title>
 </head>
-<body style="margin:0;padding:0;background:#F4F6F8;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(preheader)}</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4F6F8;margin:0;padding:0;">
+<body style="margin:0;padding:0;background-color:#F1F5F9;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;">${escapeHtml(preheader)}</div>
+  
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F1F5F9;margin:0;padding:28px 12px;">
     <tr>
-      <td align="center" style="padding:28px 12px;">
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;">
+      <td align="center">
+        <!-- Main Card Container -->
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background-color:#FFFFFF;border-radius:10px;border:1px solid #E2E8F0;box-shadow:0 2px 8px rgba(15,23,42,0.05);overflow:hidden;">
+          
+          <!-- Corporate Brand Header Bar -->
           <tr>
-            <td style="background:#1E589D;border-radius:16px 16px 0 0;padding:22px 28px;">
-              <div style="font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:1;font-weight:800;letter-spacing:-0.4px;">
-                <span style="color:#FFFFFF;">myown</span><span style="color:#FFB067;">billbook</span>
-              </div>
-              <div style="font-family:Arial,Helvetica,sans-serif;color:#D6E4F5;font-size:12px;line-height:1.4;margin-top:6px;">
-                Indian GST Billing, Inventory &amp; Accounting
-              </div>
+            <td style="padding:20px 28px;background-color:#FFFFFF;border-bottom:1px solid #E2E8F0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td valign="middle">
+                    <table role="presentation" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td valign="middle" style="padding-right:12px;">
+                          <div style="width:34px;height:34px;border-radius:6px;background-color:#1E3A8A;color:#FFFFFF;font-size:17px;font-weight:700;line-height:34px;text-align:center;">
+                            M
+                          </div>
+                        </td>
+                        <td valign="middle">
+                          <div style="font-size:18px;font-weight:800;letter-spacing:-0.3px;color:#0F172A;line-height:1.2;">
+                            <span style="color:#0F172A;">myown</span><span style="color:#2563EB;">billbook</span>
+                          </div>
+                          <div style="font-size:11px;color:#64748B;font-weight:500;margin-top:2px;">
+                            GST Invoicing, Inventory &amp; Accounting
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td align="right" valign="middle">
+                    <div style="font-size:12px;font-weight:600;color:#64748B;text-align:right;">
+                      ${content.companyName ? escapeHtml(content.companyName) : "Official Notification"}
+                    </div>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
+
+          <!-- Main Body Content -->
           <tr>
-            <td style="height:4px;background:#EA580C;font-size:0;line-height:0;">&nbsp;</td>
-          </tr>
-          <tr>
-            <td style="background:#FFFFFF;padding:28px 28px 8px;font-family:Arial,Helvetica,sans-serif;color:#202124;">
-              <h1 style="margin:0 0 12px;font-size:22px;line-height:1.3;font-weight:800;color:#111827;">${escapeHtml(heading)}</h1>
-              ${content.intro ? `<p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#3F4754;">${escapeHtml(content.intro)}</p>` : ""}
-              ${renderCode(content.code, content.codeCaption, content.copyUrl)}
-              ${renderDetails(details)}
-              ${paragraphs.map((paragraph) => `<p style="margin:0 0 14px;font-size:14px;line-height:1.65;color:#3F4754;">${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`).join("")}
-              ${content.note ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0 16px;"><tr><td style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.5;color:#9A3412;">${escapeHtml(content.note)}</td></tr></table>` : ""}
-              ${content.gujaratiNote ? `<p style="margin:0 0 8px;font-size:13px;line-height:1.6;color:#667085;">${escapeHtml(content.gujaratiNote)}</p>` : ""}
+            <td style="padding:28px 28px 16px;color:#0F172A;">
+              
+              <!-- Document Title & Intro -->
+              <h1 style="margin:0 0 8px;font-size:20px;line-height:1.4;font-weight:700;color:#0F172A;letter-spacing:-0.2px;">
+                ${escapeHtml(heading)}
+              </h1>
+              ${content.intro ? `<p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#475569;">${escapeHtml(content.intro)}</p>` : ""}
+
+              <!-- Featured Hero Amount Card (if Grand Total is present) -->
+              ${grandTotalRow ? renderHeroAmountCard(grandTotalRow, balanceRow) : ""}
+
+              <!-- OTP Verification Block (if code is present) -->
+              ${renderCode(content.code, content.codeCaption, actionUrl || content.copyUrl, actionLabel)}
+
+              <!-- Structured Details Table -->
+              ${renderDetails(filteredDetails)}
+
+              <!-- Primary Action CTA Button (if actionUrl is available and no OTP block already handled it) -->
+              ${!content.code && actionUrl ? renderActionButton(actionUrl, actionLabel) : ""}
+
+              <!-- Additional Paragraphs -->
+              ${paragraphs.map((p) => `<p style="margin:0 0 14px;font-size:13px;line-height:1.65;color:#475569;">${escapeHtml(p).replace(/\n/g, "<br>")}</p>`).join("")}
+
+              <!-- Alert Callout Note -->
+              ${content.note ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0 20px;"><tr><td style="background-color:#F8FAFC;border-left:4px solid #2563EB;border:1px solid #E2E8F0;border-left-width:4px;border-radius:6px;padding:12px 16px;font-size:13px;line-height:1.5;color:#1E293B;font-weight:500;">${escapeHtml(content.note)}</td></tr></table>` : ""}
+
             </td>
           </tr>
+
+          <!-- Professional Corporate Footer -->
           <tr>
-            <td style="background:#F8FAFC;border-top:1px solid #E5E7EB;border-radius:0 0 16px 16px;padding:16px 28px 20px;font-family:Arial,Helvetica,sans-serif;">
-              <p style="margin:0;font-size:12px;line-height:1.5;color:#667085;">
-                Sent by <strong style="color:#1E589D;">${escapeHtml(appName)}</strong>.
-                If you did not request this message, you can ignore it.
-              </p>
-              <p style="margin:8px 0 0;font-size:11px;line-height:1.5;color:#98A2B3;">
-                આ સંદેશ ${escapeHtml(appName)} તરફથી મોકલાયો છે. જો તમે વિનંતી ન કરી હોય, તો આ ઈમેલ અવગણો.
-              </p>
+            <td style="background-color:#F8FAFC;border-top:1px solid #E2E8F0;padding:20px 28px 24px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td>
+                    <div style="font-size:12px;font-weight:600;color:#334155;">
+                      myownbillbook &bull; Indian GST Billing &amp; Accounting
+                    </div>
+                    <div style="font-size:11px;color:#64748B;margin-top:4px;line-height:1.5;">
+                      Sent on behalf of <strong>${escapeHtml(senderName)}</strong> via ${escapeHtml(appName)}.
+                    </div>
+                    <div style="font-size:11px;color:#94A3B8;margin-top:4px;line-height:1.4;">
+                      This is an automated operational notification. For billing inquiries, please contact the sender directly.
+                    </div>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
+
         </table>
       </td>
     </tr>
@@ -125,19 +225,20 @@ export function renderBrandedEmail(content: EmailContent): { html: string; text:
 </html>`;
 
   const text = [
-    appName,
+    `${appName} - GST Billing & Accounting`,
     "",
     heading,
     content.intro || "",
-    content.code ? `Copy this code: ${content.code}` : "",
-    content.copyUrl ? `Copy button: ${content.copyUrl}` : "",
+    grandTotalRow ? `${grandTotalRow.label}: ${grandTotalRow.value}` : "",
+    balanceRow ? `${balanceRow.label}: ${balanceRow.value}` : "",
+    content.code ? `Verification Code: ${content.code}` : "",
     content.codeCaption || "",
-    ...details.map((row) => `${row.label}: ${row.value}`),
+    actionUrl ? `${actionLabel || 'View Document'}: ${actionUrl}` : "",
+    ...filteredDetails.map((row) => `${row.label}: ${row.value}`),
     ...paragraphs,
     content.note || "",
-    content.gujaratiNote || "",
     "",
-    `Sent by ${appName}. If you did not request this message, you can ignore it.`,
+    `Sent by ${appName}. If you did not request this message, you can safely ignore it.`,
   ]
     .filter((line, index, all) => line !== "" || all[index - 1] !== "")
     .join("\n")
@@ -146,47 +247,130 @@ export function renderBrandedEmail(content: EmailContent): { html: string; text:
   return { html, text };
 }
 
-function renderCode(code?: string, caption?: string, copyUrl?: string): string {
+function renderHeroAmountCard(grandTotalRow: EmailDetail, balanceRow?: EmailDetail): string {
+  let balanceCell = "";
+  if (balanceRow) {
+    const rawVal = balanceRow.value.replace(/[^0-9.]/g, "");
+    const num = parseFloat(rawVal);
+    const isZero = !isNaN(num) && num === 0;
+
+    if (isZero) {
+      balanceCell = `
+        <td align="right" valign="middle">
+          <div style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:0.8px;">
+            Payment Status
+          </div>
+          <div style="font-size:14px;font-weight:700;color:#15803D;margin-top:4px;">
+            Paid in Full
+          </div>
+        </td>`;
+    } else {
+      balanceCell = `
+        <td align="right" valign="middle">
+          <div style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:0.8px;">
+            Balance Due
+          </div>
+          <div style="font-size:17px;font-weight:700;color:#DC2626;margin-top:4px;">
+            ${escapeHtml(balanceRow.value)}
+          </div>
+        </td>`;
+    }
+  }
+
+  return `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;background-color:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;">
+    <tr>
+      <td style="padding:18px 22px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td valign="middle">
+              <div style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:0.8px;">
+                ${escapeHtml(grandTotalRow.label)}
+              </div>
+              <div style="font-size:26px;font-weight:700;color:#0F172A;margin-top:3px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+                ${escapeHtml(grandTotalRow.value)}
+              </div>
+            </td>
+            ${balanceCell}
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>`;
+}
+
+function renderActionButton(url?: string, label?: string): string {
+  if (!url || !/^https?:\/\//i.test(url)) return "";
+  const safeUrl = escapeHtml(url);
+  const text = escapeHtml(label || "View &amp; Print Document &rarr;");
+
+  return `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 24px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
+          <tr>
+            <td align="center" style="background-color:#2563EB;border-radius:6px;">
+              <a href="${safeUrl}" target="_blank" style="background-color:#2563EB;border-radius:6px;color:#FFFFFF;display:inline-block;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;line-height:20px;text-align:center;text-decoration:none;padding:12px 28px;letter-spacing:0.2px;">
+                ${text}
+              </a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>`;
+}
+
+function renderCode(code?: string, caption?: string, actionUrl?: string, actionLabel?: string): string {
   const digits = String(code || "").replace(/\D/g, "");
   if (digits.length < 4) return "";
-  const cells = digits
-    .split("")
-    .map(
-      (digit) =>
-        `<td align="center" valign="middle" width="42" height="52" style="width:42px;height:52px;border:1px solid #FDBA74;border-radius:10px;background:#FFF7ED;font-family:Arial,Helvetica,sans-serif;font-size:24px;font-weight:800;color:#C2410C;">${escapeHtml(digit)}</td>`,
-    )
-    .join('<td width="8" style="width:8px;font-size:0;">&nbsp;</td>');
   const safeCode = escapeHtml(digits);
-  const href = /^https?:\/\//i.test(copyUrl || "") ? escapeHtml(copyUrl || "") : "";
-  // Gmail ignores padding on anchors and drops the click target when line-height is 1.
-  // A solid border is part of the link box, so the whole orange control stays clickable.
-  const button = href
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;">
+
+  // Optional direct continuation button (points to login/action page, NOT to a copy-code page)
+  let directBtn = "";
+  if (actionUrl && /^https?:\/\//i.test(actionUrl) && !actionUrl.includes("/copy-code")) {
+    const safeUrl = escapeHtml(actionUrl);
+    const btnText = escapeHtml(actionLabel || "Continue to Login & Verify →");
+    directBtn = `
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:16px auto 0;">
         <tr>
-          <td align="center" bgcolor="#EA580C" style="background-color:#EA580C;border-radius:8px;">
-            <a href="${href}" target="_blank" style="background-color:#EA580C;border:16px solid #EA580C;border-radius:8px;color:#FFFFFF;display:inline-block;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;line-height:20px;text-align:center;text-decoration:none;">Copy code</a>
+          <td align="center" style="background-color:#2563EB;border-radius:6px;">
+            <a href="${safeUrl}" target="_blank" style="background-color:#2563EB;border-radius:6px;color:#FFFFFF;display:inline-block;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;font-weight:600;line-height:18px;text-align:center;text-decoration:none;padding:10px 22px;">
+              ${btnText}
+            </a>
           </td>
         </tr>
-      </table>
-      <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;">
-        <a href="${href}" target="_blank" style="color:#1E589D;text-decoration:underline;">Open the copy page</a>
-      </p>`
-    : "";
-  const codeLink = href
-    ? `<a href="${href}" target="_blank" style="color:#C2410C;font-family:Courier New,Courier,monospace;font-size:22px;font-weight:800;letter-spacing:3px;text-decoration:underline;">${safeCode}</a>`
-    : safeCode;
-  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 14px;">
-    <tr>${cells}</tr>
-  </table>
-  ${button}
-  <p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#111827;">Code: ${codeLink}</p>
-  ${caption ? `<p style="margin:0 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#667085;">${escapeHtml(caption)}</p>` : ""}`;
+      </table>`;
+  }
+
+  return `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 24px;background-color:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;">
+    <tr>
+      <td align="center" style="padding:22px 18px;text-align:center;">
+        <div style="font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px;">
+          Security Verification Code
+        </div>
+        
+        <!-- Large single-block selectable monospace code for instant on-page copy -->
+        <div style="display:inline-block;background-color:#FFFFFF;border:1.5px solid #CBD5E1;border-radius:6px;padding:12px 24px;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,Courier,monospace;font-size:30px;font-weight:700;letter-spacing:8px;color:#0F172A;user-select:all;-webkit-user-select:all;">${safeCode}</div>
+
+        <p style="margin:10px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#64748B;">
+          Click code to select &bull; Use Ctrl+C or Cmd+C to copy
+        </p>
+
+        ${caption ? `<p style="margin:8px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#64748B;">${escapeHtml(caption)}</p>` : ""}
+
+        ${directBtn}
+      </td>
+    </tr>
+  </table>`;
 }
 
 function formatValue(value: string): string {
   const safe = escapeHtml(value);
   if (/^https?:\/\/\S+$/i.test(value)) {
-    return `<a href="${safe}" style="color:#1E589D;text-decoration:underline;word-break:break-all;">${safe}</a>`;
+    return `<a href="${safe}" target="_blank" style="color:#2563EB;text-decoration:underline;word-break:break-all;">${safe}</a>`;
   }
   return safe;
 }
@@ -196,14 +380,22 @@ function renderDetails(details: EmailDetail[]): string {
   const rows = details
     .map((row, index) => {
       const emphasize = EMPHASIS.test(row.label);
-      const border = index === details.length - 1 ? "" : "border-bottom:1px solid #EEF2F6;";
+      const border = index === details.length - 1 ? "" : "border-bottom:1px solid #E2E8F0;";
       return `<tr>
-        <td style="padding:11px 0;${border}font-size:12px;color:#667085;width:42%;vertical-align:top;">${escapeHtml(row.label)}</td>
-        <td style="padding:11px 0;${border}font-size:${emphasize ? "16px" : "14px"};font-weight:700;color:#111827;text-align:right;vertical-align:top;">${formatValue(row.value)}</td>
+        <td style="padding:10px 16px;${border}font-size:13px;font-weight:600;color:#64748B;width:38%;vertical-align:middle;background-color:#F8FAFC;">
+          ${escapeHtml(row.label)}
+        </td>
+        <td style="padding:10px 16px;${border}font-size:${emphasize ? "14px" : "13px"};font-weight:${emphasize ? "700" : "600"};color:#0F172A;text-align:right;vertical-align:middle;background-color:#FFFFFF;">
+          ${formatValue(row.value)}
+        </td>
       </tr>`;
     })
     .join("");
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;border:1px solid #E5E7EB;border-radius:12px;padding:0 14px;">
-    ${rows}
+
+  return `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden;border-collapse:collapse;">
+    <tbody>
+      ${rows}
+    </tbody>
   </table>`;
 }

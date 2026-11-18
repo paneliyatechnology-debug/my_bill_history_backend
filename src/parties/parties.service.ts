@@ -60,34 +60,25 @@ export class PartiesService {
     if (!stateCode) {
       if (gstin && gstin.length >= 2) {
         stateCode = gstin.substring(0, 2);
-      } else if (isSupplier) {
-        stateCode = "24"; // Default state code (Gujarat) for unregistered suppliers, or 96 for overseas
       } else {
-        throw new BadRequestException({
-          statusCode: 400,
-          message: "Party state code is required.",
-          messageGujarati: "પાર્ટીનો રાજ્ય કોડ જરૂરી છે.",
-        });
+        stateCode = "24"; // Default state code (Gujarat) for unregistered parties when unspecified
       }
     }
 
     let billingAddress = dto.billingAddress;
-    if (!isSupplier) {
-      if (!billingAddress || !billingAddress.city || !billingAddress.pincode) {
-        throw new BadRequestException({
-          statusCode: 400,
-          message: "Billing address with city and pincode is required.",
-          messageGujarati: "શહેર અને પિનકોડ સાથેનું બિલિંગ સરનામું જરૂરી છે.",
-        });
-      }
+    if (!billingAddress) {
+      billingAddress = {
+        line1: "",
+        city: "",
+        pincode: "",
+      };
     } else {
-      if (!billingAddress) {
-        billingAddress = {
-          line1: "",
-          city: "",
-          pincode: "",
-        };
-      }
+      billingAddress = {
+        line1: billingAddress.line1?.trim() || "",
+        city: billingAddress.city?.trim() || "",
+        pincode: billingAddress.pincode?.trim() || "",
+        state: billingAddress.state || "",
+      };
     }
 
     // Validate GSTIN format, state code alignment, and Modulo 36 checksum

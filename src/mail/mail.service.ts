@@ -14,6 +14,9 @@ export interface OutboundEmail {
   details?: EmailDetail[];
   note?: string;
   replyTo?: string;
+  actionUrl?: string;
+  actionLabel?: string;
+  companyName?: string;
 }
 
 export interface MailDeliveryResult {
@@ -50,8 +53,11 @@ export class MailService {
       preheader: message.intro || structured.paragraphs[0] || subject,
       intro: message.intro,
       details: message.details?.length ? message.details : structured.details,
-      paragraphs: message.intro ? structured.paragraphs : structured.paragraphs,
+      paragraphs: structured.paragraphs,
       note: message.note,
+      actionUrl: message.actionUrl,
+      actionLabel: message.actionLabel,
+      companyName: message.companyName,
     });
     const html = rendered.html;
     const plain = rendered.text || text;
@@ -141,52 +147,47 @@ export class MailService {
   async sendOtp(email: string, purposeLabel: string, code: string) {
     const appName = this.appName();
     const purpose = this.purposeCopy(purposeLabel);
-    const rendered = renderBrandedEmail({
-      appName,
-      heading: "Your verification code",
-      preheader: `Your ${appName} code is ${code}. It expires in 10 minutes.`,
-      intro: purpose.en,
-      code,
-      codeCaption: "This code expires in 10 minutes. Do not share it with anyone.",
-      copyUrl: this.copyLink(code, purposeLabel),
-      gujaratiNote: `${purpose.gu} આ કોડ 10 મિનિટમાં સમાપ્ત થશે.`,
-    });
-    return this.deliver({
-      to: email,
-      subject: `${appName} verification code`,
-      text: rendered.text,
-      html: rendered.html,
-    });
-  }
-
-  private copyLink(code: string, purposeLabel: string): string {
     const base = (this.config.get<string>("FRONTEND_URL") || "http://localhost:3000").replace(/\/$/, "");
     const key = purposeLabel.toLowerCase();
     const mode = key.includes("password") ? "forgot" : key.includes("email") ? "email" : "signup";
-    return `${base}/copy-code?code=${encodeURIComponent(code)}&mode=${mode}`;
+    const directLoginUrl = `${base}/login?mode=${mode}&otp=${encodeURIComponent(code)}`;
+
+    const rendered = renderBrandedEmail({
+      appName,
+      heading: "Verification Code",
+      preheader: `Your ${appName} verification code is ${code}. It expires in 10 minutes.`,
+      intro: purpose.en,
+      code,
+      codeCaption: "This code expires in 10 minutes. Do not share it with anyone.",
+      actionUrl: directLoginUrl,
+      actionLabel: "Continue to Account & Verify →",
+    });
+    return this.deliver({
+      to: email,
+      subject: `${appName} verification code: ${code}`,
+      text: rendered.text,
+      html: rendered.html,
+    });
   }
 
   private appName(): string {
     return this.config.get<string>("NEXT_PUBLIC_APP_NAME") || "myownbillbook";
   }
 
-  private purposeCopy(purposeLabel: string): { en: string; gu: string } {
+  private purposeCopy(purposeLabel: string): { en: string } {
     const key = purposeLabel.toLowerCase();
     if (key.includes("password")) {
       return {
         en: "Use this code to reset your password.",
-        gu: "પાસવર્ડ રીસેટ કરવા માટે આ કોડ વાપરો.",
       };
     }
     if (key.includes("email")) {
       return {
         en: "Use this code to confirm your new email address.",
-        gu: "નવો ઈમેલ પુષ્ટિ કરવા માટે આ કોડ વાપરો.",
       };
     }
     return {
       en: "Use this code to finish creating your account.",
-      gu: "ખાતું બનાવવાનું પૂર્ણ કરવા માટે આ કોડ વાપરો.",
     };
   }
 
