@@ -214,7 +214,7 @@ export async function renderInvoiceHtml(input: {
   copyType: string;
 }): Promise<string> {
   const s = input.settings;
-  const layout = themeLayout(s.themeId || s.festiveTheme);
+  const layout = s.festiveTheme ? "festival" : themeLayout(s.themeId);
   const upiQrDataUrl = await generateUpiQrDataUrl(input.company, input.invoice);
   let eInvoiceQrDataUrl: string | undefined;
   const eInvoice = input.invoice?.eInvoiceRecord;
@@ -1091,11 +1091,20 @@ function festiveFillerRows(ctx: any) {
 }
 
 function festivalBody(ctx: any) {
-  const themeKey = ctx.s.themeId || ctx.s.festiveTheme || "navratri";
+  const themeKey = ctx.s.festiveTheme || ctx.s.themeId || "navratri";
   const skin = festiveSkin(themeKey);
-  const accent = ctx.s.accentColor && ctx.s.accentColor !== "#111111" ? ctx.s.accentColor : skin.ink;
-  const bgFile = skin.bgFile || "navaratri_1.jpg";
+  const accent = ctx.s.accentColor && ctx.s.accentColor !== "#111111" ? ctx.s.accentColor : (ctx.s.managedTheme?.primaryColor || skin.ink);
+  let bgFile = skin.bgFile || "navaratri_1.jpg";
+  if (ctx.s.managedTheme) {
+    const rawVariant = ctx.s.festiveVariant === 2
+      ? (ctx.s.managedTheme.variants?.[1] || ctx.s.managedTheme.variants?.[0] || ctx.s.managedTheme.thumbnail)
+      : (ctx.s.managedTheme.variants?.[0] || ctx.s.managedTheme.thumbnail);
+    if (rawVariant) {
+      bgFile = path.basename(rawVariant);
+    }
+  }
   const bgDataUri = getThemeBase64Image(bgFile);
+  const subGreeting = ctx.s.managedTheme?.festivalName ? `🌸 ॥ ${ctx.s.managedTheme.festivalName} ॥ 🌸` : (skin.subGreeting || skin.title);
 
   const c = ctx.c;
   const inv = ctx.inv;
@@ -1136,7 +1145,7 @@ function festivalBody(ctx: any) {
           <span class="fest-copy-badge">${esc(ctx.copyLabel)}</span>
           ${inv.status ? `<span class="fest-status-badge ${String(inv.status).toLowerCase()}">${esc(inv.status)}</span>` : ""}
         </div>
-        <div class="fest-subgreeting">${esc(skin.subGreeting || skin.title)}</div>
+        <div class="fest-subgreeting">${esc(subGreeting)}</div>
       </div>
 
       <!-- Outer Boxed Table Container matching myBillBook -->

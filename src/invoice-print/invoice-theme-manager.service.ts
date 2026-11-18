@@ -99,10 +99,20 @@ export class InvoiceThemeManagerService implements OnModuleInit {
   }
 
   async getThemeById(id: string): Promise<InvoiceThemeRecord | null> {
+    if (!id) return null;
     const found = await this.themeModel.findUnique({
       where: { id },
     });
-    return found ? this.mapToRecord(found) : null;
+    if (found) return this.mapToRecord(found);
+
+    const stripped = id.replace(/_\d+$/, "");
+    if (stripped !== id) {
+      const foundBase = await this.themeModel.findUnique({
+        where: { id: stripped },
+      });
+      if (foundBase) return this.mapToRecord(foundBase);
+    }
+    return null;
   }
 
   async createTheme(data: Partial<InvoiceThemeRecord>): Promise<InvoiceThemeRecord> {

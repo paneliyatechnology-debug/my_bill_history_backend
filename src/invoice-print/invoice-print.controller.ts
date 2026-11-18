@@ -34,8 +34,27 @@ export class InvoicePrintSettingsController {
   async getCatalog() {
     const defaultCatalog = this.printService.catalog();
     const managedThemes = await this.themeManager.getAllThemes(true);
+    const activeFestive = managedThemes.filter(
+      (t) => t.category === "festive" || t.category === "branding",
+    );
     return {
       ...defaultCatalog,
+      themeStore: {
+        title: "ThemeStore",
+        items: activeFestive.map((t) => ({
+          id: t.id,
+          name: t.name,
+          group: "festival",
+          paper: "A4",
+          layout: "festival",
+          description: t.description || t.name,
+          thumbnail: t.thumbnail,
+          variants: t.variants,
+          primaryColor: t.primaryColor,
+          badge: t.badge,
+          isActive: t.isActive,
+        })),
+      },
       managedThemes,
     };
   }

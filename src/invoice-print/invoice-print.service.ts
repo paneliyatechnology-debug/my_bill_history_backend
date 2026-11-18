@@ -226,6 +226,12 @@ export class InvoicePrintService {
       }
     }
     if (accentColor) settings = { ...settings, accentColor };
+    if (settings.festiveTheme && this.themeManager) {
+      const dbTheme = await this.themeManager.getThemeById(settings.festiveTheme);
+      if (dbTheme) {
+        settings = { ...settings, managedTheme: dbTheme };
+      }
+    }
     const company = await this.loadCompany(effectiveTenant);
     const sample = this.sampleInvoice(company, category || "TAX_INVOICE");
     return await renderInvoiceHtml({
@@ -283,6 +289,12 @@ export class InvoicePrintService {
     }
     if (accentColor) {
       settings = { ...settings, accentColor };
+    }
+    if (settings.festiveTheme && this.themeManager) {
+      const dbTheme = await this.themeManager.getThemeById(settings.festiveTheme);
+      if (dbTheme) {
+        settings = { ...settings, managedTheme: dbTheme };
+      }
     }
     const company = await this.loadCompany(effectiveTenant);
 

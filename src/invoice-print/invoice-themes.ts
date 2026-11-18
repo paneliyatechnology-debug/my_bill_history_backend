@@ -263,8 +263,13 @@ export const FESTIVE_SKINS: Record<
 };
 
 export function themeLayout(themeId: string): InvoiceLayout {
+  if (!themeId) return "stylish";
   const theme = INVOICE_THEMES.find((t) => t.id === themeId);
-  return theme?.layout || (FESTIVE_SKINS[themeId] ? "festival" : "tally");
+  if (theme) return theme.layout;
+  if (FESTIVE_SKINS[themeId] || themeId === "festival" || themeId.includes("_")) {
+    return "festival";
+  }
+  return "tally";
 }
 
 export function festiveSkin(themeId: string) {
