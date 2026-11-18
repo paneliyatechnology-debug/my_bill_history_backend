@@ -37,6 +37,10 @@ export interface CreateSalesInvoiceDto {
   termsAndConditions?: string;
   notes?: string;
   clientOfflineUuid?: string;
+  discountType?: "BEFORE_TAX" | "AFTER_TAX";
+  discountPercent?: number | string;
+  discountAmount?: number | string;
+  additionalCharges?: Array<{ name?: string; amount: number | string }>;
   receivedAmount?: number;
   tenderedSplit?: {
     cash?: number;

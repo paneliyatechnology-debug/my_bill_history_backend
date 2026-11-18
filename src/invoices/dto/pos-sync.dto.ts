@@ -10,6 +10,10 @@ export interface PosSyncInvoiceDto {
   grandTotal?: number;
   paymentMode?: PaymentMode;
   receivedAmount?: number;
+  discountType?: "BEFORE_TAX" | "AFTER_TAX";
+  discountPercent?: number | string;
+  discountAmount?: number | string;
+  additionalCharges?: Array<{ name?: string; amount: number | string }>;
   tenderedSplit?: {
     cash?: number;
     upiQr?: number;

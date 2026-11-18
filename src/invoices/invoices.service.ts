@@ -461,6 +461,12 @@ export class InvoicesService {
             supplyCategory:
               (itemMap.get(i.itemId) as any)?.supplyCategory || "TAXABLE",
           })),
+          {
+            discountType: dto.discountType,
+            discountPercent: dto.discountPercent,
+            discountAmount: dto.discountAmount,
+            additionalCharges: dto.additionalCharges,
+          },
         );
 
         // 10. Payment and Status Resolution
@@ -648,6 +654,7 @@ export class InvoicesService {
           paymentMode,
           invoiceDate,
           validatedSplit,
+          dto.discountType,
         );
 
         // 15. Audit Log (atomic with invoice & voucher transaction)
@@ -786,6 +793,10 @@ export class InvoicesService {
       paymentMode: finalPaymentMode,
       tenderedSplit: dto.tenderedSplit,
       receivedAmount: dto.receivedAmount,
+      discountType: dto.discountType,
+      discountPercent: dto.discountPercent,
+      discountAmount: dto.discountAmount,
+      additionalCharges: dto.additionalCharges,
       items: dto.items,
       warehouseId: dto.warehouseId,
       branchId: dto.branchId,
@@ -822,6 +833,10 @@ export class InvoicesService {
           paymentMode: finalPaymentMode,
           tenderedSplit: inv.tenderedSplit,
           receivedAmount: inv.receivedAmount,
+          discountType: inv.discountType,
+          discountPercent: inv.discountPercent,
+          discountAmount: inv.discountAmount,
+          additionalCharges: inv.additionalCharges,
           items: inv.items,
           notes: inv.offlineBillNumber
             ? `Offline Bill: ${inv.offlineBillNumber} | Terminal: ${dto.terminalId}`
@@ -2120,6 +2135,7 @@ export class InvoicesService {
     paymentModeOrIsCredit: PaymentMode | boolean,
     voucherDate: Date,
     validatedSplit?: any,
+    discountType?: "BEFORE_TAX" | "AFTER_TAX",
   ): Promise<any> {
     await this.ensureRequiredLedgerAccounts(tx, tenant, party);
 
@@ -2355,6 +2371,40 @@ export class InvoicesService {
           lineNarration: `Round off #${invoiceNumber}`,
         });
       }
+    }
+
+    // DR Discount Allowed (for after-tax bill settlement discounts)
+    if (
+      discountType === "AFTER_TAX" &&
+      taxCalc.billDiscount &&
+      taxCalc.billDiscount.greaterThan(0)
+    ) {
+      const discAllowedAcc = await this.findAccountByName(
+        tx,
+        tenant.companyId,
+        "Discount Allowed",
+      );
+      voucherLines.push({
+        accountId: discAllowedAcc.id,
+        debitAmount: taxCalc.billDiscount.toNumber(),
+        creditAmount: 0,
+        lineNarration: `Discount allowed #${invoiceNumber}`,
+      });
+    }
+
+    // CR Additional Charges / Delivery / Packaging Charges
+    if (taxCalc.chargesTotal && taxCalc.chargesTotal.greaterThan(0)) {
+      const chargesAcc = await this.findAccountByName(
+        tx,
+        tenant.companyId,
+        "Additional Charges",
+      );
+      voucherLines.push({
+        accountId: chargesAcc.id,
+        debitAmount: 0,
+        creditAmount: taxCalc.chargesTotal.toNumber(),
+        lineNarration: `Additional charges #${invoiceNumber}`,
+      });
     }
 
     const validation = validateJournalLines(voucherLines);
@@ -2781,21 +2831,25 @@ export class InvoicesService {
         name.includes("IGST") ||
         name.includes("Tax");
       const isRoundOff = name.includes("Round");
+      const isDiscountAllowed = name.includes("Discount Allowed");
+      const isCharges = name.includes("Charge");
 
-      const groupNature = isSales
+      const groupNature = isSales || isCharges
         ? "INCOME"
         : isTax
           ? "LIABILITY"
-          : isRoundOff
+          : isRoundOff || isDiscountAllowed
             ? "EXPENSE"
             : "ASSET";
       const groupName = isSales
         ? "Sales Accounts"
-        : isTax
-          ? "Duties & Taxes"
-          : isRoundOff
-            ? "Indirect Expenses"
-            : "Current Assets";
+        : isCharges
+          ? "Indirect Income"
+          : isTax
+            ? "Duties & Taxes"
+            : isRoundOff || isDiscountAllowed
+              ? "Indirect Expenses"
+              : "Current Assets";
 
       let group = await tx.ledgerGroup.findFirst({
         where: { companyId, name: groupName },

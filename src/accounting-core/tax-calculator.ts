@@ -55,10 +55,24 @@ export interface CalculatedInvoiceItem {
   totalAmount: Decimal;
 }
 
+export interface InvoiceAdditionalChargeInput {
+  name?: string;
+  amount: DecimalLike;
+}
+
+export interface InvoiceTaxCalculationOptions {
+  discountType?: "BEFORE_TAX" | "AFTER_TAX";
+  discountPercent?: DecimalLike;
+  discountAmount?: DecimalLike;
+  additionalCharges?: InvoiceAdditionalChargeInput[];
+}
+
 export interface CalculatedInvoiceTotals {
   isIntraState: boolean;
   subTotal: Decimal;
   discountTotal: Decimal;
+  billDiscount: Decimal;
+  chargesTotal: Decimal;
   taxableAmount: Decimal;
   cgstAmount: Decimal;
   sgstAmount: Decimal;
@@ -79,20 +93,13 @@ export function calculateSalesInvoiceTaxes(
   companyStateCode: string,
   placeOfSupply: string,
   itemsInput: InvoiceItemCalculationInput[],
+  options?: InvoiceTaxCalculationOptions,
 ): CalculatedInvoiceTotals {
   const isIntraState = companyStateCode.trim() === placeOfSupply.trim();
-
-  let invoiceSubTotal = new Decimal(0);
-  let invoiceDiscountTotal = new Decimal(0);
-  let invoiceTaxableAmount = new Decimal(0);
-  let invoiceCgstAmount = new Decimal(0);
-  let invoiceSgstAmount = new Decimal(0);
-  let invoiceIgstAmount = new Decimal(0);
-  let invoiceUtgstAmount = new Decimal(0);
-  let invoiceCessAmount = new Decimal(0);
   const useUtgst = isIntraState && isUtgstTerritory(placeOfSupply);
 
-  const calculatedItems: CalculatedInvoiceItem[] = itemsInput.map((item) => {
+  // 1. Initial pass: Calculate line subtotal, line discount, and line base taxable
+  const preCalculatedLines = itemsInput.map((item) => {
     const qty = toDecimal(item.quantity);
     const price = toDecimal(item.unitPrice);
     const supplyCategory: SupplyCategory = item.supplyCategory ?? "TAXABLE";
@@ -115,14 +122,78 @@ export function calculateSalesInvoiceTaxes(
       );
     }
 
-    let taxable: Decimal;
+    let baseTaxable: Decimal;
     if (item.isTaxInclusive) {
       const grossAfterDisc = lineSubTotal.minus(discAmount);
       // Taxable = gross / (1 + taxRate/100)
       const divisor = new Decimal(1).plus(taxRate.dividedBy(100));
-      taxable = toMoney(grossAfterDisc.dividedBy(divisor));
+      baseTaxable = toMoney(grossAfterDisc.dividedBy(divisor));
     } else {
-      taxable = toMoney(lineSubTotal.minus(discAmount));
+      baseTaxable = toMoney(lineSubTotal.minus(discAmount));
+    }
+
+    return {
+      item,
+      qty,
+      price,
+      supplyCategory,
+      taxRate,
+      lineSubTotal,
+      discPercent,
+      discAmount,
+      baseTaxable,
+    };
+  });
+
+  const totalBaseTaxable = preCalculatedLines.reduce(
+    (sum, l) => sum.plus(l.baseTaxable),
+    new Decimal(0),
+  );
+
+  const discountType = options?.discountType ?? "AFTER_TAX";
+  const optDiscPercent = toDecimal(options?.discountPercent ?? 0);
+  const optDiscAmount = toMoney(options?.discountAmount ?? 0);
+
+  // Bill discount for BEFORE_TAX (Trade discount under CGST Act Section 15(3))
+  let billDiscount = new Decimal(0);
+  if (discountType === "BEFORE_TAX") {
+    if (optDiscAmount.greaterThan(0)) {
+      billDiscount = Decimal.min(totalBaseTaxable, optDiscAmount);
+    } else if (optDiscPercent.greaterThan(0) && totalBaseTaxable.greaterThan(0)) {
+      billDiscount = toMoney(totalBaseTaxable.times(optDiscPercent).dividedBy(100));
+    }
+  }
+
+  // 2. Compute lines with proportional BEFORE_TAX discount distribution
+  let invoiceSubTotal = new Decimal(0);
+  let invoiceLineDiscountTotal = new Decimal(0);
+  let invoiceTaxableAmount = new Decimal(0);
+  let invoiceCgstAmount = new Decimal(0);
+  let invoiceSgstAmount = new Decimal(0);
+  let invoiceIgstAmount = new Decimal(0);
+  let invoiceUtgstAmount = new Decimal(0);
+  let invoiceCessAmount = new Decimal(0);
+
+  let allocatedBillDiscountSum = new Decimal(0);
+
+  const calculatedItems: CalculatedInvoiceItem[] = preCalculatedLines.map((line, idx) => {
+    let taxable = line.baseTaxable;
+
+    if (
+      discountType === "BEFORE_TAX" &&
+      billDiscount.greaterThan(0) &&
+      totalBaseTaxable.greaterThan(0)
+    ) {
+      let itemBillDisc: Decimal;
+      if (idx === preCalculatedLines.length - 1) {
+        // Last line absorbs rounding difference
+        itemBillDisc = toMoney(billDiscount.minus(allocatedBillDiscountSum));
+      } else {
+        const ratio = line.baseTaxable.dividedBy(totalBaseTaxable);
+        itemBillDisc = toMoney(billDiscount.times(ratio));
+        allocatedBillDiscountSum = allocatedBillDiscountSum.plus(itemBillDisc);
+      }
+      taxable = toMoney(Decimal.max(0, line.baseTaxable.minus(itemBillDisc)));
     }
 
     let cgstRate = new Decimal(0);
@@ -135,7 +206,7 @@ export function calculateSalesInvoiceTaxes(
     let utgstAmount = new Decimal(0);
 
     if (isIntraState) {
-      const halfRate = toDecimal(taxRate.dividedBy(2).toFixed(2));
+      const halfRate = toDecimal(line.taxRate.dividedBy(2).toFixed(2));
       cgstRate = halfRate;
       cgstAmount = toMoney(taxable.times(cgstRate).dividedBy(100));
       if (useUtgst) {
@@ -146,11 +217,11 @@ export function calculateSalesInvoiceTaxes(
         sgstAmount = toMoney(taxable.times(sgstRate).dividedBy(100));
       }
     } else {
-      igstRate = taxRate;
+      igstRate = line.taxRate;
       igstAmount = toMoney(taxable.times(igstRate).dividedBy(100));
     }
 
-    const cessRate = toDecimal(item.cessRate ?? 0);
+    const cessRate = toDecimal(line.item.cessRate ?? 0);
     const cessAmount = toMoney(taxable.times(cessRate).dividedBy(100));
 
     const lineTotal = toMoney(
@@ -162,8 +233,8 @@ export function calculateSalesInvoiceTaxes(
         .plus(cessAmount),
     );
 
-    invoiceSubTotal = invoiceSubTotal.plus(lineSubTotal);
-    invoiceDiscountTotal = invoiceDiscountTotal.plus(discAmount);
+    invoiceSubTotal = invoiceSubTotal.plus(line.lineSubTotal);
+    invoiceLineDiscountTotal = invoiceLineDiscountTotal.plus(line.discAmount);
     invoiceTaxableAmount = invoiceTaxableAmount.plus(taxable);
     invoiceCgstAmount = invoiceCgstAmount.plus(cgstAmount);
     invoiceSgstAmount = invoiceSgstAmount.plus(sgstAmount);
@@ -172,14 +243,14 @@ export function calculateSalesInvoiceTaxes(
     invoiceCessAmount = invoiceCessAmount.plus(cessAmount);
 
     return {
-      itemId: item.itemId,
-      quantity: qty,
-      unitPrice: price,
-      subTotal: lineSubTotal,
-      discountPercent: discPercent,
-      discountAmount: discAmount,
+      itemId: line.item.itemId,
+      quantity: line.qty,
+      unitPrice: line.price,
+      subTotal: line.lineSubTotal,
+      discountPercent: line.discPercent,
+      discountAmount: line.discAmount,
       taxableAmount: taxable,
-      taxRate,
+      taxRate: line.taxRate,
       cgstRate,
       cgstAmount,
       sgstRate,
@@ -189,24 +260,58 @@ export function calculateSalesInvoiceTaxes(
       utgstRate,
       utgstAmount,
       cessAmount,
-      supplyCategory,
+      supplyCategory: line.supplyCategory,
       totalAmount: lineTotal,
     };
   });
 
-  const rawGrandTotal = invoiceTaxableAmount
-    .plus(invoiceCgstAmount)
+  const taxesTotal = invoiceCgstAmount
     .plus(invoiceSgstAmount)
     .plus(invoiceIgstAmount)
     .plus(invoiceUtgstAmount)
     .plus(invoiceCessAmount);
 
+  // Compute AFTER_TAX bill discount if applicable
+  if (discountType === "AFTER_TAX") {
+    const beforeChargesTotal = invoiceTaxableAmount.plus(taxesTotal);
+    if (optDiscAmount.greaterThan(0)) {
+      billDiscount = Decimal.min(beforeChargesTotal, optDiscAmount);
+    } else if (optDiscPercent.greaterThan(0) && beforeChargesTotal.greaterThan(0)) {
+      billDiscount = toMoney(beforeChargesTotal.times(optDiscPercent).dividedBy(100));
+    }
+  }
+
+  // Additional charges
+  let chargesTotal = new Decimal(0);
+  if (options?.additionalCharges && options.additionalCharges.length > 0) {
+    for (const ch of options.additionalCharges) {
+      chargesTotal = chargesTotal.plus(toMoney(ch.amount ?? 0));
+    }
+  }
+
+  // Raw grand total
+  let rawGrandTotal: Decimal;
+  if (discountType === "BEFORE_TAX") {
+    rawGrandTotal = Decimal.max(
+      0,
+      invoiceTaxableAmount.plus(taxesTotal).plus(chargesTotal),
+    );
+  } else {
+    rawGrandTotal = Decimal.max(
+      0,
+      invoiceTaxableAmount.plus(taxesTotal).minus(billDiscount).plus(chargesTotal),
+    );
+  }
+
   const roundOffRes = calculateRoundOff(rawGrandTotal);
+  const totalDiscount = invoiceLineDiscountTotal.plus(billDiscount);
 
   return {
     isIntraState,
     subTotal: toMoney(invoiceSubTotal),
-    discountTotal: toMoney(invoiceDiscountTotal),
+    discountTotal: toMoney(totalDiscount),
+    billDiscount: toMoney(billDiscount),
+    chargesTotal: toMoney(chargesTotal),
     taxableAmount: toMoney(invoiceTaxableAmount),
     cgstAmount: toMoney(invoiceCgstAmount),
     sgstAmount: toMoney(invoiceSgstAmount),

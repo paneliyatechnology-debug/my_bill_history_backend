@@ -1527,6 +1527,122 @@ describe("Phase 5: Sales Billing, POS Engine & Stock Ledger (Integration)", () =
       );
     });
 
+    it("should successfully process POS checkout with item discount, before-tax bill discount, and exact rounding (user issue scenario)", async () => {
+      // Line item: 2 qty * 460 SP = 920. 10% item disc = 92 -> 828 base.
+      // Bill discount before tax: 48.30 -> Net taxable = 779.70.
+      // 5% GST (2.5% CGST = 19.49, 2.5% SGST = 19.49) -> 38.98 tax.
+      // Raw total = 779.70 + 38.98 = 818.68. RoundOff = +0.32 -> Grand Total = 819.00.
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/v1/invoices/pos-checkout",
+        headers: { authorization: `Bearer ${tenantAToken}` },
+        payload: {
+          customerName: "Cash Sale",
+          paymentMode: PaymentMode.UPI_QR,
+          receivedAmount: 819.0,
+          discountType: "BEFORE_TAX",
+          discountAmount: 48.3,
+          items: [
+            {
+              itemId: serviceConsultingId,
+              quantity: 2,
+              unitPrice: 460.0,
+              discountPercent: 10,
+              taxRate: 5.0,
+            },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      const inv = JSON.parse(res.body);
+      expect(Number(inv.grandTotal)).toBe(819.0);
+      expect(Number(inv.subTotal)).toBe(920.0);
+      expect(Number(inv.taxableAmount)).toBe(779.7);
+      expect(Number(inv.cgstAmount)).toBe(19.49);
+      expect(Number(inv.sgstAmount)).toBe(19.49);
+      expect(Number(inv.roundOff)).toBe(0.32);
+      expect(inv.status).toBe(InvoiceStatus.PAID);
+
+      const voucher = await prisma.executeBypassRls(async (tx) => {
+        return await tx.voucher.findFirst({
+          where: {
+            sourceEntityId: inv.id,
+            companyId: tenantACompanyId,
+          },
+          include: {
+            journalEntries: {
+              include: { account: true },
+            },
+          },
+        });
+      });
+
+      expect(voucher).toBeDefined();
+      const debits = voucher!.journalEntries.filter((je) => Number(je.debitAmount) > 0);
+      const credits = voucher!.journalEntries.filter((je) => Number(je.creditAmount) > 0);
+      const totalDebit = debits.reduce((sum, d) => sum + Number(d.debitAmount), 0);
+      const totalCredit = credits.reduce((sum, c) => sum + Number(c.creditAmount), 0);
+      expect(Math.abs(totalDebit - totalCredit)).toBeLessThan(0.01);
+      expect(totalDebit).toBe(819.0);
+    });
+
+    it("should successfully process POS checkout with after-tax bill discount and additional charges, posting balanced voucher with Discount Allowed ledger", async () => {
+      // 1 qty * 100 SP + 18% tax = 118.
+      // After-tax bill discount: 18. Additional charges: 10.
+      // Grand total = 100 + 18 - 18 + 10 = 110.
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/v1/invoices/pos-checkout",
+        headers: { authorization: `Bearer ${tenantAToken}` },
+        payload: {
+          customerName: "Discount & Charges Customer",
+          paymentMode: PaymentMode.CASH,
+          receivedAmount: 110.0,
+          discountType: "AFTER_TAX",
+          discountAmount: 18.0,
+          additionalCharges: [{ name: "Delivery Charge", amount: 10.0 }],
+          items: [
+            {
+              itemId: serviceConsultingId,
+              quantity: 1,
+              unitPrice: 100.0,
+              taxRate: 18.0,
+            },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      const inv = JSON.parse(res.body);
+      expect(Number(inv.grandTotal)).toBe(110.0);
+      expect(inv.status).toBe(InvoiceStatus.PAID);
+
+      const voucher = await prisma.executeBypassRls(async (tx) => {
+        return await tx.voucher.findFirst({
+          where: {
+            sourceEntityId: inv.id,
+            companyId: tenantACompanyId,
+          },
+          include: {
+            journalEntries: {
+              include: { account: true },
+            },
+          },
+        });
+      });
+
+      expect(voucher).toBeDefined();
+      const debits = voucher!.journalEntries.filter((je) => Number(je.debitAmount) > 0);
+      const credits = voucher!.journalEntries.filter((je) => Number(je.creditAmount) > 0);
+      const totalDebit = debits.reduce((sum, d) => sum + Number(d.debitAmount), 0);
+      const totalCredit = credits.reduce((sum, c) => sum + Number(c.creditAmount), 0);
+      expect(Math.abs(totalDebit - totalCredit)).toBeLessThan(0.01);
+      // Debits: Cash 110 + Discount Allowed 18 = 128
+      // Credits: Sales 100 + GST 18 + Additional Charges 10 = 128
+      expect(totalDebit).toBe(128.0);
+    });
+
     it("should enforce tenant isolation so Tenant B cannot reuse or hijack Tenant A's idempotency key", async () => {
       const isoUuid = "tenant-iso-uuid-" + Date.now();
 

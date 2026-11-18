@@ -8,6 +8,10 @@ export interface PosCheckoutDto {
   customerName?: string;
   partyId?: string;
   paymentMode?: PaymentMode;
+  discountType?: "BEFORE_TAX" | "AFTER_TAX";
+  discountPercent?: number | string;
+  discountAmount?: number | string;
+  additionalCharges?: Array<{ name?: string; amount: number | string }>;
   receivedAmount?: number;
   tenderedSplit?: {
     cash?: number;
