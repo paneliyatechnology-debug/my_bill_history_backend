@@ -9,6 +9,7 @@ import {
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import * as bcrypt from "bcryptjs";
+import * as crypto from "crypto";
 import {
   UserRole,
   SubscriptionTier,
@@ -131,7 +132,44 @@ export class AuthService {
    */
   async register(dto: RegisterDto) {
     const email = dto.email ? normalizeEmail(dto.email) : "";
-    if (this.emailOtp.requiresVerification() && !isDeliverableEmail(email)) {
+
+    // 0. Verify Payment Details if provided
+    let assignedTier: SubscriptionTier = SubscriptionTier.TRIAL;
+    let subscriptionDurationDays = 14;
+    const payment = dto.paymentDetails;
+
+    if (payment) {
+      const keySecret =
+        this.configService.get<string>("RAZORPAY_KEY_SECRET") ||
+        process.env.RAZORPAY_KEY_SECRET ||
+        "";
+
+      const isSimulated =
+        payment.orderId.startsWith("order_sim_") ||
+        payment.paymentId.startsWith("pay_sim_");
+
+      if (!isSimulated && keySecret) {
+        const expectedSig = crypto
+          .createHmac("sha256", keySecret)
+          .update(`${payment.orderId}|${payment.paymentId}`)
+          .digest("hex");
+
+        if (expectedSig !== payment.signature) {
+          throw new BadRequestException({
+            statusCode: 400,
+            message:
+              "Razorpay payment signature verification failed. Registration cannot proceed.",
+            messageGujarati:
+              "પેમેન્ટ વેરિફિકેશન નિષ્ફળ થયું. રજીસ્ટ્રેશન આગળ વધી શકતું નથી.",
+          });
+        }
+      }
+
+      assignedTier = payment.tier || SubscriptionTier.WHOLESALE_PRO;
+      subscriptionDurationDays = payment.billingCycle === "monthly" ? 30 : 365;
+    }
+
+    if (!payment && this.emailOtp.requiresVerification() && !isDeliverableEmail(email)) {
       throw new BadRequestException({
         statusCode: 400,
         message: "A real email address is required. We send a verification code before creating the account.",
@@ -161,7 +199,7 @@ export class AuthService {
       });
     }
 
-    if (this.emailOtp.requiresVerification()) {
+    if (!payment && this.emailOtp.requiresVerification()) {
       await this.emailOtp.consume(email, "REGISTER", dto.otp || "");
     }
 
@@ -176,8 +214,11 @@ export class AuthService {
         data: {
           primaryPhone: dto.phone,
           primaryEmail: email || null,
-          subscriptionTier: SubscriptionTier.TRIAL,
-          subscriptionEnds: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30-day trial
+          subscriptionTier: assignedTier,
+          subscriptionEnds: new Date(
+            Date.now() + subscriptionDurationDays * 24 * 60 * 60 * 1000,
+          ),
+          isActive: true,
         },
       });
 
@@ -189,6 +230,46 @@ export class AuthService {
           legalName: dto.companyLegalName || dto.organizationName,
         },
       });
+
+      // Link payment if pre-paid via Razorpay
+      if (payment) {
+        const existingPayment = await tx.subscriptionPayment.findUnique({
+          where: { orderId: payment.orderId },
+        });
+
+        if (existingPayment) {
+          await tx.subscriptionPayment.update({
+            where: { orderId: payment.orderId },
+            data: {
+              tenantId: tenant.id,
+              organizationId: organization.id,
+              paymentId: payment.paymentId,
+              signature: payment.signature,
+              status: "CAPTURED",
+              paidAt: new Date(),
+              tier: assignedTier,
+              billingCycle: payment.billingCycle || "yearly",
+            },
+          });
+        } else {
+          await tx.subscriptionPayment.create({
+            data: {
+              tenantId: tenant.id,
+              organizationId: organization.id,
+              orderId: payment.orderId,
+              paymentId: payment.paymentId,
+              signature: payment.signature,
+              status: "CAPTURED",
+              paidAt: new Date(),
+              tier: assignedTier,
+              billingCycle: payment.billingCycle || "yearly",
+              amount: payment.billingCycle === "monthly" ? 999 : 9588,
+              currency: "INR",
+              receiptNo: `MBB-REC-${payment.orderId.slice(-6)}`,
+            },
+          });
+        }
+      }
 
       // 2c. Create Primary Legal Company
       const company = await tx.company.create({

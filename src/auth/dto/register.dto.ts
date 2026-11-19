@@ -1,3 +1,13 @@
+import { SubscriptionTier } from "../../shared-types";
+
+export interface RegisterPaymentDetails {
+  orderId: string;
+  paymentId: string;
+  signature: string;
+  tier: SubscriptionTier;
+  billingCycle?: "monthly" | "yearly";
+}
+
 export interface RegisterDto {
   fullName: string;
   phone: string;
@@ -10,4 +20,5 @@ export interface RegisterDto {
   gstin?: string;
   stateCode?: string; // e.g. "24" for Gujarat
   preferredLang?: string; // "en" | "gu"
+  paymentDetails?: RegisterPaymentDetails;
 }

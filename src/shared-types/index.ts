@@ -45,6 +45,9 @@ export interface PlanEntitlements {
   maxCompanies: number;
   maxBranchesPerCompany: number;
   maxUsers: number;
+  monthlyPrice: number;
+  yearlyPrice: number;
+  maxInvoicesPerYear: number; // -1 for unlimited
   features: {
     multiCompany: boolean;
     multiBranch: boolean;
@@ -53,6 +56,12 @@ export interface PlanEntitlements {
     distribution: boolean;
     gstrReconciliation: boolean;
     eInvoiceEWay: boolean;
+    ocrScanner?: boolean;
+    whatsappReminders?: boolean;
+    multiGodown?: boolean;
+    directEInvoiceApi?: boolean;
+    customTemplates?: boolean;
+    dedicatedManager?: boolean;
   };
 }
 
@@ -64,6 +73,9 @@ export const PLAN_ENTITLEMENTS: Record<SubscriptionTier, PlanEntitlements> = {
     maxCompanies: 1,
     maxBranchesPerCompany: 1,
     maxUsers: 2,
+    monthlyPrice: 0,
+    yearlyPrice: 0,
+    maxInvoicesPerYear: 50,
     features: {
       multiCompany: false,
       multiBranch: false,
@@ -72,15 +84,24 @@ export const PLAN_ENTITLEMENTS: Record<SubscriptionTier, PlanEntitlements> = {
       distribution: false,
       gstrReconciliation: true,
       eInvoiceEWay: false,
+      ocrScanner: false,
+      whatsappReminders: false,
+      multiGodown: false,
+      directEInvoiceApi: false,
+      customTemplates: false,
+      dedicatedManager: false,
     },
   },
   [SubscriptionTier.RETAIL_BASIC]: {
     tier: SubscriptionTier.RETAIL_BASIC,
-    name: "Retail Basic",
-    nameGujarati: "રિટેલ બેસિક",
+    name: "Starter Plan",
+    nameGujarati: "સ્ટાર્ટર પ્લાન (Starter)",
     maxCompanies: 1,
     maxBranchesPerCompany: 2,
     maxUsers: 3,
+    monthlyPrice: 499,
+    yearlyPrice: 399,
+    maxInvoicesPerYear: 3000,
     features: {
       multiCompany: false,
       multiBranch: true,
@@ -89,15 +110,24 @@ export const PLAN_ENTITLEMENTS: Record<SubscriptionTier, PlanEntitlements> = {
       distribution: false,
       gstrReconciliation: true,
       eInvoiceEWay: true,
+      ocrScanner: false,
+      whatsappReminders: false,
+      multiGodown: false,
+      directEInvoiceApi: false,
+      customTemplates: false,
+      dedicatedManager: false,
     },
   },
   [SubscriptionTier.WHOLESALE_PRO]: {
     tier: SubscriptionTier.WHOLESALE_PRO,
-    name: "Wholesale Pro",
-    nameGujarati: "હોલસેલ પ્રો",
-    maxCompanies: 2,
-    maxBranchesPerCompany: 5,
-    maxUsers: 10,
+    name: "Professional Plan",
+    nameGujarati: "પ્રોફેશનલ પ્લાન (Professional)",
+    maxCompanies: 3,
+    maxBranchesPerCompany: 10,
+    maxUsers: 15,
+    monthlyPrice: 999,
+    yearlyPrice: 799,
+    maxInvoicesPerYear: -1,
     features: {
       multiCompany: true,
       multiBranch: true,
@@ -106,15 +136,24 @@ export const PLAN_ENTITLEMENTS: Record<SubscriptionTier, PlanEntitlements> = {
       distribution: true,
       gstrReconciliation: true,
       eInvoiceEWay: true,
+      ocrScanner: true,
+      whatsappReminders: true,
+      multiGodown: true,
+      directEInvoiceApi: false,
+      customTemplates: false,
+      dedicatedManager: false,
     },
   },
   [SubscriptionTier.DISTRIBUTION_ENTERPRISE]: {
     tier: SubscriptionTier.DISTRIBUTION_ENTERPRISE,
-    name: "Distribution Enterprise",
-    nameGujarati: "ડિસ્ટ્રિબ્યુશન એન્ટરપ્રાઇઝ",
-    maxCompanies: 5,
-    maxBranchesPerCompany: 15,
-    maxUsers: 25,
+    name: "Enterprise Plan",
+    nameGujarati: "એન્ટરપ્રાઇઝ પ્લાન (Enterprise)",
+    maxCompanies: 9999,
+    maxBranchesPerCompany: 9999,
+    maxUsers: 9999,
+    monthlyPrice: 1999,
+    yearlyPrice: 1599,
+    maxInvoicesPerYear: -1,
     features: {
       multiCompany: true,
       multiBranch: true,
@@ -123,15 +162,24 @@ export const PLAN_ENTITLEMENTS: Record<SubscriptionTier, PlanEntitlements> = {
       distribution: true,
       gstrReconciliation: true,
       eInvoiceEWay: true,
+      ocrScanner: true,
+      whatsappReminders: true,
+      multiGodown: true,
+      directEInvoiceApi: true,
+      customTemplates: true,
+      dedicatedManager: true,
     },
   },
   [SubscriptionTier.MANUFACTURING_SUITE]: {
     tier: SubscriptionTier.MANUFACTURING_SUITE,
     name: "Manufacturing Suite",
     nameGujarati: "મેન્યુફેક્ચરિંગ સ્યુટ",
-    maxCompanies: 10,
-    maxBranchesPerCompany: 30,
-    maxUsers: 50,
+    maxCompanies: 9999,
+    maxBranchesPerCompany: 9999,
+    maxUsers: 9999,
+    monthlyPrice: 2499,
+    yearlyPrice: 1999,
+    maxInvoicesPerYear: -1,
     features: {
       multiCompany: true,
       multiBranch: true,
@@ -140,6 +188,12 @@ export const PLAN_ENTITLEMENTS: Record<SubscriptionTier, PlanEntitlements> = {
       distribution: true,
       gstrReconciliation: true,
       eInvoiceEWay: true,
+      ocrScanner: true,
+      whatsappReminders: true,
+      multiGodown: true,
+      directEInvoiceApi: true,
+      customTemplates: true,
+      dedicatedManager: true,
     },
   },
 };

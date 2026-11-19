@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
   UnprocessableEntityException,
+  ForbiddenException,
   Logger,
 } from "@nestjs/common";
 import {
@@ -14,6 +15,7 @@ import {
   StockTransactionType,
   VoucherType,
   AccountNature,
+  getPlanEntitlements,
 } from "@billing/shared-types";
 import {
   Decimal,
@@ -509,6 +511,33 @@ export class InvoicesService {
           : isUnpaidCredit
             ? InvoiceStatus.ISSUED
             : InvoiceStatus.PAID;
+
+        // Authoritative plan invoice limit verification
+        const org = await tx.organization.findUnique({
+          where: { id: tenant.organizationId },
+          include: { tenant: true },
+        });
+        if (org?.tenant) {
+          const plan = getPlanEntitlements(org.tenant.subscriptionTier);
+          if (plan.maxInvoicesPerYear && plan.maxInvoicesPerYear > 0) {
+            const annualInvoiceCount = await tx.salesInvoice.count({
+              where: {
+                organizationId: tenant.organizationId,
+                createdAt: {
+                  gte: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
+                },
+              },
+            });
+            if (annualInvoiceCount >= plan.maxInvoicesPerYear) {
+              throw new ForbiddenException({
+                statusCode: 403,
+                error: "PLAN_INVOICE_LIMIT_REACHED",
+                message: `Annual invoice limit reached (${annualInvoiceCount}/${plan.maxInvoicesPerYear}) for ${plan.name}. Please upgrade your subscription plan to create unlimited invoices.`,
+                messageGujarati: `તમારા ${plan.nameGujarati} પ્લાન હેઠળ વાર્ષિક ઇન્વૉઇસ મર્યાદા (${annualInvoiceCount}/${plan.maxInvoicesPerYear}) પૂર્ણ થઈ ગઈ છે. અનલિમિટેડ ઇન્વૉઇસ માટે પ્લાન અપગ્રેડ કરો.`,
+              });
+            }
+          }
+        }
 
         // 11. Create SalesInvoice Header
         const invoice = await tx.salesInvoice.create({
