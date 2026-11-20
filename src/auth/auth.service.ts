@@ -29,9 +29,33 @@ import { EmailOtpService } from "./email-otp.service";
 import { isDeliverableEmail, normalizeEmail } from "../mail/email.util";
 
 import { SessionEventsService, SessionEventPayload } from "./session-events.service";
+import { resolveEffectivePermissions } from "./rbac/permissions.catalog";
 
 @Injectable()
 export class AuthService {
+  private async resolveRolePermissionsForUser(tx: any, user: any) {
+    const client = tx || this.prisma;
+    let customRolePerms = user.customRole?.permissions || [];
+    if (customRolePerms.length === 0 && user.organizationId) {
+      const orgRole = await client.role.findFirst({
+        where: {
+          organizationId: user.organizationId,
+          systemRole: user.role,
+          isSystem: true,
+        },
+        include: { permissions: true },
+      });
+      if (orgRole && orgRole.permissions.length > 0) {
+        customRolePerms = orgRole.permissions;
+      }
+    }
+    return resolveEffectivePermissions(
+      user.role,
+      customRolePerms,
+      user.userPermissions || [],
+    );
+  }
+
   constructor(
     private readonly prisma: DatabaseService,
     private readonly jwtService: JwtService,
@@ -59,6 +83,9 @@ export class AuthService {
     email: string;
     phone: string;
     role: string;
+    sessionVersion?: number;
+    dataScope?: string;
+    customRoleId?: string | null;
     preferredLang?: string;
     isSupportSession?: boolean;
   }) {
@@ -88,6 +115,7 @@ export class AuthService {
         branchId: payload.branchId,
         financialYearId: payload.financialYearId,
         role: payload.role,
+        sessionVersion: payload.sessionVersion,
         tokenType: "refresh",
       },
       { secret: refreshSecret, expiresIn: refreshTokenExpiresIn },
@@ -223,11 +251,12 @@ export class AuthService {
       });
 
       // 2b. Create Organization
+      const orgName = dto.organizationName || (dto as any).companyName || "My Organization";
       const organization = await tx.organization.create({
         data: {
           tenantId: tenant.id,
-          name: dto.organizationName,
-          legalName: dto.companyLegalName || dto.organizationName,
+          name: orgName,
+          legalName: dto.companyLegalName || orgName,
         },
       });
 
@@ -404,24 +433,31 @@ export class AuthService {
    * User login validating credentials and issuing verified tenant context
    */
   async login(dto: LoginDto, clientIp?: string, userAgent?: string) {
-    const id = String(dto.identifier || (dto as any).phone || (dto as any).email || "").trim();
+    const id = String(dto.identifier || (dto as any).phone || (dto as any).email || (dto as any).username || "").trim();
     const user = await this.prisma.user.findFirst({
       where: {
         OR: [
           { phone: id },
           { email: { equals: id, mode: "insensitive" } },
+          { username: { equals: id, mode: "insensitive" } },
         ],
       },
       include: {
         organization: true,
+        customRole: {
+          include: {
+            permissions: true,
+          },
+        },
+        userPermissions: true,
       },
     });
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException({
         statusCode: 401,
-        message: "Invalid phone/email or password credentials.",
-        messageGujarati: "ખોટો ફોન નંબર/ઈમેલ અથવા પાસવર્ડ.",
+        message: "Invalid phone/email/username or password credentials.",
+        messageGujarati: "ખોટો ફોન નંબર/ઈમેલ/યૂઝરનેમ અથવા પાસવર્ડ.",
       });
     }
 
@@ -429,10 +465,16 @@ export class AuthService {
     if (!isMatch) {
       throw new UnauthorizedException({
         statusCode: 401,
-        message: "Invalid phone/email or password credentials.",
-        messageGujarati: "ખોટો ફોન નંબર/ઈમેલ અથવા પાસવર્ડ.",
+        message: "Invalid phone/email/username or password credentials.",
+        messageGujarati: "ખોટો ફોન નંબર/ઈમેલ/યૂઝરનેમ અથવા પાસવર્ડ.",
       });
     }
+
+    // Update last login timestamp
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
 
     // Verify tenant is active
     if (user.role !== UserRole.SUPER_ADMIN && user.organization) {
@@ -546,6 +588,9 @@ export class AuthService {
       userAgent,
     });
 
+    // Calculate effective permissions
+    const effectivePermissions = await this.resolveRolePermissionsForUser(null, user);
+
     // Generate JWT
     const tokenPayload = {
       sub: user.id,
@@ -557,6 +602,9 @@ export class AuthService {
       email: user.email,
       phone: user.phone,
       role: user.role,
+      sessionVersion: user.sessionVersion,
+      dataScope: user.dataScope,
+      customRoleId: user.customRoleId,
       preferredLang: user.preferredLang,
     };
 
@@ -567,9 +615,18 @@ export class AuthService {
       user: {
         id: user.id,
         fullName: user.fullName,
+        name: user.fullName,
         email: user.email,
         phone: user.phone,
+        username: user.username,
         role: user.role,
+        customRoleId: user.customRoleId,
+        customRoleName: user.customRole?.name,
+        dataScope: user.dataScope,
+        maxInvoiceAmount: user.maxInvoiceAmount ? Number(user.maxInvoiceAmount) : null,
+        maxDiscountPercent: user.maxDiscountPercent ? Number(user.maxDiscountPercent) : null,
+        canOverridePrice: user.canOverridePrice,
+        permissions: effectivePermissions,
         preferredLang: user.preferredLang,
       },
       defaultContext: {
@@ -594,6 +651,12 @@ export class AuthService {
         where: { id: userId },
         include: {
           organization: true,
+          customRole: {
+            include: {
+              permissions: true,
+            },
+          },
+          userPermissions: true,
           branchAssignments: {
             include: { branch: true },
           },
@@ -603,6 +666,8 @@ export class AuthService {
       if (!user) {
         throw new NotFoundException("User profile not found.");
       }
+
+      const effectivePermissions = await this.resolveRolePermissionsForUser(tx, user);
 
       const companies = await tx.company.findMany({
         where: { organizationId: user.organizationId },
@@ -626,9 +691,18 @@ export class AuthService {
         user: {
           id: user.id,
           fullName: user.fullName,
+          name: user.fullName,
           email: user.email,
           phone: user.phone,
+          username: user.username,
           role: user.role,
+          customRoleId: user.customRoleId,
+          customRoleName: user.customRole?.name,
+          dataScope: user.dataScope,
+          maxInvoiceAmount: user.maxInvoiceAmount ? Number(user.maxInvoiceAmount) : null,
+          maxDiscountPercent: user.maxDiscountPercent ? Number(user.maxDiscountPercent) : null,
+          canOverridePrice: user.canOverridePrice,
+          permissions: effectivePermissions,
           preferredLang: user.preferredLang,
           organization: {
             id: user.organization?.id,
@@ -840,6 +914,12 @@ export class AuthService {
         where: { id: userId },
         include: {
           organization: true,
+          customRole: {
+            include: {
+              permissions: true,
+            },
+          },
+          userPermissions: true,
           branchAssignments: { include: { branch: true } },
         },
       });
@@ -909,6 +989,8 @@ export class AuthService {
         where: { companyId: company.id, isCurrent: true },
       });
 
+      const effectivePermissions = await this.resolveRolePermissionsForUser(tx, user);
+
       const tokenPayload = {
         sub: user.id,
         userId: user.id,
@@ -919,6 +1001,7 @@ export class AuthService {
         email: user.email,
         phone: user.phone,
         role: user.role,
+        sessionVersion: user.sessionVersion,
         preferredLang: user.preferredLang,
       };
 
@@ -942,9 +1025,18 @@ export class AuthService {
         user: {
           id: user.id,
           fullName: user.fullName,
+          name: user.fullName,
           email: user.email,
           phone: user.phone,
+          username: user.username,
           role: user.role,
+          customRoleId: user.customRoleId,
+          customRoleName: user.customRole?.name,
+          dataScope: user.dataScope,
+          maxInvoiceAmount: user.maxInvoiceAmount ? Number(user.maxInvoiceAmount) : null,
+          maxDiscountPercent: user.maxDiscountPercent ? Number(user.maxDiscountPercent) : null,
+          canOverridePrice: user.canOverridePrice,
+          permissions: effectivePermissions,
           preferredLang: user.preferredLang,
         },
         defaultContext: {

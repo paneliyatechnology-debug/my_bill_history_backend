@@ -15,6 +15,7 @@ import {
 } from "@nestjs/common";
 import { TenantContext, UserRole } from "@billing/shared-types";
 import { Roles } from "../common/decorators/roles.decorator";
+import { RequirePermissions } from "../common/decorators/permissions.decorator";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { VouchersService } from "./vouchers.service";
 import { CreateVoucherDto } from "./dto/create-voucher.dto";
@@ -26,6 +27,7 @@ import { CreateStaffPaymentDto } from "./dto/create-staff-payment.dto";
 export class VouchersController {
   constructor(private readonly vouchersService: VouchersService) {}
 
+  @RequirePermissions({ module: "accounting", action: "create" })
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Roles(
@@ -120,6 +122,7 @@ export class VouchersController {
     return await this.vouchersService.updateExpenseVoucher(id, dto, tenant);
   }
 
+  @RequirePermissions({ module: "accounting", action: "view" })
   @Get()
   async listVouchers(
     @Query() query: any,

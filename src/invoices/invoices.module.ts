@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { DatabaseModule } from "../database/database.module";
 import { AuditModule } from "../audit/audit.module";
 import { LedgersModule } from "../ledgers/ledgers.module";
@@ -7,6 +7,7 @@ import { SalesReturnsController } from "./sales-returns.controller";
 import { InvoicesService } from "./invoices.service";
 import { InvoicePrintModule } from "../invoice-print/invoice-print.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { UsersModule } from "../users/users.module";
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
     LedgersModule,
     InvoicePrintModule,
     NotificationsModule,
+    forwardRef(() => UsersModule),
   ],
   controllers: [InvoicesController, SalesReturnsController],
   providers: [InvoicesService],

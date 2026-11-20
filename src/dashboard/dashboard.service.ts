@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
-import { TenantContext } from "@billing/shared-types";
+import { TenantContext, InvoiceCategory, InvoiceStatus } from "@billing/shared-types";
 import { DatabaseService } from "../database/database.service";
 import { ReportsService } from "../reports/reports.service";
 import { VouchersService } from "../vouchers/vouchers.service";
@@ -66,7 +66,8 @@ export class DashboardService {
         const salesWhere: any = {
           companyId: tenant.companyId,
           balanceAmount: { gt: 0 },
-          status: { notIn: ["CANCELLED", "DRAFT", "PAID"] },
+          category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] as any },
+          status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT, InvoiceStatus.PAID, InvoiceStatus.CONVERTED] },
           dueDate: { not: null, lte: horizonDate },
         };
         if (fyRecord) {
@@ -261,7 +262,8 @@ export class DashboardService {
       const invoices = await tx.salesInvoice.findMany({
         where: {
           companyId: tenant.companyId,
-          status: { not: "CANCELLED" },
+          category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] as any },
+          status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT, InvoiceStatus.CONVERTED] },
           invoiceDate: { gte: startDate, lte: endDate },
           ...(fyRecord
             ? {
@@ -523,7 +525,8 @@ export class DashboardService {
       // 1. Sales Invoices
       const salesWhere: any = {
         companyId: tenant.companyId,
-        status: { not: "CANCELLED" },
+        category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] as any },
+        status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT, InvoiceStatus.CONVERTED] },
       };
       if (hasDateFilter) salesWhere.invoiceDate = dateFilter;
       if (fyRecord) {

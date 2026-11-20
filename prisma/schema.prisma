@@ -24,11 +24,27 @@ enum UserRole {
   SUPER_ADMIN
   ORG_ADMIN
   COMPANY_ADMIN
+  PARTNER
   ACCOUNTANT
   BRANCH_MANAGER
+  STOCK_MANAGER
+  DELIVERY_BOY
   CASHIER
   SALESMAN
   AUDITOR
+  CUSTOM
+}
+
+enum DataScope {
+  OWN_RECORDS
+  ASSIGNED_BRANCH
+  ALL_ORGANIZATION
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum GstRegistrationType {
@@ -89,6 +105,7 @@ model Organization {
   tenant                  Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   companies               Company[]
   users                   User[]
+  roles                   Role[]
   notifications           Notification[]
   notificationDevices     NotificationDevice[]
   notificationPreferences NotificationPreference[]
@@ -192,6 +209,7 @@ model Company {
   productionOrders           ProductionOrder[]
   stockTransfers             StockTransfer[]
   deliveryChallans           DeliveryChallan[]
+  approvalRequests           ApprovalRequest[]
   purchaseBillScans          PurchaseBillScan[]
   auditLogs                  AuditLog[]
   gstIntegrationConfig       GstIntegrationConfig?
@@ -363,21 +381,36 @@ model FinancialYear {
 }
 
 model User {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  fullName       String   @map("full_name") @db.VarChar(150)
-  email          String   @unique @db.VarChar(150)
-  phone          String   @unique @db.VarChar(20)
-  passwordHash   String   @map("password_hash") @db.VarChar(255)
-  role           UserRole @default(CASHIER)
-  preferredLang  String   @default("en") @map("preferred_lang") @db.VarChar(5) // "en" | "gu"
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @map("organization_id") @db.Uuid
+  fullName           String    @map("full_name") @db.VarChar(150)
+  email              String?   @unique @db.VarChar(150)
+  phone              String    @unique @db.VarChar(20)
+  username           String?   @unique @db.VarChar(50)
+  passwordHash       String    @map("password_hash") @db.VarChar(255)
+  role               UserRole  @default(CASHIER)
+  customRoleId       String?   @map("custom_role_id") @db.Uuid
+  preferredLang      String    @default("en") @map("preferred_lang") @db.VarChar(5) // "en" | "gu"
+  isActive           Boolean   @default(true) @map("is_active")
+  avatarUrl          String?   @map("avatar_url") @db.VarChar(255)
+  joiningDate        DateTime? @default(now()) @map("joining_date")
+  lastLoginAt        DateTime? @map("last_login_at")
+  sessionVersion     Int       @default(1) @map("session_version")
+  dataScope          DataScope @default(ALL_ORGANIZATION) @map("data_scope")
+  maxInvoiceAmount   Decimal?  @map("max_invoice_amount") @db.Decimal(15, 2)
+  maxDiscountPercent Decimal?  @map("max_discount_percent") @db.Decimal(5, 2)
+  canOverridePrice   Boolean   @default(true) @map("can_override_price")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   organization                   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customRole                     Role?                    @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
   auditLogs                      AuditLog[]
   branchAssignments              UserBranchAssignment[]
+  userPermissions                UserPermission[]
+  invoicesCreated                SalesInvoice[]           @relation("InvoiceCreatedBy")
+  approvalRequestsRequested      ApprovalRequest[]        @relation("ApprovalRequestedBy")
+  approvalRequestsReviewed       ApprovalRequest[]        @relation("ApprovalReviewedBy")
   notifications                  Notification[]
   notificationDevices            NotificationDevice[]
   notificationPreferences        NotificationPreference[]
@@ -385,6 +418,83 @@ model User {
 
   @@index([organizationId])
   @@map("users")
+}
+
+model Role {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  name           String    @db.VarChar(100)
+  description    String?   @db.VarChar(255)
+  isSystem       Boolean   @default(false) @map("is_system")
+  systemRole     UserRole? @map("system_role")
+  isActive       Boolean   @default(true) @map("is_active")
+  dataScope      DataScope @default(ALL_ORGANIZATION) @map("data_scope")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  permissions  RolePermission[]
+  users        User[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("roles")
+}
+
+model RolePermission {
+  id        String   @id @default(uuid()) @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  module    String   @db.VarChar(50)
+  action    String   @db.VarChar(50)
+  allowed   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, module, action])
+  @@index([roleId])
+  @@map("role_permissions")
+}
+
+model UserPermission {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  module    String   @db.VarChar(50)
+  action    String   @db.VarChar(50)
+  allowed   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, module, action])
+  @@index([userId])
+  @@map("user_permissions")
+}
+
+model ApprovalRequest {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  companyId      String         @map("company_id") @db.Uuid
+  documentType   String         @map("document_type") @db.VarChar(50)
+  documentId     String         @map("document_id") @db.Uuid
+  documentNumber String         @map("document_number") @db.VarChar(100)
+  amount         Decimal        @default(0.00) @db.Decimal(15, 2)
+  reason         String?        @db.VarChar(255)
+  status         ApprovalStatus @default(PENDING)
+  requestedById  String         @map("requested_by_id") @db.Uuid
+  reviewedById   String?        @map("reviewed_by_id") @db.Uuid
+  reviewedAt     DateTime?      @map("reviewed_at")
+  comments       String?        @db.Text
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  requestedBy User    @relation("ApprovalRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+  reviewedBy  User?   @relation("ApprovalReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, companyId, status])
+  @@index([documentType, documentId])
+  @@map("approval_requests")
 }
 
 model UserBranchAssignment {
@@ -863,7 +973,8 @@ enum InvoiceCategory {
   TAX_INVOICE // Regular B2B/B2C GST Tax Invoice (Pakku Bill)
   BILL_OF_SUPPLY // Exempt or Composition Scheme bill
   EXPORT_INVOICE // With or without payment of tax
-  PROFORMA_INVOICE // Non-financial quotation / estimate (Kachhu Bill)
+  PROFORMA_INVOICE // Proforma Invoice (PI)
+  QUOTATION // Quotation / Estimate (QTN / EST)
   DELIVERY_CHALLAN // Section 55 delivery challan
 }
 
@@ -874,6 +985,7 @@ enum InvoiceStatus {
   PARTIALLY_PAID
   OVERDUE
   CANCELLED
+  CONVERTED
 }
 
 enum PaymentMode {
@@ -941,13 +1053,19 @@ model SalesInvoice {
   notes                     String?  @db.Text
   clientOfflineUuid         String?  @unique @map("client_offline_uuid") @db.VarChar(100)
   provisionalCostReconciled Boolean  @default(true) @map("provisional_cost_reconciled")
-  createdAt                 DateTime @default(now()) @map("created_at")
-  updatedAt                 DateTime @updatedAt @map("updated_at")
+  convertedInvoiceId        String?         @unique @map("converted_invoice_id") @db.Uuid
+  quotationId               String?         @map("quotation_id") @db.Uuid
+  deliveryChallanId         String?         @map("delivery_challan_id") @db.Uuid
+  createdById               String?         @map("created_by_id") @db.Uuid
+  approvalStatus            ApprovalStatus  @default(APPROVED) @map("approval_status")
+  createdAt                 DateTime        @default(now()) @map("created_at")
+  updatedAt                 DateTime        @updatedAt @map("updated_at")
 
   company                 Company                  @relation(fields: [companyId], references: [id], onDelete: Restrict)
   branch                  Branch                   @relation(fields: [branchId], references: [id], onDelete: Restrict)
   financialYear           FinancialYear            @relation(fields: [financialYearId], references: [id], onDelete: Restrict)
   party                   Party                    @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  createdBy               User?                    @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   items                   SalesInvoiceItem[]
   returns                 SalesReturn[]
   outwardDebitNotes       OutwardDebitNote[]
@@ -957,12 +1075,18 @@ model SalesInvoice {
   automatedBillingRuns    AutomatedBillingRun[]
   aiCollectionCalls       AiCollectionCall[]
   aiCollectionCommitments AiCollectionCommitment[]
+  convertedInvoice          SalesInvoice?            @relation("QuotationConversion", fields: [convertedInvoiceId], references: [id], onDelete: SetNull)
+  sourceQuotationForInvoice SalesInvoice?            @relation("QuotationConversion")
+  deliveryChallan           DeliveryChallan?         @relation("ChallanSalesInvoices", fields: [deliveryChallanId], references: [id], onDelete: SetNull)
 
   @@unique([companyId, financialYearId, invoiceNumber])
   @@index([organizationId, companyId, invoiceDate])
   @@index([financialYearId])
   @@index([partyId])
   @@index([status])
+  @@index([quotationId])
+  @@index([deliveryChallanId])
+  @@index([createdById])
   @@map("sales_invoices")
 }
 
@@ -1462,6 +1586,7 @@ enum DeliveryChallanStatus {
   ISSUED
   CLOSED
   CANCELLED
+  CONVERTED
 }
 
 model DeliveryChallan {
@@ -1494,6 +1619,7 @@ model DeliveryChallan {
   party          Party?                @relation(fields: [partyId], references: [id], onDelete: Restrict)
   warehouse      Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
   items          DeliveryChallanItem[]
+  salesInvoices  SalesInvoice[]        @relation("ChallanSalesInvoices")
   eWayBillRecord EWayBillRecord?
 
   @@unique([companyId, challanNumber])

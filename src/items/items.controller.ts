@@ -16,13 +16,14 @@ import { CreateItemDto } from "./dto/create-item.dto";
 import { UpdateItemDto, QueryItemsDto, AdjustStockDto } from "./dto/update-item.dto";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
+import { RequirePermissions } from "../common/decorators/permissions.decorator";
 import { TenantContext, UserRole } from "@billing/shared-types";
 
 @Controller(["items", "masters/items", "inventory/items", "inventory/stock"])
 export class ItemsController {
   constructor(private readonly itemsService: ItemsService) {}
 
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.ACCOUNTANT)
+  @RequirePermissions({ module: "items", action: "create" })
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(
@@ -32,6 +33,7 @@ export class ItemsController {
     return this.itemsService.create(ctx, dto);
   }
 
+  @RequirePermissions({ module: "items", action: "view" })
   @Get("lookup")
   async lookup(
     @CurrentTenant() ctx: TenantContext,
@@ -40,6 +42,7 @@ export class ItemsController {
     return this.itemsService.lookup(ctx, code);
   }
 
+  @RequirePermissions({ module: "items", action: "view" })
   @Get()
   async findAll(
     @CurrentTenant() ctx: TenantContext,
@@ -48,6 +51,7 @@ export class ItemsController {
     return this.itemsService.findAll(ctx, query);
   }
 
+  @RequirePermissions({ module: "items", action: "view" })
   @Get(":id/stock-details")
   async getStockDetails(
     @CurrentTenant() ctx: TenantContext,
@@ -57,6 +61,7 @@ export class ItemsController {
     return this.itemsService.getStockDetails(ctx, id, query);
   }
 
+  @RequirePermissions({ module: "items", action: "view" })
   @Get(":id/party-report")
   async getPartyReport(
     @CurrentTenant() ctx: TenantContext,
@@ -66,12 +71,13 @@ export class ItemsController {
     return this.itemsService.getPartyReport(ctx, id, query);
   }
 
+  @RequirePermissions({ module: "items", action: "view" })
   @Get(":id")
   async findOne(@CurrentTenant() ctx: TenantContext, @Param("id") id: string) {
     return this.itemsService.findOne(ctx, id);
   }
 
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.ACCOUNTANT)
+  @RequirePermissions({ module: "items", action: "edit" })
   @Put(":id")
   async update(
     @CurrentTenant() ctx: TenantContext,
@@ -81,7 +87,7 @@ export class ItemsController {
     return this.itemsService.update(ctx, id, dto);
   }
 
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.ACCOUNTANT)
+  @RequirePermissions({ module: "items", action: "edit" })
   @Patch(":id")
   async patchUpdate(
     @CurrentTenant() ctx: TenantContext,
@@ -91,7 +97,7 @@ export class ItemsController {
     return this.itemsService.update(ctx, id, dto);
   }
 
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.ACCOUNTANT)
+  @RequirePermissions({ module: "items", action: "adjust_stock" })
   @Post(":id/adjust-stock")
   async adjustStock(
     @CurrentTenant() ctx: TenantContext,
@@ -101,13 +107,13 @@ export class ItemsController {
     return this.itemsService.adjustStock(ctx, id, dto);
   }
 
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.ACCOUNTANT)
+  @RequirePermissions({ module: "items", action: "edit" })
   @Patch(":id/archive")
   async archive(@CurrentTenant() ctx: TenantContext, @Param("id") id: string) {
     return this.itemsService.archive(ctx, id);
   }
 
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.ACCOUNTANT)
+  @RequirePermissions({ module: "items", action: "delete" })
   @Post("bulk-delete")
   async bulkDelete(
     @CurrentTenant() ctx: TenantContext,
@@ -117,7 +123,7 @@ export class ItemsController {
     return this.itemsService.bulkDelete(ctx, body.ids, shouldForce);
   }
 
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.ACCOUNTANT)
+  @RequirePermissions({ module: "items", action: "delete" })
   @Delete(":id")
   async delete(
     @CurrentTenant() ctx: TenantContext,

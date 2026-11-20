@@ -143,6 +143,24 @@ export class VouchersService {
         }
       }
 
+      // Contra voucher invariant: At least one line must be a Cash or Bank account
+      if (dto.voucherType === "CONTRA") {
+        const hasCashOrBank = dto.lines.some((line) => {
+          const acc = accountMap.get(line.accountId);
+          return (
+            acc?.isBankLedger ||
+            acc?.isCashLedger ||
+            acc?.group?.name?.toLowerCase().includes("bank") ||
+            acc?.group?.name?.toLowerCase().includes("cash")
+          );
+        });
+        if (!hasCashOrBank) {
+          throw new BadRequestException(
+            "Contra vouchers must involve at least one Cash or Bank account.",
+          );
+        }
+      }
+
       // 5. Create Voucher Header
       const voucher = await tx.voucher.create({
         data: {
@@ -529,7 +547,10 @@ export class VouchersService {
       ]);
 
       return {
-        data,
+        data: data.map((v) => ({
+          ...v,
+          lines: v.journalEntries,
+        })),
         total,
         page,
         limit,

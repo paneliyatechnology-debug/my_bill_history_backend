@@ -5,9 +5,10 @@ import { WarehousesController } from "./warehouses.controller";
 import { CompanyAssetsService } from "./company-assets.service";
 import { LedgersModule } from "../ledgers/ledgers.module";
 import { AuthModule } from "../auth/auth.module";
+import { UsersModule } from "../users/users.module";
 
 @Module({
-  imports: [LedgersModule, AuthModule],
+  imports: [LedgersModule, AuthModule, UsersModule],
   controllers: [TenantsController, WarehousesController],
   providers: [TenantsService, CompanyAssetsService],
   exports: [TenantsService],

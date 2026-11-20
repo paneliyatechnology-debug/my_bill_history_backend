@@ -19,6 +19,7 @@ import { FastifyReply } from "fastify";
 import { Throttle } from "@nestjs/throttler";
 import { TenantContext, UserRole } from "@billing/shared-types";
 import { Roles } from "../common/decorators/roles.decorator";
+import { RequirePermissions } from "../common/decorators/permissions.decorator";
 import { Public } from "../common/decorators/public.decorator";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { InvoicesService } from "./invoices.service";
@@ -46,6 +47,7 @@ export class InvoicesController {
   })
   @Post(["", "sales", "invoices"])
   @HttpCode(HttpStatus.CREATED)
+  @RequirePermissions({ module: "sales_invoices", action: "create" })
   @Roles(
     UserRole.SUPER_ADMIN,
     UserRole.ORG_ADMIN,
@@ -89,6 +91,95 @@ export class InvoicesController {
       tenant,
       idempotencyKey,
       body?.allowNegativeStock,
+    );
+  }
+
+  @Post([
+    "sales/:id/convert-to-invoice",
+    "invoices/:id/convert-to-invoice",
+    ":id/convert-to-invoice",
+  ])
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions({ module: "quotations", action: "convert" })
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+    UserRole.BRANCH_MANAGER,
+    UserRole.CASHIER,
+    UserRole.SALESMAN,
+  )
+  async convertQuotationToInvoice(
+    @Param("id") id: string,
+    @CurrentTenant() tenant: TenantContext,
+    @Headers("idempotency-key") idempotencyKey?: string,
+    @Body()
+    body?: {
+      allowNegativeStock?: boolean;
+      asDraft?: boolean;
+      issueImmediately?: boolean;
+    },
+  ) {
+    return await this.invoicesService.convertQuotationToInvoice(
+      id,
+      tenant,
+      {
+        allowNegativeStockOverride: body?.allowNegativeStock,
+        asDraft: body?.asDraft,
+        issueImmediately: body?.issueImmediately,
+        idempotencyKey,
+      },
+      idempotencyKey,
+    );
+  }
+
+  @Post([
+    "sales/:id/convert-to-proforma",
+    "invoices/:id/convert-to-proforma",
+    ":id/convert-to-proforma",
+  ])
+  @HttpCode(HttpStatus.OK)
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+    UserRole.BRANCH_MANAGER,
+    UserRole.CASHIER,
+    UserRole.SALESMAN,
+  )
+  async convertQuotationToProforma(
+    @Param("id") id: string,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.invoicesService.convertQuotationToProforma(id, tenant);
+  }
+
+  @Post([
+    "sales/:id/convert-to-challan",
+    "invoices/:id/convert-to-challan",
+    ":id/convert-to-challan",
+  ])
+  @HttpCode(HttpStatus.OK)
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+    UserRole.BRANCH_MANAGER,
+    UserRole.CASHIER,
+    UserRole.SALESMAN,
+  )
+  async convertDocumentToChallan(
+    @Param("id") id: string,
+    @CurrentTenant() tenant: TenantContext,
+    @Body() body?: { warehouseId?: string },
+  ) {
+    return await this.invoicesService.convertDocumentToChallan(
+      id,
+      tenant,
+      body?.warehouseId,
     );
   }
 
@@ -190,6 +281,7 @@ export class InvoicesController {
 
   @Post(["sales/:id/cancel", "invoices/:id/cancel", ":id/cancel"])
   @HttpCode(HttpStatus.OK)
+  @RequirePermissions({ module: "sales_invoices", action: "cancel" })
   @Roles(
     UserRole.SUPER_ADMIN,
     UserRole.ORG_ADMIN,
@@ -210,6 +302,7 @@ export class InvoicesController {
     );
   }
 
+  @RequirePermissions({ module: "sales_invoices", action: "view" })
   @Get(["", "sales", "invoices"])
   async listSalesInvoices(
     @Query() query: QueryInvoicesDto,
@@ -372,6 +465,7 @@ export class InvoicesController {
     }
   }
 
+  @RequirePermissions({ module: "sales_invoices", action: "view" })
   @Get(["sales/:id", "invoices/:id", ":id"])
   async getSalesInvoice(
     @Param("id") id: string,
@@ -383,6 +477,7 @@ export class InvoicesController {
     return await this.invoicesService.getSalesInvoiceById(id, tenant);
   }
 
+  @RequirePermissions({ module: "sales_invoices", action: "edit" })
   @Put(["sales/:id", "invoices/:id", ":id"])
   @Roles(
     UserRole.SUPER_ADMIN,

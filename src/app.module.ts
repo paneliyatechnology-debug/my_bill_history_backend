@@ -9,6 +9,7 @@ import { MailModule } from "./mail/mail.module";
 import { TenantsModule } from "./tenants/tenants.module";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
+import { PermissionsGuard } from "./common/guards/permissions.guard";
 import { CorrelationIdInterceptor } from "./common/interceptors/correlation-id.interceptor";
 import { TenantContextInterceptor } from "./common/interceptors/tenant-context.interceptor";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
@@ -40,6 +41,7 @@ import { AutomatedBillingModule } from "./automated-billing/automated-billing.mo
 import { NotificationsModule } from "./notifications/notifications.module";
 import { AiCollectionsModule } from "./ai-collections/ai-collections.module";
 import { SubscriptionsModule } from "./subscriptions/subscriptions.module";
+import { UsersModule } from "./users/users.module";
 
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 
@@ -91,6 +93,7 @@ import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
     NotificationsModule,
     AiCollectionsModule,
     SubscriptionsModule,
+    UsersModule,
     HealthModule,
   ],
   providers: [
@@ -105,6 +108,10 @@ import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: PermissionsGuard,
     },
     {
       provide: APP_INTERCEPTOR,

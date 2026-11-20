@@ -196,9 +196,21 @@ export class ReportsService {
       }
       if (query.category) {
         where.category = query.category;
+      } else {
+        where.category = {
+          notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION],
+        };
       }
       if (query.status) {
         where.status = query.status;
+      } else {
+        where.status = {
+          notIn: [
+            InvoiceStatus.CANCELLED,
+            InvoiceStatus.DRAFT,
+            InvoiceStatus.CONVERTED,
+          ],
+        };
       }
 
       const fromDate = query.fromDate || (query as any).startDate;
@@ -656,7 +668,14 @@ export class ReportsService {
       const invoices = await tx.salesInvoice.findMany({
         where: {
           companyId: tenant.companyId,
-          status: { not: "CANCELLED" },
+          category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] },
+          status: {
+            notIn: [
+              InvoiceStatus.CANCELLED,
+              InvoiceStatus.DRAFT,
+              InvoiceStatus.CONVERTED,
+            ],
+          },
           ...(query.fromDate || query.toDate ? { invoiceDate } : {}),
         },
         include: {
@@ -1220,7 +1239,14 @@ export class ReportsService {
           ledgerAccount: true,
           salesInvoices: {
             where: {
-              status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT] },
+              status: {
+                notIn: [
+                  InvoiceStatus.CANCELLED,
+                  InvoiceStatus.DRAFT,
+                  InvoiceStatus.CONVERTED,
+                ],
+              },
+              category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] },
               balanceAmount: { not: 0 },
             },
             select: {
@@ -1832,6 +1858,7 @@ export class ReportsService {
           journalEntries: {
             where: {
               voucher: {
+                isCancelled: false,
                 ...(fromDate || toDate
                   ? {
                       voucherDate: {
@@ -1976,6 +2003,7 @@ export class ReportsService {
           journalEntries: {
             where: {
               voucher: {
+                isCancelled: false,
                 ...(fromDate || toDate
                   ? {
                       voucherDate: {
@@ -2225,6 +2253,7 @@ export class ReportsService {
           journalEntries: {
             where: {
               voucher: {
+                isCancelled: false,
                 ...(asOfDate ? { voucherDate: { lte: asOfDate } } : {}),
               },
             },
@@ -3686,7 +3715,14 @@ export class ReportsService {
       const toDate = query.toDate || query.endDate;
       const where: any = {
         companyId: tenant.companyId,
-        status: { not: InvoiceStatus.CANCELLED },
+        category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] },
+        status: {
+          notIn: [
+            InvoiceStatus.CANCELLED,
+            InvoiceStatus.DRAFT,
+            InvoiceStatus.CONVERTED,
+          ],
+        },
       };
       if (fromDate || toDate) {
         where.invoiceDate = {};
@@ -3900,7 +3936,14 @@ export class ReportsService {
       const toDate = query.toDate || query.endDate;
       const where: any = {
         companyId: tenant.companyId,
-        status: { not: InvoiceStatus.CANCELLED },
+        category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] },
+        status: {
+          notIn: [
+            InvoiceStatus.CANCELLED,
+            InvoiceStatus.DRAFT,
+            InvoiceStatus.CONVERTED,
+          ],
+        },
       };
       if (fromDate || toDate) {
         where.invoiceDate = {};
@@ -4497,7 +4540,9 @@ export class ReportsService {
       const toDate = query.toDate || query.endDate;
       const where: any = {
         companyId: tenant.companyId,
-        category: InvoiceCategory.PROFORMA_INVOICE,
+        category: (query as any)?.category || {
+          in: [InvoiceCategory.QUOTATION, InvoiceCategory.PROFORMA_INVOICE],
+        },
       };
       if (fromDate || toDate) {
         where.invoiceDate = {};
@@ -4752,6 +4797,7 @@ export class ReportsService {
           journalEntries: {
             where: {
               voucher: {
+                isCancelled: false,
                 ...(fromDate || toDate
                   ? {
                       voucherDate: {

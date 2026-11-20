@@ -15,6 +15,7 @@ import {
 } from "@nestjs/common";
 import { FastifyRequest, FastifyReply } from "fastify";
 import { TenantsService, CreateBranchDto } from "./tenants.service";
+import { UsersService } from "../users/users.service";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { CurrentUser, AuthenticatedUser } from "../common/decorators/current-user.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
@@ -23,7 +24,10 @@ import { CreateCompanyDto } from "./dto/create-company.dto";
 
 @Controller("tenants")
 export class TenantsController {
-  constructor(private readonly tenantsService: TenantsService) {}
+  constructor(
+    private readonly tenantsService: TenantsService,
+    private readonly usersService: UsersService,
+  ) {}
 
   @Get("company")
   async getCurrentCompany(@CurrentTenant() ctx: TenantContext) {
@@ -251,23 +255,28 @@ export class TenantsController {
 
   @Get("users")
   async getOrganizationUsers(@CurrentTenant() ctx: TenantContext) {
-    return this.tenantsService.getOrganizationUsers(ctx);
+    return this.usersService.listUsers(ctx);
   }
 
   @Post("users")
   @Roles(UserRole.COMPANY_ADMIN, UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN)
   async createOrganizationUser(
     @CurrentTenant() ctx: TenantContext,
-    @Body()
-    dto: {
-      name: string;
-      phone: string;
-      email?: string;
-      role: UserRole;
-      branchId?: string;
-    },
+    @Body() dto: any,
   ) {
-    return this.tenantsService.createOrganizationUser(ctx, dto);
+    return this.usersService.createUser(ctx, {
+      fullName: dto.name || dto.fullName,
+      phone: dto.phone,
+      email: dto.email,
+      username: dto.username,
+      password: dto.password,
+      role: dto.role,
+      branchIds: dto.branchId ? [dto.branchId] : dto.branchIds,
+      dataScope: dto.dataScope,
+      maxInvoiceAmount: dto.maxInvoiceAmount,
+      maxDiscountPercent: dto.maxDiscountPercent,
+      canOverridePrice: dto.canOverridePrice,
+    });
   }
 
   @Patch("users/:id")
@@ -275,14 +284,20 @@ export class TenantsController {
   async updateOrganizationUser(
     @CurrentTenant() ctx: TenantContext,
     @Param("id") id: string,
-    @Body()
-    dto: {
-      name?: string;
-      role?: UserRole;
-      isActive?: boolean;
-    },
+    @Body() dto: any,
   ) {
-    return this.tenantsService.updateOrganizationUser(ctx, id, dto);
+    return this.usersService.updateUser(ctx, id, {
+      fullName: dto.name || dto.fullName,
+      phone: dto.phone,
+      email: dto.email,
+      role: dto.role,
+      isActive: dto.isActive,
+      branchIds: dto.branchId ? [dto.branchId] : dto.branchIds,
+      dataScope: dto.dataScope,
+      maxInvoiceAmount: dto.maxInvoiceAmount,
+      maxDiscountPercent: dto.maxDiscountPercent,
+      canOverridePrice: dto.canOverridePrice,
+    });
   }
 
   @Delete("users/:id")
@@ -291,12 +306,12 @@ export class TenantsController {
     @CurrentTenant() ctx: TenantContext,
     @Param("id") id: string,
   ) {
-    return this.tenantsService.deleteOrganizationUser(ctx, id);
+    return this.usersService.toggleUserStatus(ctx, id, false);
   }
 
   @Get("activities")
   async getOrganizationActivities(@CurrentTenant() ctx: TenantContext) {
-    return this.tenantsService.getOrganizationActivities(ctx);
+    return this.usersService.getActivities(ctx);
   }
 
   @Get("billing-history")

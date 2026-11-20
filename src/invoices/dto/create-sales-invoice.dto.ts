@@ -31,6 +31,8 @@ export interface CreateSalesInvoiceDto {
   placeOfSupply?: string;
   isB2B?: boolean;
   isReverseCharge?: boolean;
+  quotationId?: string;
+  deliveryChallanId?: string;
   items: CreateSalesInvoiceItemDto[];
   warehouseId?: string;
   branchId?: string;

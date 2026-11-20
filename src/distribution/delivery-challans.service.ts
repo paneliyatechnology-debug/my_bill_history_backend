@@ -3,8 +3,11 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Inject,
+  forwardRef,
+  Optional,
 } from "@nestjs/common";
-import { TenantContext } from "@billing/shared-types";
+import { TenantContext, InvoiceCategory } from "@billing/shared-types";
 import {
   DeliveryChallanStatus,
   DeliveryChallanType,
@@ -13,6 +16,7 @@ import {
 import { toDecimal, Decimal, validatePeriodAccess } from "@billing/accounting-core";
 import { DatabaseService } from "../database/database.service";
 import { AuditService } from "../audit/audit.service";
+import { InvoicesService } from "../invoices/invoices.service";
 import { CreateDeliveryChallanDto } from "./dto/create-delivery-challan.dto";
 import { IssueDeliveryChallanDto } from "./dto/issue-delivery-challan.dto";
 import { CancelDeliveryChallanDto } from "./dto/cancel-delivery-challan.dto";
@@ -25,6 +29,9 @@ export class DeliveryChallansService {
   constructor(
     private readonly prisma: DatabaseService,
     private readonly audit: AuditService,
+    @Optional()
+    @Inject(forwardRef(() => InvoicesService))
+    private readonly invoicesService?: InvoicesService,
   ) {}
 
   /**
@@ -675,6 +682,118 @@ export class DeliveryChallansService {
       where: { companyId: ctx.companyId },
     });
     return { nextNumber: `DC/${fyCode}/${String(count + 1).padStart(4, "0")}` };
+  }
+
+  /**
+   * Convert Delivery Challan to Sales Invoice
+   * - Strict double-stock movement prevention: challan already dispatched goods
+   * - Sets deliveryChallanId on SalesInvoice
+   * - Posts double-entry accounting voucher
+   * - Marks challan status as CONVERTED
+   */
+  async convertChallanToInvoice(
+    ctx: TenantContext,
+    id: string,
+    options?: { asDraft?: boolean; allowNegativeStock?: boolean },
+  ): Promise<any> {
+    return await this.prisma.executeInTenantContext(ctx, async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`convert_challan_${id}`})::bigint)
+      `;
+
+      const challan = await tx.deliveryChallan.findFirst({
+        where: { id, companyId: ctx.companyId },
+        include: {
+          items: { include: { item: true } },
+          party: true,
+          warehouse: true,
+          salesInvoices: true,
+        },
+      });
+
+      if (!challan) {
+        throw new NotFoundException(`Delivery challan ${id} not found.`);
+      }
+
+      // 1. Idempotency check: if already converted, return existing invoice
+      if (
+        challan.status === DeliveryChallanStatus.CONVERTED ||
+        (challan.salesInvoices && challan.salesInvoices.length > 0)
+      ) {
+        const existingInv =
+          challan.salesInvoices?.[0] ||
+          (await tx.salesInvoice.findFirst({
+            where: { deliveryChallanId: challan.id, companyId: ctx.companyId },
+            include: { items: { include: { item: true } }, party: true },
+          }));
+        if (existingInv) {
+          return {
+            ...existingInv,
+            alreadyConverted: true,
+            deliveryChallanNumber: challan.challanNumber,
+            message: `Delivery challan ${challan.challanNumber} has already been converted to Tax Invoice ${existingInv.invoiceNumber}.`,
+          };
+        }
+      }
+
+      if (challan.status === DeliveryChallanStatus.CANCELLED) {
+        throw new BadRequestException(
+          `Cancelled delivery challan "${challan.challanNumber}" cannot be converted to an invoice.`,
+        );
+      }
+
+      // If challan is in DRAFT, it must be issued before creating invoice so stock movement is formalized
+      if (challan.status === DeliveryChallanStatus.DRAFT) {
+        await this.issueChallan(ctx, challan.id, {
+          notes: "Auto-issued prior to tax invoice conversion.",
+        });
+      }
+
+      if (!this.invoicesService) {
+        throw new BadRequestException("Invoices service is unavailable.");
+      }
+
+      // 2. Delegate invoice creation to InvoicesService with deliveryChallanId
+      const invoiceDto: any = {
+        category: InvoiceCategory.TAX_INVOICE,
+        deliveryChallanId: challan.id,
+        partyId: challan.partyId,
+        warehouseId: challan.warehouseId,
+        invoiceDate: new Date().toISOString(),
+        isDraft: options?.asDraft ?? false,
+        paymentMode: "UNPAID_CREDIT",
+        notes: `Converted from Delivery Challan #${challan.challanNumber}. ${challan.notes || ""}`.trim(),
+        items: challan.items.map((ci) => ({
+          itemId: ci.itemId,
+          batchId: ci.batchId || undefined,
+          description: ci.description || ci.item?.name || "Item",
+          hsnCode: ci.hsnCode || ci.item?.hsnCode || "9999",
+          quantity: Number(ci.quantity),
+          unitPrice: Number(ci.unitPrice),
+          discountPercent: 0,
+          discountAmount: 0,
+          taxRate: Number(ci.taxRate || 0),
+        })),
+      };
+
+      const invoice = await this.invoicesService.createSalesInvoice(invoiceDto, ctx);
+
+      // 3. Mark Challan CONVERTED
+      await tx.deliveryChallan.update({
+        where: { id: challan.id },
+        data: {
+          status: DeliveryChallanStatus.CONVERTED,
+          convertedInvoiceId: invoice.id,
+        },
+      });
+
+      return {
+        ...invoice,
+        deliveryChallanNumber: challan.challanNumber,
+        deliveryChallanId: challan.id,
+        message: `Delivery challan ${challan.challanNumber} successfully converted to Tax Invoice ${invoice.invoiceNumber}.`,
+      };
+    });
   }
 }
 

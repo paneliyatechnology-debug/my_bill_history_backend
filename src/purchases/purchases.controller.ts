@@ -12,6 +12,7 @@ import {
 } from "@nestjs/common";
 import { TenantContext, UserRole } from "@billing/shared-types";
 import { Roles } from "../common/decorators/roles.decorator";
+import { RequirePermissions } from "../common/decorators/permissions.decorator";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { PurchasesService } from "./purchases.service";
 import { CreatePurchaseInvoiceDto } from "./dto/create-purchase-invoice.dto";
@@ -23,6 +24,7 @@ import { RecordPurchasePaymentDto } from "./dto/record-purchase-payment.dto";
 export class PurchasesController {
   constructor(private readonly purchasesService: PurchasesService) {}
 
+  @RequirePermissions({ module: "purchases", action: "create" })
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Roles(
@@ -39,6 +41,7 @@ export class PurchasesController {
     return await this.purchasesService.createPurchaseInvoice(dto, tenant);
   }
 
+  @RequirePermissions({ module: "purchases", action: "create" })
   @Post("payments")
   @HttpCode(HttpStatus.CREATED)
   @Roles(
@@ -61,6 +64,7 @@ export class PurchasesController {
     );
   }
 
+  @RequirePermissions({ module: "purchases", action: "view" })
   @Get()
   @Roles(
     UserRole.SUPER_ADMIN,
@@ -77,6 +81,7 @@ export class PurchasesController {
     return await this.purchasesService.getPurchaseInvoices(dto, tenant);
   }
 
+  @RequirePermissions({ module: "purchases", action: "view" })
   @Get(":id")
   @Roles(
     UserRole.SUPER_ADMIN,

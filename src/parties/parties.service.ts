@@ -12,6 +12,7 @@ import {
   PartyType,
   GstRegistrationType,
   InvoiceStatus,
+  InvoiceCategory,
 } from "@billing/shared-types";
 import { CreatePartyDto } from "./dto/create-party.dto";
 import { UpdatePartyDto, QueryPartiesDto } from "./dto/update-party.dto";
@@ -308,7 +309,21 @@ export class PartiesService {
             },
           }
         : {
-            where: { status: { not: InvoiceStatus.CANCELLED } },
+            where: {
+              status: {
+                notIn: [
+                  InvoiceStatus.CANCELLED,
+                  InvoiceStatus.DRAFT,
+                  InvoiceStatus.CONVERTED,
+                ],
+              },
+              category: {
+                notIn: [
+                  InvoiceCategory.PROFORMA_INVOICE,
+                  InvoiceCategory.QUOTATION,
+                ],
+              },
+            },
             select: { grandTotal: true, paidAmount: true, status: true },
           };
 
@@ -487,7 +502,21 @@ export class PartiesService {
         where: { id, companyId: ctx.companyId },
         include: {
           salesInvoices: {
-            where: { status: { not: "CANCELLED" } },
+            where: {
+              status: {
+                notIn: [
+                  InvoiceStatus.CANCELLED,
+                  InvoiceStatus.DRAFT,
+                  InvoiceStatus.CONVERTED,
+                ],
+              },
+              category: {
+                notIn: [
+                  InvoiceCategory.PROFORMA_INVOICE,
+                  InvoiceCategory.QUOTATION,
+                ],
+              },
+            },
             select: { grandTotal: true, paidAmount: true, status: true },
           },
           purchaseInvoices: {

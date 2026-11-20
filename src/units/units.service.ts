@@ -89,7 +89,10 @@ export class UnitsService {
         });
       }
 
-      return uom;
+      return {
+        ...uom,
+        code: uom.symbol,
+      };
     });
   }
 
@@ -145,6 +148,7 @@ export class UnitsService {
 
       return list.map((u) => ({
         ...u,
+        code: u.symbol,
         itemCount: (u._count?.itemsPrimary || 0) + (u._count?.itemsSecondary || 0),
       }));
     });
@@ -164,7 +168,10 @@ export class UnitsService {
         });
       }
 
-      return uom;
+      return {
+        ...uom,
+        code: uom.symbol,
+      };
     });
   }
 
@@ -209,7 +216,10 @@ export class UnitsService {
         });
       }
 
-      return updated;
+      return {
+        ...updated,
+        code: updated.symbol,
+      };
     });
   }
 

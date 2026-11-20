@@ -16,6 +16,8 @@ import {
   VoucherType,
   AccountNature,
   getPlanEntitlements,
+  ApprovalStatus,
+  DataScope,
 } from "@billing/shared-types";
 import {
   Decimal,
@@ -308,7 +310,8 @@ export class InvoicesService {
         const isDraft =
           dto.isDraft === true ||
           dto.status === InvoiceStatus.DRAFT ||
-          dto.category === InvoiceCategory.PROFORMA_INVOICE;
+          dto.category === InvoiceCategory.PROFORMA_INVOICE ||
+          dto.category === InvoiceCategory.QUOTATION;
 
         // 7. Resolve Warehouse for physical items
         const hasPhysicalItems = dto.items.some(
@@ -376,29 +379,32 @@ export class InvoicesService {
         }
 
         const category = dto.category || InvoiceCategory.TAX_INVOICE;
+        const isCommercialQuoteOrProforma =
+          category === InvoiceCategory.QUOTATION ||
+          category === InvoiceCategory.PROFORMA_INVOICE;
         let invoiceNumber: string;
 
-        if (isDraft) {
-          if (dto.invoiceNumber && dto.invoiceNumber.trim() !== "") {
-            invoiceNumber = dto.invoiceNumber.trim();
-          } else {
-            invoiceNumber = `DFT-${Date.now().toString(36).toUpperCase()}-${Math.floor(
-              Math.random() * 1000,
-            )
-              .toString()
-              .padStart(3, "0")}`;
-          }
+        if (dto.invoiceNumber && dto.invoiceNumber.trim() !== "") {
+          invoiceNumber = dto.invoiceNumber.trim();
+        } else if (isDraft && !isCommercialQuoteOrProforma) {
+          invoiceNumber = `DFT-${Date.now().toString(36).toUpperCase()}-${Math.floor(
+            Math.random() * 1000,
+          )}
+            .toString()
+            .padStart(3, "0")}`;
         } else {
           // 8. Concurrency-Safe Legal Invoice Numbering using Transaction Advisory Lock
           const fyStart = new Date(fy.startDate);
           const fyEnd = new Date(fy.endDate);
           const fyCode = `${fyStart.getFullYear().toString().slice(-2)}-${fyEnd.getFullYear().toString().slice(-2)}`;
           const prefix =
-            category === InvoiceCategory.PROFORMA_INVOICE
+            category === InvoiceCategory.QUOTATION
               ? `QTN/${fyCode}/`
-              : category === InvoiceCategory.DELIVERY_CHALLAN
-                ? `DC/${fyCode}/`
-                : `INV/${fyCode}/`;
+              : category === InvoiceCategory.PROFORMA_INVOICE
+                ? `PI/${fyCode}/`
+                : category === InvoiceCategory.DELIVERY_CHALLAN
+                  ? `DC/${fyCode}/`
+                  : `INV/${fyCode}/`;
 
           // Acquire exclusive transaction advisory lock for this company and FY
           const lockKey = `seq_${tenant.companyId}_${fy.id}_${category}`;
@@ -539,6 +545,55 @@ export class InvoicesService {
           }
         }
 
+        // 10.b Check Staff Limits (RBAC & Approvals)
+        let invoiceApprovalStatus = ApprovalStatus.APPROVED;
+        let approvalReason: string | null = null;
+
+        if (tenant.userId) {
+          const staffUser = await tx.user.findUnique({
+            where: { id: tenant.userId },
+            select: {
+              id: true,
+              role: true,
+              maxInvoiceAmount: true,
+              maxDiscountPercent: true,
+              canOverridePrice: true,
+            },
+          });
+
+          if (staffUser) {
+            // Check Max Invoice Amount Limit
+            if (staffUser.maxInvoiceAmount && taxCalc.grandTotal.toNumber() > Number(staffUser.maxInvoiceAmount)) {
+              invoiceApprovalStatus = ApprovalStatus.PENDING;
+              approvalReason = `Grand total ₹${taxCalc.grandTotal.toFixed(2)} exceeds staff max invoice limit of ₹${Number(staffUser.maxInvoiceAmount).toFixed(2)}`;
+            }
+
+            // Check Max Discount Percent Limit
+            if (staffUser.maxDiscountPercent) {
+              const maxDisc = Number(staffUser.maxDiscountPercent);
+              for (const line of taxCalc.items) {
+                if (line.discountPercent.toNumber() > maxDisc) {
+                  invoiceApprovalStatus = ApprovalStatus.PENDING;
+                  approvalReason = `Discount ${line.discountPercent.toNumber()}% exceeds staff maximum allowed discount limit of ${maxDisc}%`;
+                  break;
+                }
+              }
+            }
+
+            // Check Price Override Restriction
+            if (staffUser.canOverridePrice === false) {
+              for (const itemDto of dto.items) {
+                const itemMaster = itemMap.get(itemDto.itemId);
+                if (itemMaster && itemMaster.retailPrice && Number(itemDto.unitPrice) < Number(itemMaster.retailPrice)) {
+                  invoiceApprovalStatus = ApprovalStatus.PENDING;
+                  approvalReason = `Unit price ₹${itemDto.unitPrice} for "${itemMaster.name}" is below master rate ₹${itemMaster.retailPrice} and price overrides are restricted.`;
+                  break;
+                }
+              }
+            }
+          }
+        }
+
         // 11. Create SalesInvoice Header
         const invoice = await tx.salesInvoice.create({
           data: {
@@ -547,6 +602,8 @@ export class InvoicesService {
             branchId,
             financialYearId: fy.id,
             partyId: party.id,
+            createdById: tenant.userId || null,
+            approvalStatus: invoiceApprovalStatus,
             category: category as any,
             invoiceNumber,
             invoiceDate,
@@ -556,6 +613,8 @@ export class InvoicesService {
             isB2B: dto.isB2B ?? (party.gstin ? true : false),
             isReverseCharge: dto.isReverseCharge ?? false,
             placeOfSupply,
+            quotationId: dto.quotationId || null,
+            deliveryChallanId: dto.deliveryChallanId || null,
             billingAddress: party.billingAddress || {
               city: company.city,
               pincode: company.pincode,
@@ -579,6 +638,22 @@ export class InvoicesService {
             provisionalCostReconciled: true,
           },
         });
+
+        if (invoiceApprovalStatus === ApprovalStatus.PENDING && tenant.userId) {
+          await tx.approvalRequest.create({
+            data: {
+              organizationId: tenant.organizationId,
+              companyId: tenant.companyId,
+              documentType: "SALES_INVOICE",
+              documentId: invoice.id,
+              documentNumber: invoice.invoiceNumber,
+              amount: taxCalc.grandTotal.toNumber(),
+              requestedById: tenant.userId,
+              status: ApprovalStatus.PENDING,
+              reason: approvalReason || "Requires management review and approval.",
+            },
+          });
+        }
 
         // 12. Create SalesInvoiceItem Lines & Append-Only Stock Movements
         const createdItems: any[] = [];
@@ -612,7 +687,8 @@ export class InvoicesService {
           createdItems.push(invItem);
 
           // Append-only stock dispatch for physical items (only for issued/non-draft invoices)
-          if (!isDraft && it.type !== "SERVICE" && warehouse) {
+          // When created against a Delivery Challan, the challan ALREADY dispatched stock! Skip dispatch here to prevent double deduction.
+          if (!isDraft && it.type !== "SERVICE" && warehouse && !dto.deliveryChallanId) {
             const issue = await this.calculateMovingAverageDispatch(
               tx,
               tenant,
@@ -640,6 +716,13 @@ export class InvoicesService {
               },
             });
           }
+        }
+
+        if (dto.deliveryChallanId && !isDraft) {
+          await tx.deliveryChallan.update({
+            where: { id: dto.deliveryChallanId },
+            data: { status: "CONVERTED" as any },
+          });
         }
 
         // 13. If DRAFT, skip voucher posting & stock deduction, return draft invoice
@@ -1172,7 +1255,16 @@ export class InvoicesService {
         where.partyId = rawPartyId;
       }
       if (query.status) where.status = query.status;
-      if (query.category) where.category = query.category;
+      if (query.category) {
+        where.category = query.category;
+      } else {
+        where.category = {
+          notIn: [
+            InvoiceCategory.PROFORMA_INVOICE,
+            InvoiceCategory.QUOTATION,
+          ],
+        };
+      }
       const targetFyId = (query as any)?.financialYearId || tenant.financialYearId;
       if (targetFyId) {
         where.financialYearId = targetFyId;
@@ -1187,12 +1279,43 @@ export class InvoicesService {
         where.invoiceNumber = { contains: query.search, mode: "insensitive" };
       }
 
+      // RBAC Data Scope Isolation
+      if (tenant.userId) {
+        const staff = await tx.user.findUnique({
+          where: { id: tenant.userId },
+          select: { dataScope: true, role: true },
+        });
+        if (staff?.dataScope === DataScope.OWN_RECORDS) {
+          where.createdById = tenant.userId;
+        } else if (staff?.dataScope === DataScope.ASSIGNED_BRANCH && tenant.branchId) {
+          where.branchId = tenant.branchId;
+        }
+      }
+
       const [items, total] = await Promise.all([
         tx.salesInvoice.findMany({
           where,
           include: {
             party: {
               select: { id: true, name: true, gstin: true, phone: true },
+            },
+            convertedInvoice: {
+              select: {
+                id: true,
+                invoiceNumber: true,
+                invoiceDate: true,
+                status: true,
+                grandTotal: true,
+              },
+            },
+            sourceQuotationForInvoice: {
+              select: {
+                id: true,
+                invoiceNumber: true,
+                invoiceDate: true,
+                status: true,
+                grandTotal: true,
+              },
             },
             items: {
               include: {
@@ -1261,6 +1384,10 @@ export class InvoicesService {
           outstandingBalance,
           isFullyReturned,
           totalRemainingQty,
+          sourceQuotation: inv.sourceQuotationForInvoice,
+          quotationNumber: inv.sourceQuotationForInvoice?.invoiceNumber || null,
+          quotationId:
+            inv.sourceQuotationForInvoice?.id || (inv as any).quotationId || null,
           ...buildInvoiceUrls(inv.id),
         };
       });
@@ -1300,6 +1427,24 @@ export class InvoicesService {
           financialYear: true,
           eWayBillRecord: true,
           eInvoiceRecord: true,
+          convertedInvoice: {
+            select: {
+              id: true,
+              invoiceNumber: true,
+              invoiceDate: true,
+              grandTotal: true,
+              status: true,
+            },
+          },
+          sourceQuotationForInvoice: {
+            select: {
+              id: true,
+              invoiceNumber: true,
+              invoiceDate: true,
+              grandTotal: true,
+              status: true,
+            },
+          },
           items: {
             include: {
               item: true,
@@ -1396,8 +1541,25 @@ export class InvoicesService {
         },
       });
 
+      let sourceQuotation: any = invoice.sourceQuotationForInvoice;
+      if (!sourceQuotation && (invoice as any).quotationId) {
+        sourceQuotation = await tx.salesInvoice.findUnique({
+          where: { id: (invoice as any).quotationId },
+          select: {
+            id: true,
+            invoiceNumber: true,
+            invoiceDate: true,
+            grandTotal: true,
+            status: true,
+          },
+        });
+      }
+
       return {
         ...invoice,
+        sourceQuotation,
+        quotationNumber: sourceQuotation?.invoiceNumber || null,
+        quotationId: sourceQuotation?.id || (invoice as any).quotationId || null,
         outstandingBalance: Number(invoice.balanceAmount),
         voucher,
         ...buildInvoiceUrls(invoice.id),
@@ -1437,6 +1599,20 @@ export class InvoicesService {
 
       if (!invoice) {
         throw new NotFoundException(`Sales invoice ${id} not found.`);
+      }
+
+      if (
+        invoice.category === InvoiceCategory.PROFORMA_INVOICE ||
+        invoice.category === InvoiceCategory.QUOTATION
+      ) {
+        return await this.convertQuotationToInvoiceTx(
+          tx,
+          invoice,
+          tenant,
+          allowNegativeStockOverride,
+          idempotencyKey,
+          false,
+        );
       }
 
       if (invoice.status !== InvoiceStatus.DRAFT) {
@@ -1524,8 +1700,7 @@ export class InvoicesService {
       const fyCode = `${fyStart.getFullYear().toString().slice(-2)}-${fyEnd.getFullYear().toString().slice(-2)}`;
       const prefix = `INV/${fyCode}/`;
       const category =
-        invoice.category === InvoiceCategory.PROFORMA_INVOICE ||
-        invoice.category === InvoiceCategory.DELIVERY_CHALLAN
+        (invoice.category as any) === InvoiceCategory.DELIVERY_CHALLAN
           ? InvoiceCategory.TAX_INVOICE
           : invoice.category;
 
@@ -1570,8 +1745,8 @@ export class InvoicesService {
         "0",
       )}`;
 
-      // Append-only stock dispatch for physical items
-      if (warehouse) {
+      // Append-only stock dispatch for physical items (skip if issued via Delivery Challan)
+      if (warehouse && !(invoice as any).deliveryChallanId) {
         for (const line of invoice.items) {
           if (line.item?.type === "SERVICE") continue;
           const issue = await this.calculateMovingAverageDispatch(
@@ -1691,6 +1866,800 @@ export class InvoicesService {
         },
         ...buildInvoiceUrls(updatedInvoice.id),
       };
+    });
+  }
+
+  /**
+   * Convert Quotation / Estimate (PROFORMA_INVOICE) to Tax Invoice:
+   * - By default creates a DRAFT Sales Invoice (accounting & stock isolated until reviewed & finalized)
+   * - If asDraft is false or issueImmediately is true, creates and immediately finalizes/issues the invoice
+   * - Strict accounting isolation: Quotation remains intact for historical records
+   * - Quotation status transitions to CONVERTED and links convertedInvoiceId
+   * - Recalculates all taxes, totals, and line items on backend
+   * - Concurrency locks & idempotency: prevents duplicate invoice creation on multiple clicks
+   */
+  async convertQuotationToInvoice(
+    id: string,
+    tenant: TenantContext,
+    options?:
+      | {
+          allowNegativeStockOverride?: boolean;
+          asDraft?: boolean;
+          issueImmediately?: boolean;
+          idempotencyKey?: string;
+        }
+      | boolean,
+    idempotencyKey?: string,
+  ): Promise<any> {
+    let allowNegativeStock = false;
+    let asDraft = true;
+    let effectiveIdempotencyKey = idempotencyKey;
+
+    if (typeof options === "boolean") {
+      allowNegativeStock = options;
+    } else if (options && typeof options === "object") {
+      allowNegativeStock = Boolean(options.allowNegativeStockOverride);
+      if (options.issueImmediately === true) {
+        asDraft = false;
+      } else if (typeof options.asDraft === "boolean") {
+        asDraft = options.asDraft;
+      }
+      if (options.idempotencyKey) {
+        effectiveIdempotencyKey = options.idempotencyKey;
+      }
+    }
+
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      // 1. Concurrency advisory lock on this quotation conversion
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`convert_qtn_${id}`})::bigint)
+      `;
+
+      const quotation = await tx.salesInvoice.findFirst({
+        where: { id, companyId: tenant.companyId },
+        include: {
+          items: {
+            include: { item: true },
+          },
+          party: true,
+          convertedInvoice: true,
+        },
+      });
+
+      if (!quotation) {
+        throw new NotFoundException(`Quotation with ID "${id}" not found.`);
+      }
+
+      if (quotation.organizationId !== tenant.organizationId) {
+        throw new ForbiddenException("Cross-tenant access forbidden.");
+      }
+
+      return await this.convertQuotationToInvoiceTx(
+        tx,
+        quotation,
+        tenant,
+        allowNegativeStock,
+        effectiveIdempotencyKey,
+        asDraft,
+      );
+    });
+  }
+
+  private async convertQuotationToInvoiceTx(
+    tx: any,
+    quotation: any,
+    tenant: TenantContext,
+    allowNegativeStockOverride?: boolean,
+    idempotencyKey?: string,
+    asDraft: boolean = true,
+  ): Promise<any> {
+    // 1. Idempotency & Duplicate Conversion Prevention
+    if (
+      quotation.status === InvoiceStatus.CONVERTED ||
+      quotation.convertedInvoiceId
+    ) {
+      const existingLinkedInvoice = quotation.convertedInvoiceId
+        ? await tx.salesInvoice.findFirst({
+            where: {
+              id: quotation.convertedInvoiceId,
+              companyId: tenant.companyId,
+            },
+            include: {
+              items: { include: { item: true } },
+              party: true,
+            },
+          })
+        : await tx.salesInvoice.findFirst({
+            where: {
+              quotationId: quotation.id,
+              companyId: tenant.companyId,
+            },
+            include: {
+              items: { include: { item: true } },
+              party: true,
+            },
+          });
+
+      if (existingLinkedInvoice) {
+        return {
+          ...existingLinkedInvoice,
+          alreadyConverted: true,
+          quotationNumber: quotation.invoiceNumber,
+          quotationId: quotation.id,
+          sourceQuotation: quotation,
+          message: `Quotation ${quotation.invoiceNumber} has already been converted to Tax Invoice ${existingLinkedInvoice.invoiceNumber}.`,
+          ...buildInvoiceUrls(existingLinkedInvoice.id),
+        };
+      }
+    }
+
+    // Also check if any existing Tax Invoice in company points to this quotationId
+    const existingByQuotationId = await tx.salesInvoice.findFirst({
+      where: {
+        quotationId: quotation.id,
+        companyId: tenant.companyId,
+      },
+      include: {
+        items: { include: { item: true } },
+        party: true,
+      },
+    });
+
+    if (existingByQuotationId) {
+      if (
+        !quotation.convertedInvoiceId ||
+        quotation.status !== InvoiceStatus.CONVERTED
+      ) {
+        await tx.salesInvoice.update({
+          where: { id: quotation.id },
+          data: {
+            convertedInvoiceId: existingByQuotationId.id,
+            status: InvoiceStatus.CONVERTED,
+          },
+        });
+      }
+      return {
+        ...existingByQuotationId,
+        alreadyConverted: true,
+        quotationNumber: quotation.invoiceNumber,
+        quotationId: quotation.id,
+        sourceQuotation: quotation,
+        message: `Quotation ${quotation.invoiceNumber} has already been converted to Tax Invoice ${existingByQuotationId.invoiceNumber}.`,
+        ...buildInvoiceUrls(existingByQuotationId.id),
+      };
+    }
+
+    if (quotation.status === InvoiceStatus.CANCELLED) {
+      throw new BadRequestException(
+        `Cancelled quotation "${quotation.invoiceNumber}" cannot be converted to a Tax Invoice.`,
+      );
+    }
+
+    // 2. Validate Company and Financial Year
+    const company = await tx.company.findUnique({
+      where: { id: tenant.companyId },
+    });
+    if (!company) {
+      throw new NotFoundException(`Company ${tenant.companyId} not found.`);
+    }
+
+    const fy = await tx.financialYear.findUnique({
+      where: { id: quotation.financialYearId },
+    });
+    if (!fy) {
+      throw new NotFoundException(
+        `Financial year ${quotation.financialYearId} not found.`,
+      );
+    }
+
+    const invoiceDate = new Date();
+    const periodCheck = validatePeriodAccess(
+      invoiceDate,
+      tenant.companyId,
+      fy,
+    );
+    if (!periodCheck.isAllowed) {
+      throw new BadRequestException(periodCheck.reason);
+    }
+
+    // 3. Resolve Warehouse for physical items
+    let warehouse = await tx.warehouse.findFirst({
+      where: { companyId: tenant.companyId, isDefault: true },
+    });
+    if (!warehouse) {
+      warehouse = await tx.warehouse.findFirst({
+        where: { companyId: tenant.companyId },
+      });
+    }
+
+    const fyStart = new Date(fy.startDate);
+    const fyEnd = new Date(fy.endDate);
+    const fyCode = `${fyStart.getFullYear().toString().slice(-2)}-${fyEnd.getFullYear().toString().slice(-2)}`;
+
+    // 4. Recalculate Statutory Taxes & Line Totals strictly on backend
+    const placeOfSupply =
+      quotation.placeOfSupply?.trim() ||
+      quotation.party?.stateCode?.trim() ||
+      company.stateCode;
+
+    const taxCalc = calculateSalesInvoiceTaxes(
+      company.stateCode,
+      placeOfSupply,
+      quotation.items.map((line: any) => ({
+        itemId: line.itemId,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        discountPercent: line.discountPercent,
+        discountAmount: line.discountAmount,
+        taxRate: line.taxRate,
+        isTaxInclusive: false,
+        supplyCategory: line.supplyCategory || "TAXABLE",
+      })),
+    );
+
+    // 5. Handling Draft vs Issued creation
+    let targetInvoiceNumber: string;
+    let targetStatus: InvoiceStatus;
+    let paidAmount = 0;
+    let balanceAmount = taxCalc.grandTotal.toNumber();
+
+    if (asDraft) {
+      targetStatus = InvoiceStatus.DRAFT;
+      const baseNum = quotation.invoiceNumber.replace(/^QTN/, "DFT-INV");
+      targetInvoiceNumber = baseNum.startsWith("DFT-INV")
+        ? baseNum
+        : `DFT-INV-${quotation.invoiceNumber}`;
+      const existingDraft = await tx.salesInvoice.findFirst({
+        where: {
+          companyId: tenant.companyId,
+          invoiceNumber: targetInvoiceNumber,
+        },
+      });
+      if (existingDraft) {
+        targetInvoiceNumber = `DFT-INV-${Date.now().toString(36).toUpperCase()}-${Math.floor(
+          Math.random() * 1000,
+        )
+          .toString()
+          .padStart(3, "0")}`;
+      }
+    } else {
+      // Immediate Issue: Validate stock and allocate legal sequence
+      const permitNegative =
+        company.allowNegativeStock || allowNegativeStockOverride === true;
+      if (!permitNegative && warehouse) {
+        for (const line of quotation.items) {
+          if (line.item?.type === "SERVICE") continue;
+
+          const stockLockKey = `stock_${tenant.companyId}_${warehouse.id}_${line.itemId}`;
+          await tx.$executeRaw`
+            SELECT pg_advisory_xact_lock(hashtext(${stockLockKey})::bigint)
+          `;
+
+          const stockAgg = await tx.stockTransaction.aggregate({
+            where: {
+              companyId: tenant.companyId,
+              warehouseId: warehouse.id,
+              itemId: line.itemId,
+            },
+            _sum: { quantity: true },
+          });
+          const currentStock = toDecimal(stockAgg._sum.quantity || 0);
+          const reqQty = toDecimal(line.quantity);
+          if (currentStock.lessThan(reqQty)) {
+            throw new BadRequestException(
+              `Insufficient stock for item "${line.item?.name || line.description}". Available: ${currentStock.toString()}, Requested: ${reqQty.toString()}. [INSUFFICIENT_STOCK]`,
+            );
+          }
+        }
+      }
+
+      // Concurrency-Safe Legal Invoice Numbering using Transaction Advisory Lock
+      const prefix = `INV/${fyCode}/`;
+      const category = InvoiceCategory.TAX_INVOICE;
+
+      const lockKey = `seq_${tenant.companyId}_${fy.id}_${category}`;
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${lockKey})::bigint)
+      `;
+
+      let seq = await tx.invoiceSequence.findFirst({
+        where: {
+          companyId: tenant.companyId,
+          financialYearId: fy.id,
+          category: category as any,
+          prefix,
+        },
+      });
+
+      let nextNum = 1;
+      if (!seq) {
+        seq = await tx.invoiceSequence.create({
+          data: {
+            companyId: tenant.companyId,
+            financialYearId: fy.id,
+            branchId: quotation.branchId,
+            prefix,
+            currentNumber: 1,
+            padding: 4,
+            category: category as any,
+          },
+        });
+        nextNum = 1;
+      } else {
+        nextNum = seq.currentNumber + 1;
+        await tx.invoiceSequence.update({
+          where: { id: seq.id },
+          data: { currentNumber: nextNum },
+        });
+      }
+
+      targetInvoiceNumber = `${seq.prefix}${String(nextNum).padStart(
+        seq.padding || 4,
+        "0",
+      )}`;
+
+      const isUnpaidCredit =
+        quotation.paymentMode === PaymentMode.UNPAID_CREDIT;
+      paidAmount = isUnpaidCredit ? 0 : taxCalc.grandTotal.toNumber();
+      balanceAmount = isUnpaidCredit ? taxCalc.grandTotal.toNumber() : 0;
+      targetStatus = isUnpaidCredit
+        ? InvoiceStatus.ISSUED
+        : InvoiceStatus.PAID;
+    }
+
+    // Check Plan Invoice Limits
+    const org = await tx.organization.findUnique({
+      where: { id: tenant.organizationId },
+      include: { tenant: true },
+    });
+    if (org?.tenant) {
+      const plan = getPlanEntitlements(org.tenant.subscriptionTier);
+      if (plan.maxInvoicesPerYear && plan.maxInvoicesPerYear > 0) {
+        const annualInvoiceCount = await tx.salesInvoice.count({
+          where: {
+            organizationId: tenant.organizationId,
+            category: {
+              notIn: [
+                InvoiceCategory.PROFORMA_INVOICE,
+                InvoiceCategory.QUOTATION,
+              ],
+            },
+            createdAt: {
+              gte: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
+            },
+          },
+        });
+        if (annualInvoiceCount >= plan.maxInvoicesPerYear) {
+          throw new ForbiddenException({
+            statusCode: 403,
+            error: "PLAN_INVOICE_LIMIT_REACHED",
+            message: `Annual invoice limit reached (${annualInvoiceCount}/${plan.maxInvoicesPerYear}) for ${plan.name}. Please upgrade your subscription plan to create unlimited invoices.`,
+            messageGujarati: `તમારા ${plan.nameGujarati} પ્લાન હેઠળ વાર્ષિક ઇન્વૉઇસ મર્યાદા (${annualInvoiceCount}/${plan.maxInvoicesPerYear}) પૂર્ણ થઈ ગઈ છે. અનલિમિટેડ ઇન્વૉઇસ માટે પ્લાન અપગ્રેડ કરો.`,
+          });
+        }
+      }
+    }
+
+    // 6. Create New SalesInvoice Header
+    const newInvoice = await tx.salesInvoice.create({
+      data: {
+        organizationId: tenant.organizationId,
+        companyId: tenant.companyId,
+        branchId: quotation.branchId,
+        financialYearId: fy.id,
+        partyId: quotation.partyId,
+        category: InvoiceCategory.TAX_INVOICE,
+        invoiceNumber: targetInvoiceNumber,
+        invoiceDate,
+        dueDate: quotation.dueDate ? new Date(quotation.dueDate) : null,
+        status: targetStatus as any,
+        paymentMode: quotation.paymentMode as any,
+        isB2B: quotation.isB2B,
+        isReverseCharge: quotation.isReverseCharge,
+        placeOfSupply,
+        billingAddress: quotation.billingAddress,
+        shippingAddress: quotation.shippingAddress,
+        subTotal: taxCalc.subTotal.toNumber(),
+        discountTotal: taxCalc.discountTotal.toNumber(),
+        taxableAmount: taxCalc.taxableAmount.toNumber(),
+        cgstAmount: taxCalc.cgstAmount.toNumber(),
+        sgstAmount: taxCalc.sgstAmount.toNumber(),
+        igstAmount: taxCalc.igstAmount.toNumber(),
+        utgstAmount: taxCalc.utgstAmount.toNumber(),
+        cessAmount: taxCalc.cessAmount.toNumber(),
+        roundOff: taxCalc.roundOff.toNumber(),
+        grandTotal: taxCalc.grandTotal.toNumber(),
+        paidAmount,
+        balanceAmount,
+        termsAndConditions: quotation.termsAndConditions,
+        notes: quotation.notes,
+        quotationId: quotation.id,
+        provisionalCostReconciled: true,
+      },
+    });
+
+    // 7. Create SalesInvoiceItem Lines
+    const createdItems: any[] = [];
+    for (let i = 0; i < quotation.items.length; i++) {
+      const origLine = quotation.items[i];
+      const compLine = taxCalc.items[i];
+      const it = origLine.item;
+
+      const invItem = await tx.salesInvoiceItem.create({
+        data: {
+          invoiceId: newInvoice.id,
+          itemId: origLine.itemId,
+          batchId: origLine.batchId || null,
+          description: origLine.description || it?.name,
+          hsnCode: origLine.hsnCode || it?.hsnCode || "9999",
+          quantity: compLine.quantity.toNumber(),
+          unitPrice: compLine.unitPrice.toNumber(),
+          discountPercent: compLine.discountPercent.toNumber(),
+          discountAmount: compLine.discountAmount.toNumber(),
+          taxableAmount: compLine.taxableAmount.toNumber(),
+          taxRate: compLine.taxRate.toNumber(),
+          cgstAmount: compLine.cgstAmount.toNumber(),
+          sgstAmount: compLine.sgstAmount.toNumber(),
+          igstAmount: compLine.igstAmount.toNumber(),
+          utgstAmount: compLine.utgstAmount.toNumber(),
+          cessAmount: compLine.cessAmount.toNumber(),
+          supplyCategory: compLine.supplyCategory,
+          totalAmount: compLine.totalAmount.toNumber(),
+        },
+      });
+      createdItems.push(invItem);
+    }
+
+    let voucher: any = null;
+
+    // 8. If immediately issued, record stock dispatch and post voucher
+    if (!asDraft) {
+      if (warehouse) {
+        for (const line of quotation.items) {
+          if (line.item?.type === "SERVICE") continue;
+          const issue = await this.calculateMovingAverageDispatch(
+            tx,
+            tenant,
+            warehouse.id,
+            line.item || {
+              id: line.itemId,
+              name: "Item",
+              purchaseRate: line.unitPrice,
+            },
+            toDecimal(line.quantity),
+          );
+          await tx.stockTransaction.create({
+            data: {
+              organizationId: tenant.organizationId,
+              companyId: tenant.companyId,
+              warehouseId: warehouse.id,
+              itemId: line.itemId,
+              batchId: line.batchId || null,
+              transactionType: StockTransactionType.SALES_DISPATCH as any,
+              transactionDate: invoiceDate,
+              quantity: toDecimal(line.quantity).negated().toNumber(),
+              valuationRate: issue.rate.toNumber(),
+              totalValuation: issue.value.toNumber(),
+              isProvisionalCost: issue.provisionalQuantity.gt(0),
+              costVariance: 0,
+              referenceDocType: "SALES_INVOICE",
+              referenceDocId: newInvoice.id,
+            },
+          });
+        }
+      }
+
+      const isUnpaidCredit =
+        quotation.paymentMode === PaymentMode.UNPAID_CREDIT;
+      voucher = await this.postSalesInvoiceVoucher(
+        tx,
+        tenant,
+        newInvoice.id,
+        targetInvoiceNumber,
+        quotation.party,
+        fy.id,
+        taxCalc,
+        isUnpaidCredit,
+        invoiceDate,
+      );
+    }
+
+    // 9. Update Original Quotation: mark CONVERTED and link convertedInvoiceId
+    await tx.salesInvoice.update({
+      where: { id: quotation.id },
+      data: {
+        status: InvoiceStatus.CONVERTED,
+        convertedInvoiceId: newInvoice.id,
+      },
+    });
+
+    // 10. Audit Logging (atomic in transaction)
+    await this.audit.record(
+      {
+        organizationId: tenant.organizationId,
+        companyId: tenant.companyId,
+        userId: tenant.userId || "00000000-0000-0000-0000-000000000000",
+        action: asDraft
+          ? "CONVERT_QUOTATION_TO_DRAFT_INVOICE"
+          : "CONVERT_QUOTATION_TO_INVOICE",
+        entityName: "SalesInvoice",
+        entityId: newInvoice.id,
+        newState: {
+          quotationId: quotation.id,
+          quotationNumber: quotation.invoiceNumber,
+          invoiceNumber: targetInvoiceNumber,
+          grandTotal: newInvoice.grandTotal,
+          status: targetStatus,
+          voucherId: voucher?.id || null,
+        },
+      },
+      tx,
+    );
+
+    return {
+      ...newInvoice,
+      party: quotation.party,
+      sourceQuotation: quotation,
+      quotationNumber: quotation.invoiceNumber,
+      quotationId: quotation.id,
+      grandTotalWords: taxCalc.grandTotalWords,
+      grandTotalWordsGujarati: taxCalc.grandTotalWordsGujarati,
+      items: createdItems,
+      voucher: voucher
+        ? {
+            id: voucher.id,
+            voucherNumber: voucher.voucherNumber,
+            balanced: true,
+          }
+        : null,
+      ...buildInvoiceUrls(newInvoice.id),
+    };
+  }
+
+  /**
+   * Convert Quotation to Proforma Invoice
+   * Strictly commercial: 0 accounting, 0 inventory, 0 receivables
+   */
+  async convertQuotationToProforma(
+    id: string,
+    tenant: TenantContext,
+  ): Promise<any> {
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`convert_qtn_pi_${id}`})::bigint)
+      `;
+
+      const quotation = await tx.salesInvoice.findFirst({
+        where: { id, companyId: tenant.companyId },
+        include: {
+          items: { include: { item: true } },
+          party: true,
+        },
+      });
+
+      if (!quotation) {
+        throw new NotFoundException(`Quotation ${id} not found.`);
+      }
+
+      if (quotation.status === InvoiceStatus.CANCELLED) {
+        throw new BadRequestException("Cancelled quotation cannot be converted.");
+      }
+
+      // Check if already converted to a proforma
+      const existingProforma = await tx.salesInvoice.findFirst({
+        where: {
+          quotationId: quotation.id,
+          category: InvoiceCategory.PROFORMA_INVOICE,
+          companyId: tenant.companyId,
+        },
+        include: { items: { include: { item: true } }, party: true },
+      });
+
+      if (existingProforma) {
+        return {
+          ...existingProforma,
+          alreadyConverted: true,
+          quotationNumber: quotation.invoiceNumber,
+          message: `Quotation ${quotation.invoiceNumber} already converted to Proforma ${existingProforma.invoiceNumber}.`,
+          ...buildInvoiceUrls(existingProforma.id),
+        };
+      }
+
+      const proformaDto: any = {
+        category: InvoiceCategory.PROFORMA_INVOICE,
+        quotationId: quotation.id,
+        partyId: quotation.partyId,
+        invoiceDate: new Date().toISOString(),
+        dueDate: quotation.dueDate?.toISOString(),
+        paymentMode: quotation.paymentMode,
+        placeOfSupply: quotation.placeOfSupply,
+        termsAndConditions: quotation.termsAndConditions,
+        notes: `Converted from Quotation #${quotation.invoiceNumber}. ${quotation.notes || ""}`.trim(),
+        items: quotation.items.map((i: any) => ({
+          itemId: i.itemId,
+          batchId: i.batchId,
+          description: i.description,
+          hsnCode: i.hsnCode,
+          quantity: Number(i.quantity),
+          unitPrice: Number(i.unitPrice),
+          discountPercent: Number(i.discountPercent || 0),
+          discountAmount: Number(i.discountAmount || 0),
+          taxRate: Number(i.taxRate || 0),
+        })),
+      };
+
+      const proforma = await this.createSalesInvoice(proformaDto, tenant);
+
+      await tx.salesInvoice.update({
+        where: { id: quotation.id },
+        data: {
+          status: InvoiceStatus.CONVERTED,
+          convertedInvoiceId: proforma.id,
+        },
+      });
+
+      return {
+        ...proforma,
+        sourceQuotation: quotation,
+        quotationNumber: quotation.invoiceNumber,
+        quotationId: quotation.id,
+        ...buildInvoiceUrls(proforma.id),
+      };
+    });
+  }
+
+  /**
+   * Convert Quotation or Proforma or Sales Invoice to Delivery Challan (Rule 55 CGST)
+   */
+  async convertDocumentToChallan(
+    id: string,
+    tenant: TenantContext,
+    targetWarehouseId?: string,
+  ): Promise<any> {
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const doc = await tx.salesInvoice.findFirst({
+        where: { id, companyId: tenant.companyId },
+        include: {
+          items: { include: { item: true } },
+          party: true,
+        },
+      });
+
+      if (!doc) {
+        throw new NotFoundException(`Sales document ${id} not found.`);
+      }
+
+      if (doc.status === InvoiceStatus.CANCELLED) {
+        throw new BadRequestException(
+          "Cancelled document cannot be converted to a Delivery Challan.",
+        );
+      }
+
+      let warehouse = null;
+      if (targetWarehouseId) {
+        warehouse = await tx.warehouse.findFirst({
+          where: { id: targetWarehouseId, companyId: tenant.companyId },
+        });
+      }
+      if (!warehouse) {
+        warehouse = await tx.warehouse.findFirst({
+          where: { companyId: tenant.companyId, isDefault: true },
+        });
+      }
+      if (!warehouse) {
+        warehouse = await tx.warehouse.findFirst({
+          where: { companyId: tenant.companyId },
+        });
+      }
+      if (!warehouse) {
+        const branch = await tx.branch.findFirst({
+          where: { companyId: tenant.companyId },
+        });
+        warehouse = await tx.warehouse.create({
+          data: {
+            organizationId: tenant.organizationId,
+            companyId: tenant.companyId,
+            branchId: branch?.id || doc.branchId,
+            name: "Main Warehouse",
+            isDefault: true,
+          },
+        });
+      }
+
+      // Generate sequence number for challan
+      const fy = await tx.financialYear.findFirst({
+        where: { companyId: tenant.companyId, isLocked: false },
+        orderBy: { startDate: "desc" },
+      });
+      const fyCode = fy
+        ? `${new Date(fy.startDate).getFullYear().toString().slice(-2)}-${new Date(fy.endDate).getFullYear().toString().slice(-2)}`
+        : "26-27";
+      const prefix = `DC/${fyCode}/`;
+      const lockKey = `seq_${tenant.companyId}_dc`;
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${lockKey})::bigint)
+      `;
+      let seq = await tx.invoiceSequence.findFirst({
+        where: {
+          companyId: tenant.companyId,
+          prefix,
+        },
+      });
+      let nextNum = 1;
+      if (!seq) {
+        seq = await tx.invoiceSequence.create({
+          data: {
+            companyId: tenant.companyId,
+            financialYearId: fy?.id || doc.financialYearId,
+            category: "DELIVERY_CHALLAN" as any,
+            prefix,
+            currentNumber: 1,
+            padding: 4,
+          },
+        });
+      } else {
+        nextNum = seq.currentNumber + 1;
+        await tx.invoiceSequence.update({
+          where: { id: seq.id },
+          data: { currentNumber: nextNum },
+        });
+      }
+      const challanNumber = `${prefix}${String(nextNum).padStart(seq.padding || 4, "0")}`;
+
+      const totalQty = doc.items.reduce(
+        (s: number, i: any) => s + Number(i.quantity || 0),
+        0,
+      );
+      const subTotal = Number(doc.subTotal || doc.grandTotal || 0);
+      const taxTotal =
+        Number(doc.cgstAmount || 0) +
+        Number(doc.sgstAmount || 0) +
+        Number(doc.igstAmount || 0);
+
+      const challan = await tx.deliveryChallan.create({
+        data: {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          branchId: doc.branchId,
+          financialYearId: doc.financialYearId,
+          warehouseId: warehouse.id,
+          partyId: doc.partyId,
+          challanNumber,
+          challanDate: new Date(),
+          challanType: "SUPPLY_ON_APPROVAL" as any,
+          status: "DRAFT" as any,
+          notes: `Converted from ${doc.category} #${doc.invoiceNumber}. ${doc.notes || ""}`.trim(),
+          placeOfSupply: doc.placeOfSupply,
+          taxableAmount: Number(doc.taxableAmount || 0),
+          cgstAmount: Number(doc.cgstAmount || 0),
+          sgstAmount: Number(doc.sgstAmount || 0),
+          igstAmount: Number(doc.igstAmount || 0),
+          totalAmount: Number(doc.grandTotal || 0),
+          items: {
+            create: doc.items.map((i: any) => ({
+              itemId: i.itemId,
+              batchId: i.batchId || null,
+              description: i.description || i.item?.name || "Item",
+              hsnCode: i.hsnCode || i.item?.hsnCode || "9999",
+              quantity: Number(i.quantity),
+              unitPrice: Number(i.unitPrice),
+              taxableAmount: Number(i.taxableAmount || 0),
+              taxRate: Number(i.taxRate || 0),
+              cgstAmount: Number(i.cgstAmount || 0),
+              sgstAmount: Number(i.sgstAmount || 0),
+              igstAmount: Number(i.igstAmount || 0),
+              totalAmount: Number(i.totalAmount || 0),
+            })),
+          },
+        },
+        include: {
+          items: { include: { item: true } },
+          party: true,
+          warehouse: true,
+        },
+      });
+
+      return challan;
     });
   }
 
@@ -4554,7 +5523,16 @@ export class InvoicesService {
       }
 
       if (existing.status === "CANCELLED") {
-        throw new BadRequestException("Cancelled invoices cannot be edited.");
+        throw new BadRequestException("Cancelled documents cannot be edited.");
+      }
+
+      if (
+        existing.status === InvoiceStatus.CONVERTED ||
+        existing.convertedInvoiceId
+      ) {
+        throw new BadRequestException(
+          "Converted quotations cannot be modified. Please make changes directly on the linked Sales Invoice.",
+        );
       }
 
       const company = await tx.company.findUnique({
@@ -4738,7 +5716,12 @@ export class InvoicesService {
         });
         createdItems.push(invItem);
 
-        if (it.type !== "SERVICE" && updatedStatus !== InvoiceStatus.DRAFT) {
+        if (
+          it.type !== "SERVICE" &&
+          updatedStatus !== InvoiceStatus.DRAFT &&
+          existing.category !== InvoiceCategory.PROFORMA_INVOICE &&
+          existing.category !== InvoiceCategory.QUOTATION
+        ) {
           const warehouse = await tx.warehouse.findFirst({
             where: { companyId: tenant.companyId },
           });
@@ -4767,8 +5750,12 @@ export class InvoicesService {
         }
       }
 
-      // 8. Re-balance double-entry accounting vouchers
-      if (updatedStatus !== InvoiceStatus.DRAFT) {
+      // 8. Re-balance double-entry accounting vouchers (only for non-draft and non-proforma/non-quotation documents)
+      if (
+        updatedStatus !== InvoiceStatus.DRAFT &&
+        existing.category !== InvoiceCategory.PROFORMA_INVOICE &&
+        existing.category !== InvoiceCategory.QUOTATION
+      ) {
         const existingVouchers = await tx.voucher.findMany({
           where: {
             companyId: tenant.companyId,
@@ -4836,6 +5823,24 @@ export class InvoicesService {
           message: `Sales invoice with ID '${id}' not found.`,
           messageGujarati: `વેચાણ બિલ મળેલ નથી.`,
         });
+      }
+
+      if (
+        existing.status === InvoiceStatus.CONVERTED ||
+        existing.convertedInvoiceId
+      ) {
+        throw new BadRequestException(
+          "Converted quotations cannot be deleted. Historical audit trail must be preserved.",
+        );
+      }
+
+      const linkedAsQuotation = await tx.salesInvoice.findFirst({
+        where: { quotationId: existing.id, companyId: tenant.companyId },
+      });
+      if (linkedAsQuotation) {
+        throw new BadRequestException(
+          `This quotation has been converted to Sales Invoice ${linkedAsQuotation.invoiceNumber} and cannot be deleted.`,
+        );
       }
 
       // 1. Process and remove linked sales returns and their vouchers/stock/items
@@ -5026,11 +6031,13 @@ export class InvoicesService {
       ? `${fyStart.getFullYear().toString().slice(-2)}-${fyEnd.getFullYear().toString().slice(-2)}`
       : "26-27";
     const prefix =
-      cat === InvoiceCategory.PROFORMA_INVOICE
+      cat === InvoiceCategory.QUOTATION
         ? `QTN/${fyCode}/`
-        : cat === InvoiceCategory.DELIVERY_CHALLAN
-          ? `DC/${fyCode}/`
-          : `INV/${fyCode}/`;
+        : cat === InvoiceCategory.PROFORMA_INVOICE
+          ? `PI/${fyCode}/`
+          : cat === InvoiceCategory.DELIVERY_CHALLAN
+            ? `DC/${fyCode}/`
+            : `INV/${fyCode}/`;
     const seq = fy
       ? await this.prisma.invoiceSequence.findFirst({
           where: {
