@@ -64,25 +64,27 @@ export class AiCollectionSchedulerService {
       // 1. Fetch pending queue items scheduled for now or earlier
       const now = new Date();
 
-      const candidateItems = await this.prisma.aiCollectionQueue.findMany({
-        where: {
-          status: "QUEUED",
-          scheduledAt: { lte: now },
-        },
-        orderBy: [{ priority: "desc" }, { scheduledAt: "asc" }],
-        take: limit,
-        include: {
-          company: {
-            include: {
-              aiCollectionSettings: true,
+      const candidateItems = await this.prisma.executeBypassRls(async (tx) => {
+        return tx.aiCollectionQueue.findMany({
+          where: {
+            status: "QUEUED",
+            scheduledAt: { lte: now },
+          },
+          orderBy: [{ priority: "desc" }, { scheduledAt: "asc" }],
+          take: limit,
+          include: {
+            company: {
+              include: {
+                aiCollectionSettings: true,
+              },
+            },
+            party: {
+              include: {
+                callingPreference: true,
+              },
             },
           },
-          party: {
-            include: {
-              callingPreference: true,
-            },
-          },
-        },
+        });
       });
 
       for (const queueItem of candidateItems) {
