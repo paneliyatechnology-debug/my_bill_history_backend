@@ -219,6 +219,29 @@ export class AuthService {
     });
 
     if (existing) {
+      if (payment) {
+        // Failsafe: User already paid for subscription via Razorpay!
+        // Verify password against existing account
+        const isPasswordValid = await bcrypt.compare(dto.password, existing.passwordHash);
+        if (isPasswordValid) {
+          return this.applyPaidSubscriptionToExistingUser(
+            existing,
+            payment,
+            assignedTier,
+            subscriptionDurationDays,
+          );
+        } else {
+          throw new ConflictException({
+            statusCode: 409,
+            errorCode: "EXISTING_USER_PAYMENT_NEEDS_PASSWORD",
+            message:
+              "An account with this email or phone number already exists. Enter your existing password to link this paid plan, or change your email/phone above.",
+            messageGujarati:
+              "આ ઈમેલ અથવા ફોન નંબર વાળો એકાઉન્ટ પહેલેથી હાજર છે. પ્લાન સક્રિય કરવા માટે તમારો સાચો પાસવર્ડ દાખલ કરો અથવા ઈમેલ/ફોન બદલો.",
+          });
+        }
+      }
+
       throw new ConflictException({
         statusCode: 409,
         message: "A user with this phone number or email already exists.",
@@ -1227,6 +1250,182 @@ export class AuthService {
         role: updated.role,
         preferredLang: updated.preferredLang,
       },
+    };
+  }
+
+  /**
+   * Check if email or phone is already registered (Pre-payment validation)
+   */
+  async checkAvailability(email?: string, phone?: string) {
+    const cleanPhone = phone ? String(phone).replace(/\D/g, "") : "";
+    const cleanEmail = email ? String(email).trim().toLowerCase() : "";
+
+    if (!cleanPhone && !cleanEmail) {
+      return { available: true, emailExists: false, phoneExists: false };
+    }
+
+    const conditions: any[] = [];
+    if (cleanPhone) conditions.push({ phone: cleanPhone });
+    if (cleanEmail) conditions.push({ email: { equals: cleanEmail, mode: "insensitive" as any } });
+
+    const existingUsers = await this.prisma.user.findMany({
+      where: { OR: conditions },
+      select: { phone: true, email: true },
+    });
+
+    const phoneExists = cleanPhone ? existingUsers.some((u) => u.phone === cleanPhone) : false;
+    const emailExists = cleanEmail ? existingUsers.some((u) => u.email?.toLowerCase() === cleanEmail) : false;
+    const available = !phoneExists && !emailExists;
+
+    let message = "";
+    let messageGujarati = "";
+    if (emailExists && phoneExists) {
+      message = "An account with this email and phone number already exists.";
+      messageGujarati = "આ ઈમેલ અને ફોન નંબર વાળો એકાઉન્ટ પહેલેથી હાજર છે.";
+    } else if (emailExists) {
+      message = "An account with this email address already exists.";
+      messageGujarati = "આ ઈમેલ એડ્રેસ વાળો એકાઉન્ટ પહેલેથી હાજર છે.";
+    } else if (phoneExists) {
+      message = "An account with this phone number already exists.";
+      messageGujarati = "આ ફોન નંબર વાળો એકાઉન્ટ પહેલેથી હાજર છે.";
+    }
+
+    return {
+      available,
+      emailExists,
+      phoneExists,
+      message,
+      messageGujarati,
+    };
+  }
+
+  /**
+   * Apply verified pre-paid subscription to an existing account
+   */
+  private async applyPaidSubscriptionToExistingUser(
+    user: any,
+    payment: any,
+    assignedTier: SubscriptionTier,
+    subscriptionDurationDays: number,
+  ) {
+    const result = await this.prisma.executeBypassRls(async (tx) => {
+      const org = await tx.organization.findUnique({
+        where: { id: user.organizationId },
+        include: { tenant: true, companies: true },
+      });
+
+      if (!org || !org.tenant) {
+        throw new BadRequestException("Organization or tenant not found for existing user.");
+      }
+
+      // Upgrade tenant subscription
+      const tenant = await tx.tenant.update({
+        where: { id: org.tenantId },
+        data: {
+          subscriptionTier: assignedTier,
+          subscriptionEnds: new Date(Date.now() + subscriptionDurationDays * 24 * 60 * 60 * 1000),
+          isActive: true,
+        },
+      });
+
+      // Record payment
+      const existingPay = await tx.subscriptionPayment.findUnique({
+        where: { orderId: payment.orderId },
+      });
+
+      if (existingPay) {
+        await tx.subscriptionPayment.update({
+          where: { orderId: payment.orderId },
+          data: {
+            tenantId: org.tenantId,
+            organizationId: org.id,
+            paymentId: payment.paymentId,
+            signature: payment.signature,
+            status: "CAPTURED",
+            paidAt: new Date(),
+            tier: assignedTier,
+            billingCycle: payment.billingCycle || "yearly",
+          },
+        });
+      } else {
+        await tx.subscriptionPayment.create({
+          data: {
+            tenantId: org.tenantId,
+            organizationId: org.id,
+            orderId: payment.orderId,
+            paymentId: payment.paymentId,
+            signature: payment.signature,
+            status: "CAPTURED",
+            paidAt: new Date(),
+            tier: assignedTier,
+            billingCycle: payment.billingCycle || "yearly",
+            amount: payment.amountRupees || (payment.billingCycle === "monthly" ? 999 : 9588),
+            currency: "INR",
+            receiptNo: `MBB-REC-${payment.orderId.slice(-6)}`,
+          },
+        });
+      }
+
+      const comp = org.companies[0] || await tx.company.findFirst({
+        where: { organizationId: org.id },
+        orderBy: { createdAt: "asc" },
+      });
+
+      const branch = await tx.branch.findFirst({
+        where: { companyId: comp?.id },
+      });
+
+      const fy = await tx.financialYear.findFirst({
+        where: { companyId: comp?.id, isCurrent: true },
+      });
+
+      return {
+        tenant,
+        organization: org,
+        company: comp,
+        branch,
+        financialYear: fy,
+        user,
+      };
+    });
+
+    const tokenPayload = {
+      sub: result.user.id,
+      userId: result.user.id,
+      organizationId: result.organization.id,
+      companyId: result.company?.id,
+      branchId: result.branch?.id || undefined,
+      financialYearId: result.financialYear?.id || undefined,
+      email: result.user.email,
+      phone: result.user.phone,
+      role: result.user.role,
+      preferredLang: result.user.preferredLang,
+    };
+
+    const tokens = await this.generateTokenPair(tokenPayload);
+
+    return {
+      ...tokens,
+      user: {
+        id: result.user.id,
+        fullName: result.user.fullName,
+        email: result.user.email,
+        phone: result.user.phone,
+        role: result.user.role,
+        preferredLang: result.user.preferredLang,
+      },
+      defaultContext: {
+        organizationId: result.organization.id,
+        organizationName: result.organization.name,
+        companyId: result.company?.id,
+        companyName: result.company?.tradeName,
+        branchId: result.branch?.id,
+        branchName: result.branch?.name,
+        financialYearId: result.financialYear?.id,
+        financialYear: result.financialYear?.name,
+      },
+      message: "Subscription successfully applied to your existing account!",
+      messageGujarati: "તમારા હાલના એકાઉન્ટ પર સબ્સ્ક્રિપ્શન પ્લાન સફળતાપૂર્વક સક્રિય થયો છે!",
     };
   }
 }

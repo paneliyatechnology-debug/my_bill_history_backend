@@ -38,6 +38,13 @@ export class AuthController {
   }
 
   @Public()
+  @Post("check-availability")
+  @HttpCode(HttpStatus.OK)
+  async checkAvailability(@Body() body: { email?: string; phone?: string }) {
+    return this.authService.checkAvailability(body?.email, body?.phone);
+  }
+
+  @Public()
   @Throttle({
     default: { limit: process.env.NODE_ENV === "production" ? 10 : 1000, ttl: 60000 },
   })

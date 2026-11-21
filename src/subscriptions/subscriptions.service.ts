@@ -4,6 +4,7 @@ import {
   BadRequestException,
   NotFoundException,
   UnauthorizedException,
+  ConflictException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as crypto from "crypto";
@@ -135,6 +136,34 @@ export class SubscriptionsService {
     const plan = SUBSCRIPTION_PLANS[dto.tier];
     if (!plan || dto.tier === SubscriptionTier.TRIAL) {
       throw new BadRequestException(`Invalid subscription tier: ${dto.tier}`);
+    }
+
+    // Pre-validate that phone/email is not already registered before accepting payment
+    if (dto.customerEmail || dto.customerPhone) {
+      const cleanPhone = (dto.customerPhone || "").replace(/\D/g, "");
+      const cleanEmail = (dto.customerEmail || "").trim().toLowerCase();
+
+      const conditions: any[] = [];
+      if (cleanPhone) conditions.push({ phone: cleanPhone });
+      if (cleanEmail) conditions.push({ email: { equals: cleanEmail, mode: "insensitive" } });
+
+      if (conditions.length > 0) {
+        const existing = await this.prisma.user.findFirst({
+          where: { OR: conditions },
+          select: { id: true, email: true, phone: true },
+        });
+
+        if (existing) {
+          throw new ConflictException({
+            statusCode: 409,
+            errorCode: "USER_ALREADY_EXISTS",
+            message:
+              "A user with this phone number or email already exists. Please log in to your account to renew or upgrade your plan.",
+            messageGujarati:
+              "આ ફોન નંબર અથવા ઈમેલ ધરાવતો એકાઉન્ટ પહેલેથી હાજર છે. પ્લાન અપગ્રેડ કરવા માટે કૃપા કરીને તમારા એકાઉન્ટમાં લોગિન કરો.",
+          });
+        }
+      }
     }
 
     const billingCycle = dto.billingCycle === "monthly" ? "monthly" : "yearly";
