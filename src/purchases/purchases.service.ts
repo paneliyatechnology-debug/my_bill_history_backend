@@ -69,9 +69,6 @@ export class PurchasesService {
         "Purchase invoice must contain at least one line item.",
       );
     }
-    if (!dto.vendorInvoiceNumber || dto.vendorInvoiceNumber.trim() === "") {
-      throw new BadRequestException("Vendor invoice number is required.");
-    }
     if (!dto.partyId) {
       throw new BadRequestException("Supplier party ID is required.");
     }
@@ -100,6 +97,31 @@ export class PurchasesService {
           where: { id: party.id },
           data: { type: "BOTH" },
         });
+      }
+
+      // Auto-generate unique sequential bill number if not provided by vendor
+      if (!dto.vendorInvoiceNumber || dto.vendorInvoiceNumber.trim() === "") {
+        const vYear = new Date(dto.invoiceDate || Date.now()).getFullYear();
+        const count = await tx.purchaseInvoice.count({
+          where: { companyId: tenant.companyId },
+        });
+        let candidateSeq = count + 1;
+        let candidate = `PUR-${vYear}-${String(candidateSeq).padStart(4, "0")}`;
+        while (
+          await tx.purchaseInvoice.findUnique({
+            where: {
+              companyId_partyId_vendorInvoiceNumber: {
+                companyId: tenant.companyId,
+                partyId: dto.partyId,
+                vendorInvoiceNumber: candidate,
+              },
+            },
+          })
+        ) {
+          candidateSeq++;
+          candidate = `PUR-${vYear}-${String(candidateSeq).padStart(4, "0")}`;
+        }
+        dto.vendorInvoiceNumber = candidate;
       }
 
       // Check unique vendor invoice number per company & supplier
