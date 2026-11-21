@@ -10,6 +10,9 @@ import { JwtService } from "@nestjs/jwt";
 import { SubscriptionTier, UserRole } from "@billing/shared-types";
 import * as bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
+import * as fs from "fs";
+import * as path from "path";
+import { SUBSCRIPTION_PLANS } from "../subscriptions/subscriptions.constants";
 import { SupportSessionRegistry } from "./support-session.registry";
 
 import { SessionEventsService } from "../auth/session-events.service";
@@ -47,6 +50,12 @@ export class SuperAdminService {
         tenantsByTier,
         usersByRole,
         recentAuditLogs,
+        paymentStatsByStatus,
+        capturedPayments,
+        totalPaidSubscribers,
+        activePaidSubscribers,
+        recentCreatedTenants,
+        recentPaymentsList,
       ] = await Promise.all([
         tx.tenant.count(),
         tx.tenant.count({ where: { isActive: true } }),
@@ -77,6 +86,48 @@ export class SuperAdminService {
           _count: { _all: true },
         }),
         tx.auditLog.count(),
+        tx.subscriptionPayment.groupBy({
+          by: ["status"],
+          _count: { _all: true },
+          _sum: { amount: true },
+        }),
+        tx.subscriptionPayment.findMany({
+          where: { status: "CAPTURED" },
+          select: { amount: true, billingCycle: true, paidAt: true, createdAt: true, tier: true },
+        }),
+        tx.tenant.count({
+          where: { subscriptionTier: { not: SubscriptionTier.TRIAL } },
+        }),
+        tx.tenant.count({
+          where: {
+            subscriptionTier: { not: SubscriptionTier.TRIAL },
+            isActive: true,
+            subscriptionEnds: { gte: now },
+          },
+        }),
+        tx.tenant.findMany({
+          take: 5,
+          orderBy: { createdAt: "desc" },
+          include: {
+            organizations: { take: 1, select: { name: true, legalName: true } },
+          },
+        }),
+        tx.subscriptionPayment.findMany({
+          take: 5,
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            orderId: true,
+            paymentId: true,
+            tier: true,
+            amount: true,
+            status: true,
+            paidAt: true,
+            createdAt: true,
+            receiptNo: true,
+            notes: true,
+          },
+        }),
       ]);
 
       const tierBreakdown: Record<string, number> = {
@@ -104,6 +155,89 @@ export class SuperAdminService {
         ).toFixed(2),
       );
 
+      // Revenue and Subscription Analytics
+      let capturedAmount = 0;
+      let pendingAmount = 0;
+      let refundedAmount = 0;
+      let capturedCount = 0;
+      let pendingCount = 0;
+      let refundedCount = 0;
+
+      for (const stat of paymentStatsByStatus) {
+        const amt = Number(stat._sum.amount || 0);
+        if (stat.status === "CAPTURED") {
+          capturedAmount += amt;
+          capturedCount += stat._count._all;
+        } else if (stat.status === "PENDING") {
+          pendingAmount += amt;
+          pendingCount += stat._count._all;
+        } else if (stat.status === "REFUNDED") {
+          refundedAmount += amt;
+          refundedCount += stat._count._all;
+        }
+      }
+
+      // Calculate Monthly Recurring Revenue (MRR)
+      let calculatedMrr = 0;
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      let thisMonthCaptured = 0;
+
+      for (const p of capturedPayments) {
+        const amt = Number(p.amount || 0);
+        const pDate = p.paidAt ? new Date(p.paidAt) : new Date(p.createdAt);
+        if (pDate >= startOfMonth) {
+          thisMonthCaptured += amt;
+        }
+
+        if (p.billingCycle === "yearly") {
+          calculatedMrr += amt / 12;
+        } else if (p.billingCycle === "monthly") {
+          calculatedMrr += amt;
+        } else {
+          calculatedMrr += amt / 12;
+        }
+      }
+
+      // If no past payments yet, derive baseline MRR from active paid tier subscribers
+      if (calculatedMrr === 0 && activePaidSubscribers > 0) {
+        calculatedMrr = activePaidSubscribers * 799;
+      }
+
+      const mrr = Math.round(calculatedMrr);
+      const arr = Math.round(mrr * 12);
+      const netRevenue = Math.max(0, capturedAmount - refundedAmount);
+
+      // Recent Activity Stream
+      const recentActivity: any[] = [];
+      for (const t of recentCreatedTenants) {
+        const orgName = t.organizations?.[0]?.name || t.organizations?.[0]?.legalName || `Tenant ${t.primaryPhone}`;
+        recentActivity.push({
+          id: `tenant_${t.id}`,
+          type: "ORGANIZATION_CREATED",
+          title: `New Organization: ${orgName}`,
+          description: `Registered with ${t.subscriptionTier} plan`,
+          timestamp: t.createdAt,
+          badge: t.subscriptionTier,
+          badgeColor: "bg-blue-50 text-blue-700",
+        });
+      }
+
+      for (const p of recentPaymentsList) {
+        const isSuccess = p.status === "CAPTURED";
+        const notesObj: any = p.notes || {};
+        recentActivity.push({
+          id: `payment_${p.id}`,
+          type: isSuccess ? "PAYMENT_SUCCESS" : p.status === "REFUNDED" ? "PAYMENT_REFUNDED" : "PAYMENT_PENDING",
+          title: isSuccess ? `Payment Received: ₹${Number(p.amount).toLocaleString("en-IN")}` : `Payment ${p.status}: ₹${Number(p.amount).toLocaleString("en-IN")}`,
+          description: `${p.tier} Plan (${notesObj.customerName || p.receiptNo})`,
+          timestamp: p.paidAt || p.createdAt,
+          badge: p.status,
+          badgeColor: isSuccess ? "bg-emerald-50 text-emerald-700" : p.status === "REFUNDED" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700",
+        });
+      }
+
+      recentActivity.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
       return {
         totalTenants,
         totalUsers,
@@ -116,6 +250,39 @@ export class SuperAdminService {
           trial: trialTenants,
           expired: expiredTenants,
         },
+        subscribers: {
+          total: totalPaidSubscribers,
+          active: activePaidSubscribers,
+          trial: trialTenants,
+          expired: expiredTenants,
+        },
+        revenue: {
+          mrr,
+          arr,
+          monthlyRevenue: thisMonthCaptured || Math.round(capturedAmount / (now.getMonth() + 1)),
+          yearlyRevenue: capturedAmount,
+          subscriptionRevenue: capturedAmount,
+          oneTimeRevenue: 0,
+          refunds: refundedAmount,
+          netRevenue,
+        },
+        subscriptionAnalytics: {
+          active: activeTenants,
+          trial: trialTenants,
+          expired: expiredTenants,
+          cancelled: 0,
+          pastDue: 0,
+          pending: pendingCount,
+        },
+        paymentAnalytics: {
+          successful: capturedCount,
+          pending: pendingCount,
+          failed: 0,
+          refunded: refundedCount,
+          totalAmount: capturedAmount,
+          successRate: capturedCount + pendingCount > 0 ? Math.round((capturedCount / (capturedCount + pendingCount)) * 100) : 100,
+        },
+        recentActivity: recentActivity.slice(0, 8),
         subscriptionTiers: tierBreakdown,
         infrastructure: {
           organizations: totalOrgs,
@@ -1340,5 +1507,820 @@ export class SuperAdminService {
         tenantIds,
       };
     });
+  }
+
+  /**
+   * Subscription Plans Management (CRUD)
+   */
+  async getSubscriptionPlans() {
+    const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
+    try {
+      if (fs.existsSync(plansFile)) {
+        const raw = fs.readFileSync(plansFile, "utf-8");
+        return JSON.parse(raw);
+      }
+    } catch {}
+    return Object.values(SUBSCRIPTION_PLANS);
+  }
+
+  async createSubscriptionPlan(body: any, superAdminUserId: string) {
+    const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
+    let plans: any[] = [];
+    try {
+      if (fs.existsSync(plansFile)) {
+        plans = JSON.parse(fs.readFileSync(plansFile, "utf-8"));
+      } else {
+        plans = Object.values(SUBSCRIPTION_PLANS);
+      }
+    } catch {
+      plans = Object.values(SUBSCRIPTION_PLANS);
+    }
+
+    const tierKey = (body.tier || body.name).trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+    const idSlug = (body.id || body.name).toLowerCase().trim().replace(/[^a-z0-9_-]/g, "-");
+
+    const newPlan = {
+      id: idSlug,
+      tier: tierKey,
+      name: body.name,
+      nameGujarati: body.nameGujarati || body.name,
+      subtitle: body.subtitle || "",
+      subtitleGujarati: body.subtitleGujarati || "",
+      monthlyPrice: Number(body.monthlyPrice) || 0,
+      yearlyPrice: Number(body.yearlyPrice) || 0,
+      annualTotal: (Number(body.yearlyPrice) || 0) * 12,
+      discountPercent:
+        body.monthlyPrice > 0
+          ? Math.round(((body.monthlyPrice - body.yearlyPrice) / body.monthlyPrice) * 100)
+          : 0,
+      monthlyPaise: (Number(body.monthlyPrice) || 0) * 100,
+      yearlyPaise: (Number(body.yearlyPrice) || 0) * 12 * 100,
+      maxCompanies: body.maxCompanies !== undefined ? Number(body.maxCompanies) : 1,
+      maxInvoicesPerYear:
+        body.maxInvoicesPerYear !== undefined ? Number(body.maxInvoicesPerYear) : -1,
+      maxUsers: body.maxUsers !== undefined ? Number(body.maxUsers) : 2,
+      maxGodowns: body.maxGodowns !== undefined ? Number(body.maxGodowns) : 1,
+      features: Array.isArray(body.features) ? body.features : [],
+      featuresGujarati: Array.isArray(body.featuresGujarati) ? body.featuresGujarati : [],
+      entitlements: body.entitlements || {},
+      isActive: body.isActive !== undefined ? Boolean(body.isActive) : true,
+      isPopular: Boolean(body.isPopular),
+      badge: body.badge || null,
+      badgeColor: body.badgeColor || "bg-blue-50 text-blue-700 border-blue-200",
+      accentColor: body.accentColor || "#1677E8",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    plans.push(newPlan);
+    const dir = path.dirname(plansFile);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(plansFile, JSON.stringify(plans, null, 2), "utf-8");
+
+    // Also sync to frontend data folder
+    const frontendPlansFile = path.resolve(
+      process.cwd(),
+      "..",
+      "billing_superadmin",
+      "data",
+      "subscription-plans.json"
+    );
+    try {
+      const fDir = path.dirname(frontendPlansFile);
+      if (!fs.existsSync(fDir)) fs.mkdirSync(fDir, { recursive: true });
+      fs.writeFileSync(frontendPlansFile, JSON.stringify(plans, null, 2), "utf-8");
+    } catch {}
+
+    return newPlan;
+  }
+
+  async updateSubscriptionPlan(id: string, body: any, superAdminUserId: string) {
+    const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
+    let plans: any[] = [];
+    try {
+      if (fs.existsSync(plansFile)) {
+        plans = JSON.parse(fs.readFileSync(plansFile, "utf-8"));
+      }
+    } catch {}
+
+    const index = plans.findIndex((p) => p.id === id || p.tier === id);
+    if (index === -1) {
+      throw new NotFoundException(`Plan with id ${id} not found.`);
+    }
+
+    plans[index] = {
+      ...plans[index],
+      ...body,
+      updatedAt: new Date().toISOString(),
+    };
+
+    fs.writeFileSync(plansFile, JSON.stringify(plans, null, 2), "utf-8");
+    return plans[index];
+  }
+
+  async deleteSubscriptionPlan(id: string, superAdminUserId: string) {
+    const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
+    let plans: any[] = [];
+    try {
+      if (fs.existsSync(plansFile)) {
+        plans = JSON.parse(fs.readFileSync(plansFile, "utf-8"));
+      }
+    } catch {}
+
+    const target = plans.find((p) => p.id === id || p.tier === id);
+    if (!target) {
+      throw new NotFoundException(`Plan with id ${id} not found.`);
+    }
+
+    // Check if any tenants currently use this tier
+    const tenantCount = await this.prisma.executeBypassRls(async (tx) => {
+      return tx.tenant.count({
+        where: { subscriptionTier: target.tier as any },
+      });
+    });
+
+    if (tenantCount > 0) {
+      target.isActive = false;
+      fs.writeFileSync(plansFile, JSON.stringify(plans, null, 2), "utf-8");
+      return {
+        success: true,
+        message: `Plan archived because ${tenantCount} active tenants are assigned.`,
+        plan: target,
+      };
+    }
+
+    plans = plans.filter((p) => p.id !== id && p.tier !== id);
+    fs.writeFileSync(plansFile, JSON.stringify(plans, null, 2), "utf-8");
+    return { success: true, message: "Plan deleted successfully." };
+  }
+
+  /**
+   * ==========================================
+   * 1. SUBSCRIPTION MANAGEMENT MODULE
+   * ==========================================
+   */
+  async getSubscriptions(query: {
+    search?: string;
+    tier?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const page = Math.max(1, Number(query.page || 1));
+    const limit = Math.min(100, Math.max(1, Number(query.limit || 50)));
+    const skip = (page - 1) * limit;
+
+    return this.prisma.executeBypassRls(async (tx) => {
+      const now = new Date();
+      const where: any = {};
+
+      if (query.tier) {
+        where.subscriptionTier = query.tier as SubscriptionTier;
+      }
+
+      if (query.status === "active") {
+        where.isActive = true;
+        where.subscriptionEnds = { gte: now };
+        where.subscriptionTier = { not: SubscriptionTier.TRIAL };
+      } else if (query.status === "trial") {
+        where.subscriptionTier = SubscriptionTier.TRIAL;
+      } else if (query.status === "expired") {
+        where.subscriptionEnds = { lt: now };
+      } else if (query.status === "suspended") {
+        where.isActive = false;
+      }
+
+      if (query.search) {
+        const s = query.search.trim();
+        where.OR = [
+          { primaryPhone: { contains: s, mode: "insensitive" } },
+          { primaryEmail: { contains: s, mode: "insensitive" } },
+          {
+            organizations: {
+              some: {
+                OR: [
+                  { name: { contains: s, mode: "insensitive" } },
+                  { legalName: { contains: s, mode: "insensitive" } },
+                ],
+              },
+            },
+          },
+        ];
+      }
+
+      const [tenants, total] = await Promise.all([
+        tx.tenant.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: "desc" },
+          include: {
+            organizations: {
+              include: {
+                companies: {
+                  select: { id: true, legalName: true, tradeName: true },
+                },
+                _count: { select: { users: true } },
+              },
+            },
+            subscriptionPayments: {
+              orderBy: { createdAt: "desc" },
+              take: 1,
+            },
+          },
+        }),
+        tx.tenant.count({ where }),
+      ]);
+
+      const formatted = tenants.map((t) => {
+        const org = t.organizations?.[0];
+        const latestPayment = t.subscriptionPayments?.[0];
+        const isExpired = new Date(t.subscriptionEnds) < now;
+
+        let status = "ACTIVE";
+        if (!t.isActive) {
+          status = "SUSPENDED";
+        } else if (isExpired) {
+          status = "EXPIRED";
+        } else if (t.subscriptionTier === SubscriptionTier.TRIAL) {
+          status = "TRIAL";
+        }
+
+        let paymentStatus = "ACTIVE";
+        if (latestPayment) {
+          paymentStatus = latestPayment.status;
+        } else if (t.subscriptionTier === SubscriptionTier.TRIAL) {
+          paymentStatus = "FREE_TRIAL";
+        }
+
+        const totalUsers = t.organizations.reduce((acc, o) => acc + (o._count?.users || 0), 0);
+        const totalCompanies = t.organizations.reduce((acc, o) => acc + (o.companies?.length || 0), 0);
+
+        return {
+          id: t.id,
+          tenantId: t.id,
+          organizationId: org?.id || null,
+          organizationName: org?.name || org?.legalName || `Tenant ${t.primaryPhone}`,
+          legalName: org?.legalName || null,
+          primaryPhone: t.primaryPhone,
+          primaryEmail: t.primaryEmail,
+          tier: t.subscriptionTier,
+          planName: t.subscriptionTier.replace("_", " "),
+          billingCycle: latestPayment?.billingCycle || (t.subscriptionTier === "TRIAL" ? "trial" : "yearly"),
+          amount: latestPayment ? Number(latestPayment.amount) : 0,
+          currency: latestPayment?.currency || "INR",
+          subscriptionStart: t.createdAt,
+          subscriptionEnds: t.subscriptionEnds,
+          isActive: t.isActive,
+          subscriptionStatus: status,
+          paymentStatus,
+          totalCompanies,
+          totalUsers,
+          lastPaymentDate: latestPayment?.paidAt || latestPayment?.createdAt || null,
+          receiptNo: latestPayment?.receiptNo || null,
+        };
+      });
+
+      return {
+        data: formatted,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    });
+  }
+
+  async updateSubscription(
+    tenantId: string,
+    dto: {
+      action: "change_plan" | "extend" | "cancel" | "suspend" | "reactivate";
+      newTier?: SubscriptionTier;
+      billingCycle?: string;
+      extendDays?: number;
+      reason?: string;
+    },
+    superAdminUserId: string,
+  ) {
+    return this.prisma.executeBypassRls(async (tx) => {
+      const tenant = await tx.tenant.findUnique({
+        where: { id: tenantId },
+      });
+
+      if (!tenant) {
+        throw new NotFoundException(`Tenant with id ${tenantId} not found.`);
+      }
+
+      const updateData: any = {};
+      const previousState = {
+        tier: tenant.subscriptionTier,
+        endsAt: tenant.subscriptionEnds,
+        isActive: tenant.isActive,
+      };
+
+      if (dto.action === "change_plan" && dto.newTier) {
+        updateData.subscriptionTier = dto.newTier;
+        if (dto.extendDays) {
+          const baseDate = new Date(tenant.subscriptionEnds) > new Date() ? new Date(tenant.subscriptionEnds) : new Date();
+          baseDate.setDate(baseDate.getDate() + Number(dto.extendDays));
+          updateData.subscriptionEnds = baseDate;
+        }
+      } else if (dto.action === "extend" && dto.extendDays) {
+        const baseDate = new Date(tenant.subscriptionEnds) > new Date() ? new Date(tenant.subscriptionEnds) : new Date();
+        baseDate.setDate(baseDate.getDate() + Number(dto.extendDays));
+        updateData.subscriptionEnds = baseDate;
+      } else if (dto.action === "suspend") {
+        updateData.isActive = false;
+      } else if (dto.action === "reactivate") {
+        updateData.isActive = true;
+        if (new Date(tenant.subscriptionEnds) < new Date()) {
+          const freshDate = new Date();
+          freshDate.setDate(freshDate.getDate() + 30);
+          updateData.subscriptionEnds = freshDate;
+        }
+      } else if (dto.action === "cancel") {
+        updateData.isActive = false;
+        updateData.subscriptionTier = SubscriptionTier.TRIAL;
+      }
+
+      const updated = await tx.tenant.update({
+        where: { id: tenantId },
+        data: updateData,
+      });
+
+      const firstOrg = await tx.organization.findFirst({
+        where: { tenantId },
+        include: { companies: { take: 1, select: { id: true } } },
+      });
+
+      if (firstOrg && firstOrg.companies[0]) {
+        await this.audit.record({
+          organizationId: firstOrg.id,
+          companyId: firstOrg.companies[0].id,
+          userId: superAdminUserId,
+          action: `SUBSCRIPTION_${dto.action.toUpperCase()}`,
+          entityName: "TenantSubscription",
+          entityId: tenantId,
+          previousState: previousState as any,
+          newState: updateData as any,
+        });
+      }
+
+      return {
+        success: true,
+        message: `Subscription successfully updated (${dto.action})`,
+        tenant: updated,
+      };
+    });
+  }
+
+  /**
+   * ==========================================
+   * 2. TRANSACTIONS & PAYMENTS AUDIT
+   * ==========================================
+   */
+  async getTransactions(query: {
+    search?: string;
+    tier?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const page = Math.max(1, Number(query.page || 1));
+    const limit = Math.min(100, Math.max(1, Number(query.limit || 50)));
+    const skip = (page - 1) * limit;
+
+    return this.prisma.executeBypassRls(async (tx) => {
+      const where: any = {};
+
+      if (query.tier) {
+        where.tier = query.tier as SubscriptionTier;
+      }
+
+      if (query.status) {
+        where.status = query.status.toUpperCase();
+      }
+
+      if (query.search) {
+        const s = query.search.trim();
+        where.OR = [
+          { orderId: { contains: s, mode: "insensitive" } },
+          { paymentId: { contains: s, mode: "insensitive" } },
+          { receiptNo: { contains: s, mode: "insensitive" } },
+        ];
+      }
+
+      const [payments, total, aggregateStats] = await Promise.all([
+        tx.subscriptionPayment.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: "desc" },
+        }),
+        tx.subscriptionPayment.count({ where }),
+        tx.subscriptionPayment.groupBy({
+          by: ["status"],
+          _sum: { amount: true },
+          _count: { _all: true },
+        }),
+      ]);
+
+      // Enrich with organization names
+      const tenantIds = payments.map((p) => p.tenantId).filter(Boolean) as string[];
+      const tenants = tenantIds.length > 0 ? await tx.tenant.findMany({
+        where: { id: { in: tenantIds } },
+        include: { organizations: { take: 1, select: { id: true, name: true, legalName: true } } },
+      }) : [];
+
+      const tenantOrgMap = new Map<string, string>();
+      for (const t of tenants) {
+        tenantOrgMap.set(t.id, t.organizations?.[0]?.name || t.organizations?.[0]?.legalName || t.primaryPhone);
+      }
+
+      const formatted = payments.map((p) => {
+        const notesObj: any = p.notes || {};
+        const orgName = p.tenantId ? tenantOrgMap.get(p.tenantId) : null;
+
+        return {
+          id: p.id,
+          orderId: p.orderId,
+          paymentId: p.paymentId,
+          receiptNo: p.receiptNo,
+          tenantId: p.tenantId,
+          organizationId: p.organizationId,
+          organizationName: orgName || notesObj.customerName || "Web Checkout Subscriber",
+          customerName: notesObj.customerName || null,
+          customerPhone: notesObj.customerPhone || null,
+          customerEmail: notesObj.customerEmail || null,
+          tier: p.tier,
+          billingCycle: p.billingCycle,
+          amount: Number(p.amount),
+          currency: p.currency,
+          status: p.status,
+          paymentMethod: p.paymentMethod || "Razorpay UPI/NetBanking",
+          paidAt: p.paidAt,
+          createdAt: p.createdAt,
+          notes: p.notes,
+        };
+      });
+
+      let totalCaptured = 0;
+      let totalPending = 0;
+      let totalRefunded = 0;
+
+      for (const stat of aggregateStats) {
+        const amt = Number(stat._sum.amount || 0);
+        if (stat.status === "CAPTURED") totalCaptured += amt;
+        if (stat.status === "PENDING") totalPending += amt;
+        if (stat.status === "REFUNDED") totalRefunded += amt;
+      }
+
+      return {
+        data: formatted,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        metrics: {
+          totalCaptured,
+          totalPending,
+          totalRefunded,
+          netSettled: Math.max(0, totalCaptured - totalRefunded),
+        },
+      };
+    });
+  }
+
+  async refundTransaction(
+    paymentId: string,
+    reason: string,
+    superAdminUserId: string,
+  ) {
+    return this.prisma.executeBypassRls(async (tx) => {
+      const payment = await tx.subscriptionPayment.findUnique({
+        where: { id: paymentId },
+      });
+
+      if (!payment) {
+        throw new NotFoundException(`Payment transaction ${paymentId} not found.`);
+      }
+
+      if (payment.status === "REFUNDED") {
+        throw new BadRequestException("This transaction has already been refunded.");
+      }
+
+      const existingNotes: any = payment.notes || {};
+      const updatedNotes = {
+        ...existingNotes,
+        refundedAt: new Date().toISOString(),
+        refundReason: reason,
+        refundedBy: superAdminUserId,
+      };
+
+      const updated = await tx.subscriptionPayment.update({
+        where: { id: paymentId },
+        data: {
+          status: "REFUNDED",
+          notes: updatedNotes,
+        },
+      });
+
+      if (payment.tenantId) {
+        const firstOrg = await tx.organization.findFirst({
+          where: { tenantId: payment.tenantId },
+          include: { companies: { take: 1, select: { id: true } } },
+        });
+
+        if (firstOrg && firstOrg.companies[0]) {
+          await this.audit.record({
+            organizationId: firstOrg.id,
+            companyId: firstOrg.companies[0].id,
+            userId: superAdminUserId,
+            action: "TRANSACTION_REFUND",
+            entityName: "SubscriptionPayment",
+            entityId: paymentId,
+            previousState: { status: payment.status } as any,
+            newState: { status: "REFUNDED", reason } as any,
+          });
+        }
+      }
+
+      return {
+        success: true,
+        message: "Payment transaction marked as refunded.",
+        payment: updated,
+      };
+    });
+  }
+
+  /**
+   * ==========================================
+   * 3. PLATFORM ANALYTICS & REVENUE REPORTS
+   * ==========================================
+   */
+  async getPlatformAnalytics(timeframe = "year") {
+    return this.prisma.executeBypassRls(async (tx) => {
+      const now = new Date();
+      const currentYear = now.getFullYear();
+
+      // Get payments for trend calculation
+      const payments = await tx.subscriptionPayment.findMany({
+        where: { status: "CAPTURED" },
+        select: { amount: true, paidAt: true, createdAt: true, tier: true },
+        orderBy: { createdAt: "asc" },
+      });
+
+      // 6-Month Revenue Trend
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const monthlyBuckets: Record<string, { label: string; revenue: number; transactions: number }> = {};
+
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        monthlyBuckets[key] = {
+          label: `${monthNames[d.getMonth()]} ${d.getFullYear()}`,
+          revenue: 0,
+          transactions: 0,
+        };
+      }
+
+      for (const p of payments) {
+        const pDate = p.paidAt ? new Date(p.paidAt) : new Date(p.createdAt);
+        const key = `${pDate.getFullYear()}-${String(pDate.getMonth() + 1).padStart(2, "0")}`;
+        if (monthlyBuckets[key]) {
+          monthlyBuckets[key].revenue += Number(p.amount);
+          monthlyBuckets[key].transactions += 1;
+        }
+      }
+
+      // Tier Distribution
+      const tierCounts = await tx.tenant.groupBy({
+        by: ["subscriptionTier"],
+        _count: { _all: true },
+      });
+
+      const tierDistribution = tierCounts.map((tc) => ({
+        tier: tc.subscriptionTier,
+        count: tc._count._all,
+      }));
+
+      // Conversion Rate
+      const totalPaymentsCount = await tx.subscriptionPayment.count();
+      const capturedCount = payments.length;
+      const conversionRate = totalPaymentsCount > 0 ? Math.round((capturedCount / totalPaymentsCount) * 100) : 100;
+
+      return {
+        revenueTrend: Object.values(monthlyBuckets),
+        tierDistribution,
+        conversionRate,
+        totalRevenue: payments.reduce((acc, p) => acc + Number(p.amount), 0),
+        totalTransactions: capturedCount,
+      };
+    });
+  }
+
+  /**
+   * ==========================================
+   * 4. PROMOTIONAL COUPONS MANAGEMENT
+   * ==========================================
+   */
+  private getCouponsFilePath(): string {
+    return path.resolve(process.cwd(), "data", "coupons.json");
+  }
+
+  private syncCoupons(coupons: any[]) {
+    const primary = this.getCouponsFilePath();
+    fs.writeFileSync(primary, JSON.stringify(coupons, null, 2), "utf-8");
+
+    const secondary = "/home/dell/Jaydeep/billing_superadmin/data/coupons.json";
+    try {
+      if (fs.existsSync(path.dirname(secondary))) {
+        fs.writeFileSync(secondary, JSON.stringify(coupons, null, 2), "utf-8");
+      }
+    } catch {}
+  }
+
+  async getCoupons() {
+    try {
+      const file = this.getCouponsFilePath();
+      if (fs.existsSync(file)) {
+        return JSON.parse(fs.readFileSync(file, "utf-8"));
+      }
+    } catch {}
+    return [];
+  }
+
+  async createCoupon(dto: any, superAdminUserId: string) {
+    const coupons = await this.getCoupons();
+    const code = (dto.code || "").toUpperCase().trim();
+
+    if (coupons.some((c: any) => c.code === code)) {
+      throw new BadRequestException(`Coupon code "${code}" already exists.`);
+    }
+
+    const newCoupon = {
+      id: `coup_${randomUUID().slice(0, 8)}`,
+      code,
+      description: dto.description || "",
+      discountType: dto.discountType || "PERCENTAGE",
+      discountValue: Number(dto.discountValue || 10),
+      validTiers: dto.validTiers || [],
+      minAmount: Number(dto.minAmount || 0),
+      maxDiscount: Number(dto.maxDiscount || 5000),
+      validUntil: dto.validUntil || new Date(Date.now() + 90 * 86400000).toISOString(),
+      usageLimit: Number(dto.usageLimit || 100),
+      usedCount: 0,
+      isActive: dto.isActive !== false,
+      createdAt: new Date().toISOString(),
+    };
+
+    coupons.unshift(newCoupon);
+    this.syncCoupons(coupons);
+
+    return newCoupon;
+  }
+
+  async updateCoupon(id: string, dto: any, superAdminUserId: string) {
+    const coupons = await this.getCoupons();
+    const index = coupons.findIndex((c: any) => c.id === id || c.code === id);
+    if (index === -1) {
+      throw new NotFoundException(`Coupon with id ${id} not found.`);
+    }
+
+    coupons[index] = {
+      ...coupons[index],
+      ...dto,
+      code: dto.code ? dto.code.toUpperCase().trim() : coupons[index].code,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.syncCoupons(coupons);
+    return coupons[index];
+  }
+
+  async deleteCoupon(id: string, superAdminUserId: string) {
+    let coupons = await this.getCoupons();
+    const target = coupons.find((c: any) => c.id === id || c.code === id);
+    if (!target) {
+      throw new NotFoundException(`Coupon with id ${id} not found.`);
+    }
+
+    coupons = coupons.filter((c: any) => c.id !== id && c.code !== id);
+    this.syncCoupons(coupons);
+    return { success: true, message: `Coupon ${target.code} deleted successfully.` };
+  }
+
+  /**
+   * ==========================================
+   * 5. ADD-ONS & EXTRA FEATURES CATALOG
+   * ==========================================
+   */
+  private getAddonsFilePath(): string {
+    return path.resolve(process.cwd(), "data", "addons.json");
+  }
+
+  private syncAddons(addons: any[]) {
+    const primary = this.getAddonsFilePath();
+    fs.writeFileSync(primary, JSON.stringify(addons, null, 2), "utf-8");
+
+    const secondary = "/home/dell/Jaydeep/billing_superadmin/data/addons.json";
+    try {
+      if (fs.existsSync(path.dirname(secondary))) {
+        fs.writeFileSync(secondary, JSON.stringify(addons, null, 2), "utf-8");
+      }
+    } catch {}
+  }
+
+  async getAddons() {
+    try {
+      const file = this.getAddonsFilePath();
+      if (fs.existsSync(file)) {
+        return JSON.parse(fs.readFileSync(file, "utf-8"));
+      }
+    } catch {}
+    return [];
+  }
+
+  async createAddon(dto: any, superAdminUserId: string) {
+    const addons = await this.getAddons();
+    const newAddon = {
+      id: `addon_${randomUUID().slice(0, 8)}`,
+      name: dto.name,
+      nameGujarati: dto.nameGujarati || dto.name,
+      code: (dto.code || "").toUpperCase().trim(),
+      category: dto.category || "GENERAL",
+      description: dto.description || "",
+      price: Number(dto.price || 0),
+      billingCycle: dto.billingCycle || "YEARLY",
+      quotaAdded: Number(dto.quotaAdded || 1),
+      unit: dto.unit || "Unit",
+      isActive: dto.isActive !== false,
+      createdAt: new Date().toISOString(),
+    };
+
+    addons.push(newAddon);
+    this.syncAddons(addons);
+    return newAddon;
+  }
+
+  async updateAddon(id: string, dto: any, superAdminUserId: string) {
+    const addons = await this.getAddons();
+    const index = addons.findIndex((a: any) => a.id === id || a.code === id);
+    if (index === -1) {
+      throw new NotFoundException(`Addon with id ${id} not found.`);
+    }
+
+    addons[index] = {
+      ...addons[index],
+      ...dto,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.syncAddons(addons);
+    return addons[index];
+  }
+
+  /**
+   * ==========================================
+   * 6. PLATFORM SETTINGS & CONFIGURATION
+   * ==========================================
+   */
+  private getSettingsFilePath(): string {
+    return path.resolve(process.cwd(), "data", "platform-settings.json");
+  }
+
+  private syncSettings(settings: any) {
+    const primary = this.getSettingsFilePath();
+    fs.writeFileSync(primary, JSON.stringify(settings, null, 2), "utf-8");
+
+    const secondary = "/home/dell/Jaydeep/billing_superadmin/data/platform-settings.json";
+    try {
+      if (fs.existsSync(path.dirname(secondary))) {
+        fs.writeFileSync(secondary, JSON.stringify(settings, null, 2), "utf-8");
+      }
+    } catch {}
+  }
+
+  async getPlatformSettings() {
+    try {
+      const file = this.getSettingsFilePath();
+      if (fs.existsSync(file)) {
+        return JSON.parse(fs.readFileSync(file, "utf-8"));
+      }
+    } catch {}
+    return {};
+  }
+
+  async updatePlatformSettings(dto: any, superAdminUserId: string) {
+    const current = await this.getPlatformSettings();
+    const updated = {
+      ...current,
+      ...dto,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.syncSettings(updated);
+
+    return updated;
   }
 }

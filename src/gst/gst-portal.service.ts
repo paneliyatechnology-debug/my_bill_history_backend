@@ -18,6 +18,9 @@ import {
   openSecret,
   resolveGstCredentials,
   sealSecret,
+  settleItc,
+  toPaise,
+  fromPaise,
 } from "@billing/gst-provider";
 import { DatabaseService } from "../database/database.service";
 
@@ -61,6 +64,501 @@ export class GstPortalService {
 
   constructor(private readonly prisma: DatabaseService) {}
 
+  async getDashboardSummary(
+    tenant: TenantContext,
+    query: {
+      fromDate?: string;
+      toDate?: string;
+      month?: number | string;
+      year?: number | string;
+      returnPeriod?: string;
+    },
+  ) {
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      // 1. Resolve date bounds
+      let fromDateStr = query.fromDate;
+      let toDateStr = query.toDate;
+      let returnPeriodStr = query.returnPeriod;
+
+      if (!fromDateStr || !toDateStr) {
+        const monthNum = query.month ? Number(query.month) : 4;
+        const yearNum = query.year ? Number(query.year) : 2026;
+        fromDateStr = `${yearNum}-${String(monthNum).padStart(2, "0")}-01`;
+        const lastDay = new Date(Date.UTC(yearNum, monthNum, 0)).getUTCDate();
+        toDateStr = `${yearNum}-${String(monthNum).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+        if (!returnPeriodStr) {
+          returnPeriodStr = `${String(monthNum).padStart(2, "0")}${yearNum}`;
+        }
+      }
+      if (!returnPeriodStr && fromDateStr) {
+        returnPeriodStr = `${fromDateStr.slice(5, 7)}${fromDateStr.slice(0, 4)}`;
+      }
+
+      const dateFilter = {
+        gte: new Date(`${fromDateStr}T00:00:00.000Z`),
+        lte: new Date(`${toDateStr}T23:59:59.999Z`),
+      };
+
+      // 2. Fetch Company
+      const company = await tx.company.findUnique({
+        where: { id: tenant.companyId },
+      });
+
+      // 3. Outward Sales Invoices (Tax Invoices only, non-draft, non-cancelled)
+      const salesInvoices = await tx.salesInvoice.findMany({
+        where: {
+          companyId: tenant.companyId,
+          status: { notIn: ["DRAFT", "CANCELLED"] },
+          category: "TAX_INVOICE",
+          invoiceDate: dateFilter,
+        },
+        include: { party: true, eInvoiceRecord: true, eWayBillRecord: true },
+      });
+
+      // 4. Sales Returns (Credit Notes)
+      const salesReturns = await tx.salesReturn.findMany({
+        where: {
+          companyId: tenant.companyId,
+          status: "ISSUED",
+          returnDate: dateFilter,
+        },
+      });
+
+      // 5. Outward Debit Notes
+      const outwardDebitNotes = await tx.outwardDebitNote.findMany({
+        where: {
+          companyId: tenant.companyId,
+          noteDate: dateFilter,
+        },
+      });
+
+      // 6. Purchases (Inward Supplies)
+      const purchaseInvoices = await tx.purchaseInvoice.findMany({
+        where: {
+          companyId: tenant.companyId,
+          invoiceDate: dateFilter,
+        },
+      });
+
+      // 7. Purchase Returns (Inward Debit Notes / ITC Reversal)
+      const purchaseReturns = await tx.purchaseReturn.findMany({
+        where: {
+          companyId: tenant.companyId,
+          returnDate: dateFilter,
+        },
+      });
+
+      // 8. GSTR-2B Reconciliations
+      const reconciliations = await tx.gstr2bReconciliation.findMany({
+        where: {
+          companyId: tenant.companyId,
+          returnPeriod: returnPeriodStr,
+        },
+        include: { gstr2bLine: true },
+      });
+
+      // 9. Integer Aggregations (in Paise)
+      let grossSalesTaxable = 0;
+      let grossCgst = 0;
+      let grossSgst = 0;
+      let grossUtgst = 0;
+      let grossIgst = 0;
+      let grossCess = 0;
+      let irnCount = 0;
+      let ewayCount = 0;
+      let missingRecipientGstinCount = 0;
+
+      const valToPaise = (v: any): number => toPaise(v != null ? v.toString() : "0");
+
+      for (const inv of salesInvoices) {
+        grossSalesTaxable += valToPaise(inv.taxableAmount);
+        grossCgst += valToPaise(inv.cgstAmount);
+        grossSgst += valToPaise(inv.sgstAmount);
+        grossUtgst += valToPaise(inv.utgstAmount);
+        grossIgst += valToPaise(inv.igstAmount);
+        grossCess += valToPaise(inv.cessAmount);
+
+        if (inv.eInvoiceRecord?.irn) irnCount++;
+        if (inv.eWayBillRecord?.ewbNumber) ewayCount++;
+        if (!inv.party?.gstin && Number(inv.taxableAmount) > 0) missingRecipientGstinCount++;
+      }
+
+      // Credit Notes (reduce outward liability)
+      let creditTaxable = 0;
+      let creditCgst = 0;
+      let creditSgst = 0;
+      let creditUtgst = 0;
+      let creditIgst = 0;
+      for (const cr of salesReturns) {
+        creditTaxable += valToPaise(cr.taxableAmount);
+        creditCgst += valToPaise(cr.cgstAmount);
+        creditSgst += valToPaise(cr.sgstAmount);
+        creditUtgst += valToPaise(cr.utgstAmount);
+        creditIgst += valToPaise(cr.igstAmount);
+      }
+
+      // Debit Notes (increase outward liability)
+      let debitTaxable = 0;
+      let debitCgst = 0;
+      let debitSgst = 0;
+      let debitUtgst = 0;
+      let debitIgst = 0;
+      for (const db of outwardDebitNotes) {
+        debitTaxable += valToPaise(db.taxableAmount);
+        debitCgst += valToPaise(db.cgstAmount);
+        debitSgst += valToPaise(db.sgstAmount);
+        debitUtgst += valToPaise(db.utgstAmount);
+        debitIgst += valToPaise(db.igstAmount);
+      }
+
+      // Net Outward Figures
+      const netSalesTaxable = Math.max(0, grossSalesTaxable - creditTaxable + debitTaxable);
+      const outputCgst = Math.max(0, grossCgst - creditCgst + debitCgst);
+      const outputSgst = Math.max(0, grossSgst - creditSgst + debitSgst);
+      const outputUtgst = Math.max(0, grossUtgst - creditUtgst + debitUtgst);
+      const outputIgst = Math.max(0, grossIgst - creditIgst + debitIgst);
+      const outputCess = grossCess;
+      const totalOutputTax = outputCgst + outputSgst + outputUtgst + outputIgst + outputCess;
+
+      // Inward Supplies & ITC Classification
+      let totalPurchaseTaxable = 0;
+      let totalPurchaseCgst = 0;
+      let totalPurchaseSgst = 0;
+      let totalPurchaseUtgst = 0;
+      let totalPurchaseIgst = 0;
+      let totalPurchaseCess = 0;
+
+      let eligibleCgst = 0;
+      let eligibleSgst = 0;
+      let eligibleUtgst = 0;
+      let eligibleIgst = 0;
+      let eligibleCess = 0;
+
+      let ineligibleCgst = 0;
+      let ineligibleSgst = 0;
+      let ineligibleUtgst = 0;
+      let ineligibleIgst = 0;
+      let ineligibleCess = 0;
+
+      for (const p of purchaseInvoices) {
+        const taxable = valToPaise(p.taxableAmount);
+        const cgst = valToPaise(p.cgstAmount);
+        const sgst = valToPaise(p.sgstAmount);
+        const utgst = valToPaise(p.utgstAmount);
+        const igst = valToPaise(p.igstAmount);
+        const cess = valToPaise(p.cessAmount);
+
+        totalPurchaseTaxable += taxable;
+        totalPurchaseCgst += cgst;
+        totalPurchaseSgst += sgst;
+        totalPurchaseUtgst += utgst;
+        totalPurchaseIgst += igst;
+        totalPurchaseCess += cess;
+
+        if (p.itcEligibility === "INELIGIBLE") {
+          ineligibleCgst += cgst;
+          ineligibleSgst += sgst;
+          ineligibleUtgst += utgst;
+          ineligibleIgst += igst;
+          ineligibleCess += cess;
+        } else {
+          eligibleCgst += cgst;
+          eligibleSgst += sgst;
+          eligibleUtgst += utgst;
+          eligibleIgst += igst;
+          eligibleCess += cess;
+        }
+      }
+
+      const totalPurchaseGst = totalPurchaseCgst + totalPurchaseSgst + totalPurchaseUtgst + totalPurchaseIgst + totalPurchaseCess;
+      const totalEligibleItc = eligibleCgst + eligibleSgst + eligibleUtgst + eligibleIgst + eligibleCess;
+      const totalIneligibleItc = ineligibleCgst + ineligibleSgst + ineligibleUtgst + ineligibleIgst + ineligibleCess;
+
+      // ITC Reversed from Purchase Returns / Supplier Debit Notes
+      let reversedCgst = 0;
+      let reversedSgst = 0;
+      let reversedUtgst = 0;
+      let reversedIgst = 0;
+      for (const pr of purchaseReturns) {
+        reversedCgst += valToPaise(pr.cgstAmount);
+        reversedSgst += valToPaise(pr.sgstAmount);
+        reversedUtgst += valToPaise(pr.utgstAmount);
+        reversedIgst += valToPaise(pr.igstAmount);
+      }
+      const totalItcReversed = reversedCgst + reversedSgst + reversedUtgst + reversedIgst;
+
+      // Available ITC = Eligible ITC - Reversed ITC
+      const availableCgst = Math.max(0, eligibleCgst - reversedCgst);
+      const availableSgst = Math.max(0, eligibleSgst - reversedSgst);
+      const availableUtgst = Math.max(0, eligibleUtgst - reversedUtgst);
+      const availableIgst = Math.max(0, eligibleIgst - reversedIgst);
+      const availableCess = eligibleCess;
+      const totalAvailableItc = availableCgst + availableSgst + availableUtgst + availableIgst + availableCess;
+
+      // GSTR-2B Breakdown & Pending Review
+      const reconCounts: Record<string, number> = {
+        MATCHED: 0,
+        PARTIAL_MATCH: 0,
+        MISSING_IN_BOOKS: 0,
+        MISSING_IN_GSTR2B: 0,
+        MISMATCH: 0,
+        DUPLICATE: 0,
+      };
+      let pendingReviewTax = 0;
+      let acceptedItcTax = 0;
+      let rejectedItcTax = 0;
+
+      for (const r of reconciliations) {
+        if (r.status in reconCounts) {
+          reconCounts[r.status]++;
+        }
+        const lineTax = r.gstr2bLine
+          ? valToPaise(r.gstr2bLine.cgstAmount) +
+            valToPaise(r.gstr2bLine.sgstAmount) +
+            valToPaise(r.gstr2bLine.igstAmount) +
+            valToPaise(r.gstr2bLine.cessAmount)
+          : 0;
+
+        if (r.itcDecision === "UNREVIEWED" || r.status === "PARTIAL_MATCH") {
+          pendingReviewTax += lineTax;
+        } else if (r.itcDecision === "ACCEPTED") {
+          acceptedItcTax += lineTax;
+        } else if (r.itcDecision === "REJECTED") {
+          rejectedItcTax += lineTax;
+        }
+      }
+
+      // Statutory ITC Settlement using Rule 88A / Section 49
+      const settlement = settleItc({
+        liability: {
+          igst: fromPaise(outputIgst),
+          cgst: fromPaise(outputCgst),
+          sgst: fromPaise(outputSgst),
+          utgst: fromPaise(outputUtgst),
+          cess: fromPaise(outputCess),
+        },
+        acceptedItc: {
+          igst: fromPaise(availableIgst),
+          cgst: fromPaise(availableCgst),
+          sgst: fromPaise(availableSgst),
+          utgst: fromPaise(availableUtgst),
+          cess: fromPaise(availableCess),
+        },
+      });
+
+      // Provider and Audit status
+      const config = await tx.gstIntegrationConfig.findUnique({
+        where: { companyId: tenant.companyId },
+      });
+      const resolved = this.resolveFor(company?.gstin, config);
+      const auditRows = await tx.gstApiAuditLog.findMany({
+        where: { companyId: tenant.companyId },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+      });
+
+      // KPI & Action counts
+      const totalReconLines = reconciliations.length;
+      const matchedReconLines = reconCounts.MATCHED || 0;
+      const reconScore = totalReconLines > 0 ? Math.round((matchedReconLines / totalReconLines) * 100) : 0;
+      const pendingActionsCount = missingRecipientGstinCount + (reconCounts.MISSING_IN_BOOKS || 0) + (reconCounts.MISMATCH || 0) + (reconCounts.DUPLICATE || 0);
+
+      // Monthly Trend (Current month + previous 2 months)
+      const monthlyTrend: Array<{ periodLabel: string; taxLiability: number; itcClaimed: number }> = [];
+      const reqMonth = query.month ? Number(query.month) : (fromDateStr ? Number(fromDateStr.slice(5, 7)) : 4);
+      const reqYear = query.year ? Number(query.year) : (fromDateStr ? Number(fromDateStr.slice(0, 4)) : 2026);
+      for (let offset = 2; offset >= 0; offset--) {
+        let m = reqMonth - offset;
+        let y = reqYear;
+        if (m <= 0) {
+          m += 12;
+          y -= 1;
+        }
+        const mStart = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
+        const mEnd = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
+        const periodLabel = `${y}-${String(m).padStart(2, "0")}`;
+
+        if (offset === 0) {
+          monthlyTrend.push({
+            periodLabel,
+            taxLiability: Number(fromPaise(totalOutputTax)),
+            itcClaimed: Number(fromPaise(totalAvailableItc)),
+          });
+        } else {
+          const [salesAgg, purchaseAgg] = await Promise.all([
+            tx.salesInvoice.aggregate({
+              where: {
+                companyId: tenant.companyId,
+                status: { notIn: ["DRAFT", "CANCELLED"] },
+                category: "TAX_INVOICE",
+                invoiceDate: { gte: mStart, lte: mEnd },
+              },
+              _sum: { cgstAmount: true, sgstAmount: true, igstAmount: true, cessAmount: true },
+            }),
+            tx.purchaseInvoice.aggregate({
+              where: {
+                companyId: tenant.companyId,
+                invoiceDate: { gte: mStart, lte: mEnd },
+              },
+              _sum: { cgstAmount: true, sgstAmount: true, igstAmount: true, utgstAmount: true, cessAmount: true },
+            }),
+          ]);
+
+          const sTax =
+            Number(salesAgg._sum.cgstAmount || 0) +
+            Number(salesAgg._sum.sgstAmount || 0) +
+            Number(salesAgg._sum.igstAmount || 0) +
+            Number(salesAgg._sum.cessAmount || 0);
+
+          const pTax =
+            Number(purchaseAgg._sum.cgstAmount || 0) +
+            Number(purchaseAgg._sum.sgstAmount || 0) +
+            Number(purchaseAgg._sum.igstAmount || 0) +
+            Number(purchaseAgg._sum.utgstAmount || 0) +
+            Number(purchaseAgg._sum.cessAmount || 0);
+
+          monthlyTrend.push({
+            periodLabel,
+            taxLiability: sTax,
+            itcClaimed: pTax,
+          });
+        }
+      }
+
+      // Compute dynamic statutory return status based on period & dates
+      const now = new Date();
+      const pMonth = query.month ? Number(query.month) : (fromDateStr ? Number(fromDateStr.slice(5, 7)) : now.getUTCMonth() + 1);
+      const pYear = query.year ? Number(query.year) : (fromDateStr ? Number(fromDateStr.slice(0, 4)) : now.getUTCFullYear());
+
+      const gstr1DueDate = new Date(Date.UTC(pYear, pMonth, 11, 23, 59, 59));
+      const gstr3bDueDate = new Date(Date.UTC(pYear, pMonth, 20, 23, 59, 59));
+
+      const isGstr1Overdue = now > gstr1DueDate;
+      const isGstr3bOverdue = now > gstr3bDueDate;
+
+      let filedCount = 0;
+      let overdueCount = 0;
+      let pendingCount = 0;
+
+      const gstr1Filed = auditRows.some((a) => a.operation === "GSTR1_FILED" && a.outcome === "SUCCESS");
+      const gstr3bFiled = auditRows.some((a) => a.operation === "GSTR3B_FILED" && a.outcome === "SUCCESS");
+
+      if (gstr1Filed) filedCount++;
+      else if (isGstr1Overdue) overdueCount++;
+      else pendingCount++;
+
+      if (gstr3bFiled) filedCount++;
+      else if (isGstr3bOverdue) overdueCount++;
+      else pendingCount++;
+
+      const pendingReturnsCount = overdueCount + pendingCount;
+
+      return {
+        company: {
+          id: company?.id,
+          name: company?.tradeName || company?.legalName,
+          gstin: company?.gstin || "NOT_CONFIGURED",
+          stateCode: company?.stateCode || "24",
+        },
+        period: {
+          fromDate: fromDateStr,
+          toDate: toDateStr,
+          returnPeriod: returnPeriodStr,
+        },
+        salesTaxableValue: fromPaise(netSalesTaxable),
+        outputCgst: fromPaise(outputCgst),
+        outputSgst: fromPaise(outputSgst),
+        outputUtgst: fromPaise(outputUtgst),
+        outputIgst: fromPaise(outputIgst),
+        outputCess: fromPaise(outputCess),
+        estimatedGstLiability: fromPaise(totalOutputTax),
+
+        totalPurchaseTaxable: fromPaise(totalPurchaseTaxable),
+        totalPurchaseGst: fromPaise(totalPurchaseGst),
+        eligibleItc: fromPaise(totalEligibleItc),
+        ineligibleItc: fromPaise(totalIneligibleItc),
+        itcPendingReview: fromPaise(pendingReviewTax),
+        itcReversed: fromPaise(totalItcReversed),
+        availableItc: fromPaise(totalAvailableItc),
+
+        itcBreakup: {
+          eligible: {
+            igst: fromPaise(eligibleIgst),
+            cgst: fromPaise(eligibleCgst),
+            sgst: fromPaise(eligibleSgst),
+            utgst: fromPaise(eligibleUtgst),
+            cess: fromPaise(eligibleCess),
+            total: fromPaise(totalEligibleItc),
+          },
+          reversed: {
+            igst: fromPaise(reversedIgst),
+            cgst: fromPaise(reversedCgst),
+            sgst: fromPaise(reversedSgst),
+            utgst: fromPaise(reversedUtgst),
+            total: fromPaise(totalItcReversed),
+          },
+          available: {
+            igst: fromPaise(availableIgst),
+            cgst: fromPaise(availableCgst),
+            sgst: fromPaise(availableSgst),
+            utgst: fromPaise(availableUtgst),
+            cess: fromPaise(availableCess),
+            total: fromPaise(totalAvailableItc),
+          },
+        },
+
+        settlement,
+        estimatedCashPayable: settlement.cashPayable.total,
+        cashPayableBreakup: settlement.cashPayable,
+        unusedCreditBreakup: settlement.unusedCredit,
+
+        kpi: {
+          totalSalesTaxable: fromPaise(netSalesTaxable),
+          outputCgst: fromPaise(outputCgst),
+          outputSgst: fromPaise(outputSgst),
+          outputIgst: fromPaise(outputIgst),
+          totalPurchaseTax: fromPaise(totalPurchaseGst),
+          eligibleItc: fromPaise(totalEligibleItc),
+          netGstLiability: settlement.cashPayable.total,
+          pendingReturns: pendingReturnsCount,
+          totalTaxLiability: fromPaise(totalOutputTax),
+          itcAvailable: fromPaise(totalAvailableItc),
+          reconciliationScore: reconScore,
+          pendingActions: pendingActionsCount,
+        },
+
+        filingStatus: {
+          total: filedCount + overdueCount + pendingCount,
+          filed: filedCount,
+          overdue: overdueCount,
+          pending: pendingCount,
+        },
+
+        monthlyTrend,
+
+        complianceStatuses: {
+          gstr1: salesInvoices.length > 0 ? "PREPARED" : "NO_DOCUMENTS",
+          gstr3b: "DRAFT",
+          gstr2b: reconciliations.length > 0 ? "RECONCILED" : "IMPORT_PENDING",
+          reconciliationCounts: reconCounts,
+          eInvoiceCount: irnCount,
+          eWayBillCount: ewayCount,
+          missingRecipientGstinCount,
+          providerStatus: resolved.ok ? "READY" : (resolved.code || "CREDENTIALS_UNAVAILABLE"),
+          productionMode: (config?.environment ?? "PRODUCTION") === "PRODUCTION" ? "LIVE_GOVERNMENT_PORTAL" : "SANDBOX",
+        },
+
+        recentAudit: auditRows.map((r) => ({
+          id: r.id,
+          createdAt: r.createdAt.toISOString(),
+          operation: r.operation,
+          outcome: r.outcome,
+          errorMessage: r.errorMessage,
+        })),
+      };
+    });
+  }
+
   async getConfig(tenant: TenantContext) {
     return this.prisma.executeInTenantContext(tenant, async (tx) => {
       const company = await tx.company.findUnique({ where: { id: tenant.companyId } });
@@ -74,6 +572,17 @@ export class GstPortalService {
         (process.env.GST_EINVOICE_CLIENT_SECRET && process.env.GST_EINVOICE_PASSWORD)
       );
       return {
+        company: {
+          id: company?.id,
+          legalName: company?.legalName || "",
+          tradeName: company?.tradeName || "",
+          gstin: company?.gstin || "",
+          pan: company?.pan || "",
+          stateCode: company?.stateCode || "24",
+          gstType: company?.gstType || "REGULAR",
+          compositionScheme: company?.compositionScheme || false,
+          eInvoiceApplicable: company?.eInvoiceApplicable || false,
+        },
         environment: config?.environment ?? "PRODUCTION",
         productionEnabled: config?.productionEnabled ?? true,
         einvoiceClientId: config?.einvoiceClientId ?? null,
@@ -224,6 +733,13 @@ export class GstPortalService {
       ewayPassword?: string;
       einvoiceBaseUrl?: string;
       ewayBaseUrl?: string;
+      gstin?: string;
+      legalName?: string;
+      tradeName?: string;
+      stateCode?: string;
+      gstType?: string;
+      compositionScheme?: boolean;
+      eInvoiceApplicable?: boolean;
     },
   ) {
     const environment = input.environment ?? "PRODUCTION";
@@ -244,6 +760,31 @@ export class GstPortalService {
     const key = ring.current;
 
     return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      if (
+        input.gstin !== undefined ||
+        input.legalName !== undefined ||
+        input.tradeName !== undefined ||
+        input.stateCode !== undefined ||
+        input.gstType !== undefined ||
+        input.compositionScheme !== undefined ||
+        input.eInvoiceApplicable !== undefined
+      ) {
+        let cleanGstin = input.gstin ? input.gstin.trim().toUpperCase() : undefined;
+        let cleanStateCode = input.stateCode ? input.stateCode.trim() : (cleanGstin ? cleanGstin.slice(0, 2) : undefined);
+        await tx.company.update({
+          where: { id: tenant.companyId },
+          data: {
+            ...(cleanGstin !== undefined ? { gstin: cleanGstin } : {}),
+            ...(input.legalName !== undefined ? { legalName: input.legalName.trim() } : {}),
+            ...(input.tradeName !== undefined ? { tradeName: input.tradeName.trim() } : {}),
+            ...(cleanStateCode !== undefined ? { stateCode: cleanStateCode } : {}),
+            ...(input.gstType !== undefined ? { gstType: input.gstType as any } : {}),
+            ...(input.compositionScheme !== undefined ? { compositionScheme: Boolean(input.compositionScheme) } : {}),
+            ...(input.eInvoiceApplicable !== undefined ? { eInvoiceApplicable: Boolean(input.eInvoiceApplicable) } : {}),
+          },
+        });
+      }
+
       const company = await tx.company.findUnique({ where: { id: tenant.companyId } });
       const existing = await tx.gstIntegrationConfig.findUnique({
         where: { companyId: tenant.companyId },

@@ -8,7 +8,7 @@ import {
   HttpStatus,
 } from "@nestjs/common";
 import { SubscriptionsService } from "./subscriptions.service";
-import { CreateOrderDto } from "./dto/create-order.dto";
+import { CreateOrderDto, ValidateCouponDto } from "./dto/create-order.dto";
 import { VerifyPaymentDto } from "./dto/verify-payment.dto";
 import { PublicOrderDto } from "./dto/public-order.dto";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
@@ -24,6 +24,13 @@ export class SubscriptionsController {
   @Get("plans")
   getPlans() {
     return this.subscriptionsService.getPlans();
+  }
+
+  @Public()
+  @Post("validate-coupon")
+  @HttpCode(HttpStatus.OK)
+  async validateCoupon(@Body() dto: ValidateCouponDto) {
+    return this.subscriptionsService.validateCoupon(dto);
   }
 
   @Public()

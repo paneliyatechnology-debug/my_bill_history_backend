@@ -42,6 +42,25 @@ export class GstController {
     private readonly gstVerification: GstVerificationService,
   ) {}
 
+  @Get("dashboard-summary")
+  @Roles(...readers)
+  getDashboardSummary(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("fromDate") fromDate?: string,
+    @Query("toDate") toDate?: string,
+    @Query("month") month?: string,
+    @Query("year") year?: string,
+    @Query("returnPeriod") returnPeriod?: string,
+  ) {
+    return this.portal.getDashboardSummary(tenant, {
+      fromDate,
+      toDate,
+      month,
+      year,
+      returnPeriod,
+    });
+  }
+
   @Post("verify-gstin")
   @Roles(...readers, ...writers)
   verifyGstin(

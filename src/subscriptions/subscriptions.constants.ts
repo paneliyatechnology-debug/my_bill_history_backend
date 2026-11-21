@@ -1,5 +1,13 @@
 import { SubscriptionTier } from "../shared-types";
 
+export const TIER_RANKS: Record<string, number> = {
+  [SubscriptionTier.TRIAL]: 0,
+  [SubscriptionTier.RETAIL_BASIC]: 1,
+  [SubscriptionTier.WHOLESALE_PRO]: 2,
+  [SubscriptionTier.DISTRIBUTION_ENTERPRISE]: 3,
+  [SubscriptionTier.MANUFACTURING_SUITE]: 4,
+};
+
 export interface PlanPricing {
   tier: SubscriptionTier;
   id: string; // "starter" | "professional" | "enterprise"

@@ -28,6 +28,37 @@ export class SuperAdminController {
     return this.superAdminService.getStats();
   }
 
+  @Get("plans")
+  async getPlans() {
+    return this.superAdminService.getSubscriptionPlans();
+  }
+
+  @Post("plans")
+  @HttpCode(HttpStatus.CREATED)
+  async createPlan(
+    @Body() dto: any,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.createSubscriptionPlan(dto, superAdminUserId);
+  }
+
+  @Patch("plans/:id")
+  async updatePlan(
+    @Param("id") id: string,
+    @Body() dto: any,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.updateSubscriptionPlan(id, dto, superAdminUserId);
+  }
+
+  @Delete("plans/:id")
+  async deletePlan(
+    @Param("id") id: string,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.deleteSubscriptionPlan(id, superAdminUserId);
+  }
+
   @Get("tenants")
   async getTenants(
     @Query("search") search?: string,
@@ -167,5 +198,125 @@ export class SuperAdminController {
     @CurrentUser("id") superAdminUserId: string,
   ) {
     return this.superAdminService.bulkUpdateTenantStatus(body?.tenantIds || [], body?.isActive, superAdminUserId);
+  }
+
+  // 1. Subscriptions Management
+  @Get("subscriptions")
+  async getSubscriptions(
+    @Query("search") search?: string,
+    @Query("tier") tier?: string,
+    @Query("status") status?: string,
+    @Query("page") page?: number,
+    @Query("limit") limit?: number,
+  ) {
+    return this.superAdminService.getSubscriptions({ search, tier, status, page, limit });
+  }
+
+  @Post("subscriptions/:id/action")
+  @HttpCode(HttpStatus.OK)
+  async updateSubscription(
+    @Param("id") id: string,
+    @Body() dto: any,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.updateSubscription(id, dto, superAdminUserId);
+  }
+
+  // 2. Transactions & Payments
+  @Get("transactions")
+  async getTransactions(
+    @Query("search") search?: string,
+    @Query("tier") tier?: string,
+    @Query("status") status?: string,
+    @Query("page") page?: number,
+    @Query("limit") limit?: number,
+  ) {
+    return this.superAdminService.getTransactions({ search, tier, status, page, limit });
+  }
+
+  @Post("transactions/:id/refund")
+  @HttpCode(HttpStatus.OK)
+  async refundTransaction(
+    @Param("id") id: string,
+    @Body("reason") reason: string,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.refundTransaction(id, reason, superAdminUserId);
+  }
+
+  // 3. Platform Analytics
+  @Get("analytics")
+  async getAnalytics(@Query("timeframe") timeframe?: string) {
+    return this.superAdminService.getPlatformAnalytics(timeframe);
+  }
+
+  // 4. Promotional Coupons
+  @Get("coupons")
+  async getCoupons() {
+    return this.superAdminService.getCoupons();
+  }
+
+  @Post("coupons")
+  @HttpCode(HttpStatus.CREATED)
+  async createCoupon(
+    @Body() dto: any,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.createCoupon(dto, superAdminUserId);
+  }
+
+  @Patch("coupons/:id")
+  async updateCoupon(
+    @Param("id") id: string,
+    @Body() dto: any,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.updateCoupon(id, dto, superAdminUserId);
+  }
+
+  @Delete("coupons/:id")
+  async deleteCoupon(
+    @Param("id") id: string,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.deleteCoupon(id, superAdminUserId);
+  }
+
+  // 5. Add-ons Catalog
+  @Get("addons")
+  async getAddons() {
+    return this.superAdminService.getAddons();
+  }
+
+  @Post("addons")
+  @HttpCode(HttpStatus.CREATED)
+  async createAddon(
+    @Body() dto: any,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.createAddon(dto, superAdminUserId);
+  }
+
+  @Patch("addons/:id")
+  async updateAddon(
+    @Param("id") id: string,
+    @Body() dto: any,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.updateAddon(id, dto, superAdminUserId);
+  }
+
+  // 6. Platform Settings
+  @Get("settings")
+  async getSettings() {
+    return this.superAdminService.getPlatformSettings();
+  }
+
+  @Patch("settings")
+  async updateSettings(
+    @Body() dto: any,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.updatePlatformSettings(dto, superAdminUserId);
   }
 }

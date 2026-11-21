@@ -8,12 +8,14 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as crypto from "crypto";
+import * as fs from "fs";
+import * as path from "path";
 import Razorpay from "razorpay";
 import { DatabaseService } from "../database/database.service";
 import { SessionEventsService } from "../auth/session-events.service";
 import { TenantContext, SubscriptionTier, getPlanEntitlements } from "../shared-types";
-import { SUBSCRIPTION_PLANS, PlanPricing } from "./subscriptions.constants";
-import { CreateOrderDto } from "./dto/create-order.dto";
+import { SUBSCRIPTION_PLANS, PlanPricing, TIER_RANKS } from "./subscriptions.constants";
+import { CreateOrderDto, ValidateCouponDto } from "./dto/create-order.dto";
 import { VerifyPaymentDto } from "./dto/verify-payment.dto";
 import { PublicOrderDto } from "./dto/public-order.dto";
 
@@ -66,10 +68,200 @@ export class SubscriptionsService {
     }
   }
 
-  getPlans(): PlanPricing[] {
+  private getPlanConfig(tier: string): any {
+    try {
+      const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
+      if (fs.existsSync(plansFile)) {
+        const raw = fs.readFileSync(plansFile, "utf-8");
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          const found = list.find(
+            (p: any) =>
+              p.tier?.toUpperCase() === tier?.toUpperCase() ||
+              p.id?.toLowerCase() === tier?.toLowerCase(),
+          );
+          if (found) {
+            const monthlyPrice = Number(found.monthlyPrice) || 0;
+            const yearlyPrice = Number(found.yearlyPrice) || 0;
+            const annualTotal = Number(found.annualTotal) || yearlyPrice * 12;
+            return {
+              ...found,
+              monthlyPaise: found.monthlyPaise || monthlyPrice * 100,
+              yearlyPaise: found.yearlyPaise || annualTotal * 100,
+            };
+          }
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`Error resolving plan config from file: ${err?.message}`);
+    }
+    return SUBSCRIPTION_PLANS[tier as SubscriptionTier] || null;
+  }
+
+  private getBypassPlanRestrictions(): boolean {
+    try {
+      const file = path.resolve(process.cwd(), "data", "platform-settings.json");
+      if (fs.existsSync(file)) {
+        const data = JSON.parse(fs.readFileSync(file, "utf-8"));
+        return Boolean(data.bypassPlanRestrictions);
+      }
+    } catch {}
+    return false;
+  }
+
+  private getEntitlementsForTier(tier: string): Record<string, boolean> {
+    try {
+      const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
+      if (fs.existsSync(plansFile)) {
+        const raw = fs.readFileSync(plansFile, "utf-8");
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          const found = list.find(
+            (p: any) =>
+              p.tier?.toUpperCase() === tier?.toUpperCase() ||
+              p.id?.toLowerCase() === tier?.toLowerCase(),
+          );
+          if (found && found.entitlements) {
+            return found.entitlements;
+          }
+        }
+      }
+    } catch {}
+    return {};
+  }
+
+  getPlans(): any[] {
+    try {
+      const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
+      if (fs.existsSync(plansFile)) {
+        const raw = fs.readFileSync(plansFile, "utf-8");
+        const list = JSON.parse(raw);
+        if (Array.isArray(list) && list.length > 0) {
+          // Return all active configured tiers from Superadmin (excluding trial for public checkout, or all active)
+          const activePlans = list.filter(
+            (p: any) => p.isActive !== false && p.tier !== SubscriptionTier.TRIAL,
+          );
+          if (activePlans.length > 0) {
+            return activePlans;
+          }
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(`Failed reading subscription-plans.json: ${e?.message}`);
+    }
     return Object.values(SUBSCRIPTION_PLANS).filter(
       (p) => p.tier !== SubscriptionTier.TRIAL,
     );
+  }
+
+  getCoupons(): any[] {
+    try {
+      const file = path.resolve(process.cwd(), "data", "coupons.json");
+      if (fs.existsSync(file)) {
+        return JSON.parse(fs.readFileSync(file, "utf-8"));
+      }
+    } catch (e: any) {
+      this.logger.warn(`Failed reading coupons.json: ${e?.message}`);
+    }
+    return [];
+  }
+
+  recordCouponUsage(code: string) {
+    if (!code) return;
+    try {
+      const file = path.resolve(process.cwd(), "data", "coupons.json");
+      if (fs.existsSync(file)) {
+        const coupons = JSON.parse(fs.readFileSync(file, "utf-8"));
+        const c = coupons.find((item: any) => item.code?.toUpperCase() === code?.toUpperCase());
+        if (c) {
+          c.usedCount = (c.usedCount || 0) + 1;
+          c.updatedAt = new Date().toISOString();
+          fs.writeFileSync(file, JSON.stringify(coupons, null, 2), "utf-8");
+          const secondary = "/home/dell/Jaydeep/billing_superadmin/data/coupons.json";
+          if (fs.existsSync(path.dirname(secondary))) {
+            fs.writeFileSync(secondary, JSON.stringify(coupons, null, 2), "utf-8");
+          }
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed updating coupon usage: ${err?.message}`);
+    }
+  }
+
+  validateCoupon(dto: ValidateCouponDto) {
+    const rawCode = (dto.code || "").toUpperCase().trim();
+    if (!rawCode) {
+      throw new BadRequestException("Please enter a valid coupon code.");
+    }
+
+    const coupons = this.getCoupons();
+    const coupon = coupons.find((c: any) => c.code?.toUpperCase() === rawCode);
+
+    if (!coupon) {
+      throw new BadRequestException(`Coupon code "${rawCode}" is invalid or does not exist.`);
+    }
+
+    if (coupon.isActive === false) {
+      throw new BadRequestException(`Coupon code "${rawCode}" has been disabled.`);
+    }
+
+    if (coupon.validUntil && new Date(coupon.validUntil).getTime() < Date.now()) {
+      throw new BadRequestException(`Coupon code "${rawCode}" has expired.`);
+    }
+
+    if (coupon.usageLimit && (coupon.usedCount || 0) >= coupon.usageLimit) {
+      throw new BadRequestException(`Coupon code "${rawCode}" has reached its maximum usage limit.`);
+    }
+
+    const targetTier = (dto.tier || "").toUpperCase();
+    if (
+      Array.isArray(coupon.validTiers) &&
+      coupon.validTiers.length > 0 &&
+      !coupon.validTiers.map((t: string) => t.toUpperCase()).includes(targetTier)
+    ) {
+      throw new BadRequestException(
+        `Coupon "${rawCode}" is not applicable to the ${targetTier} plan. Applicable tiers: ${coupon.validTiers.join(", ")}`,
+      );
+    }
+
+    const subtotal = Math.max(0, Number(dto.subtotal) || 0);
+    if (coupon.minAmount && subtotal > 0 && subtotal < coupon.minAmount) {
+      throw new BadRequestException(
+        `Minimum order amount of ₹${coupon.minAmount.toLocaleString("en-IN")} required to use "${rawCode}" (Current order: ₹${subtotal.toLocaleString("en-IN")}).`,
+      );
+    }
+
+    let discountAmount = 0;
+    if (coupon.discountType === "PERCENTAGE") {
+      discountAmount = Math.round((subtotal * Number(coupon.discountValue || 0)) / 100);
+      if (coupon.maxDiscount && discountAmount > coupon.maxDiscount) {
+        discountAmount = coupon.maxDiscount;
+      }
+    } else {
+      discountAmount = Math.min(subtotal, Number(coupon.discountValue || 0));
+    }
+
+    // Ensure we don't discount 100% so at least ₹1 is charged for gateway
+    if (subtotal > 1 && discountAmount >= subtotal) {
+      discountAmount = subtotal - 1;
+    }
+    if (discountAmount < 0) discountAmount = 0;
+
+    return {
+      success: true,
+      valid: true,
+      code: coupon.code,
+      description: coupon.description,
+      discountType: coupon.discountType,
+      discountValue: coupon.discountValue,
+      discountAmount,
+      maxDiscount: coupon.maxDiscount,
+      minAmount: coupon.minAmount,
+      message:
+        coupon.discountType === "PERCENTAGE"
+          ? `Coupon ${coupon.code} applied! ${coupon.discountValue}% discount (Saved ₹${discountAmount.toLocaleString("en-IN")}).`
+          : `Coupon ${coupon.code} applied! Flat ₹${discountAmount.toLocaleString("en-IN")} discount.`,
+    };
   }
 
   async getCurrentSubscription(ctx: TenantContext) {
@@ -90,7 +282,8 @@ export class SubscriptionsService {
       const tenant = org.tenant;
       const currentTier = tenant.subscriptionTier || SubscriptionTier.TRIAL;
       const planEntitlements = getPlanEntitlements(currentTier);
-      const planPricing = SUBSCRIPTION_PLANS[currentTier] || SUBSCRIPTION_PLANS[SubscriptionTier.RETAIL_BASIC];
+      const planConfig = this.getPlanConfig(currentTier);
+      const planPricing = planConfig || SUBSCRIPTION_PLANS[currentTier] || SUBSCRIPTION_PLANS[SubscriptionTier.RETAIL_BASIC];
 
       const currentCompanies = await tx.company.count({
         where: { organizationId: ctx.organizationId },
@@ -106,7 +299,9 @@ export class SubscriptionsService {
       const ends = tenant.subscriptionEnds ? new Date(tenant.subscriptionEnds) : null;
       const isExpired = ends ? ends.getTime() < Date.now() : false;
       const daysRemaining = ends ? Math.ceil((ends.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
-      const isActive = tenant.isActive && !isExpired;
+      const bypassPlanRestrictions = this.getBypassPlanRestrictions();
+      const isActive = bypassPlanRestrictions || (tenant.isActive && !isExpired);
+      const granularEntitlements = this.getEntitlementsForTier(currentTier);
 
       return {
         tenantId: tenant.id,
@@ -119,21 +314,23 @@ export class SubscriptionsService {
         isExpired,
         daysRemaining: Math.max(0, daysRemaining),
         isActive,
-        maxCompanies: planEntitlements.maxCompanies,
+        maxCompanies: planPricing?.maxCompanies ?? planEntitlements.maxCompanies,
         currentCompanies,
-        canAddCompany: currentCompanies < planEntitlements.maxCompanies,
+        canAddCompany: bypassPlanRestrictions || currentCompanies < (planPricing?.maxCompanies ?? planEntitlements.maxCompanies),
         maxBranchesPerCompany: planEntitlements.maxBranchesPerCompany,
-        maxUsers: planEntitlements.maxUsers,
-        maxInvoicesPerYear: planEntitlements.maxInvoicesPerYear,
+        maxUsers: planPricing?.maxUsers ?? planEntitlements.maxUsers,
+        maxInvoicesPerYear: planPricing?.maxInvoicesPerYear ?? planEntitlements.maxInvoicesPerYear,
         currentInvoices: currentYearInvoices,
         features: planEntitlements.features,
+        granularEntitlements,
+        bypassPlanRestrictions,
         pricing: planPricing,
       };
     });
   }
 
   async createPublicOrder(dto: PublicOrderDto) {
-    const plan = SUBSCRIPTION_PLANS[dto.tier];
+    const plan = this.getPlanConfig(dto.tier);
     if (!plan || dto.tier === SubscriptionTier.TRIAL) {
       throw new BadRequestException(`Invalid subscription tier: ${dto.tier}`);
     }
@@ -252,14 +449,10 @@ export class SubscriptionsService {
       throw new BadRequestException("Organization context is required.");
     }
 
-    const plan = SUBSCRIPTION_PLANS[dto.tier];
+    const plan = this.getPlanConfig(dto.tier);
     if (!plan || dto.tier === SubscriptionTier.TRIAL) {
       throw new BadRequestException(`Invalid subscription tier: ${dto.tier}`);
     }
-
-    const billingCycle = dto.billingCycle === "monthly" ? "monthly" : "yearly";
-    const amountInPaise = billingCycle === "yearly" ? plan.yearlyPaise : plan.monthlyPaise;
-    const amountInRupees = amountInPaise / 100;
 
     const org = await this.prisma.executeBypassRls(async (tx) => {
       return tx.organization.findUnique({
@@ -273,6 +466,70 @@ export class SubscriptionsService {
     }
 
     const tenant = org.tenant;
+    const currentTier = (tenant.subscriptionTier || SubscriptionTier.TRIAL) as SubscriptionTier;
+    const ends = tenant.subscriptionEnds ? new Date(tenant.subscriptionEnds) : null;
+    const isExpired = ends ? ends.getTime() < Date.now() : true;
+    const daysRemaining = ends && !isExpired ? Math.ceil((ends.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+
+    const currentRank = TIER_RANKS[currentTier] ?? 0;
+    const targetRank = TIER_RANKS[dto.tier] ?? 0;
+
+    // 1. Prevent Downgrade during active subscription period
+    if (!isExpired && daysRemaining > 0 && targetRank < currentRank) {
+      throw new BadRequestException(
+        `Downgrading from ${currentTier} to ${dto.tier} is not permitted during an active subscription period (${daysRemaining} days remaining). You may switch plans after your current billing period ends.`,
+      );
+    }
+
+    // 2. Industry Standard Proration: calculate unused credit when upgrading mid-cycle
+    const billingCycle = dto.billingCycle === "monthly" ? "monthly" : "yearly";
+    const targetPlanBasePaise = billingCycle === "yearly" ? plan.yearlyPaise : plan.monthlyPaise;
+    let unusedCreditPaise = 0;
+    const isUpgrade = !isExpired && daysRemaining > 0 && targetRank > currentRank && currentTier !== SubscriptionTier.TRIAL;
+    const isRenewal = targetRank === currentRank;
+
+    if (isUpgrade) {
+      const currentPlanConfig = this.getPlanConfig(currentTier);
+      const currentCyclePaise = currentPlanConfig
+        ? (billingCycle === "yearly" ? (currentPlanConfig.yearlyPaise || (currentPlanConfig.annualTotal * 100)) : (currentPlanConfig.monthlyPaise || (currentPlanConfig.monthlyPrice * 100)))
+        : 0;
+
+      const totalDaysInCycle = billingCycle === "yearly" ? 365 : 30;
+      const dailyRatePaise = currentCyclePaise > 0 ? (currentCyclePaise / totalDaysInCycle) : 0;
+      unusedCreditPaise = Math.round(dailyRatePaise * daysRemaining);
+
+      // Protect against over-crediting
+      if (unusedCreditPaise >= targetPlanBasePaise) {
+        unusedCreditPaise = targetPlanBasePaise - 100; // minimum ₹1 (100 paise) charge
+      }
+      if (unusedCreditPaise < 0) unusedCreditPaise = 0;
+    }
+
+    const priceAfterProrationPaise = Math.max(100, targetPlanBasePaise - unusedCreditPaise);
+    let couponDiscountPaise = 0;
+    let validatedCoupon: any = null;
+
+    if (dto.couponCode) {
+      const subtotalRupees = priceAfterProrationPaise / 100;
+      validatedCoupon = this.validateCoupon({
+        code: dto.couponCode,
+        tier: dto.tier,
+        billingCycle,
+        subtotal: subtotalRupees,
+      });
+
+      if (validatedCoupon && validatedCoupon.valid) {
+        couponDiscountPaise = Math.round(validatedCoupon.discountAmount * 100);
+        if (priceAfterProrationPaise - couponDiscountPaise < 100) {
+          couponDiscountPaise = priceAfterProrationPaise - 100; // minimum ₹1 (100 paise) charge
+        }
+        if (couponDiscountPaise < 0) couponDiscountPaise = 0;
+      }
+    }
+
+    const finalAmountInPaise = Math.max(100, priceAfterProrationPaise - couponDiscountPaise);
+    const amountInRupees = finalAmountInPaise / 100;
+
     const tenantShortId = tenant.id.replace(/-/g, "").slice(0, 6).toUpperCase();
     const receiptNo = `MBB-REC-${tenantShortId}-${Date.now().toString().slice(-6)}`;
 
@@ -281,7 +538,7 @@ export class SubscriptionsService {
     if (this.razorpayInstance) {
       try {
         const rzpOrder = await this.razorpayInstance.orders.create({
-          amount: amountInPaise,
+          amount: finalAmountInPaise,
           currency: "INR",
           receipt: receiptNo,
           notes: {
@@ -289,10 +546,18 @@ export class SubscriptionsService {
             organizationId: org.id,
             tier: dto.tier,
             billingCycle,
+            isUpgrade: String(isUpgrade),
+            isRenewal: String(isRenewal),
+            previousTier: currentTier,
+            daysRemaining: String(daysRemaining),
+            originalAmountPaise: String(targetPlanBasePaise),
+            unusedCreditPaise: String(unusedCreditPaise),
+            couponCode: dto.couponCode ? String(dto.couponCode).toUpperCase().trim() : "",
+            couponDiscountPaise: String(couponDiscountPaise),
           },
         });
         orderId = rzpOrder.id;
-        this.logger.log(`Created Razorpay Order: ${orderId} for tier: ${dto.tier} (${billingCycle})`);
+        this.logger.log(`Created Razorpay Order: ${orderId} for tier: ${dto.tier} (${billingCycle}). Net: ₹${amountInRupees} (Credit: ₹${unusedCreditPaise / 100}, Coupon: ₹${couponDiscountPaise / 100})`);
       } catch (err: any) {
         this.logger.warn(`Razorpay order API failed (${err?.message}). Falling back to simulation order.`);
         orderId = `order_sim_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -317,6 +582,15 @@ export class SubscriptionsService {
           notes: {
             planName: plan.name,
             billingCycle,
+            isUpgrade,
+            isRenewal,
+            previousTier: currentTier,
+            daysRemaining,
+            originalPriceRupees: targetPlanBasePaise / 100,
+            unusedCreditRupees: unusedCreditPaise / 100,
+            couponCode: dto.couponCode ? String(dto.couponCode).toUpperCase().trim() : null,
+            couponDiscountRupees: couponDiscountPaise / 100,
+            netPayableRupees: amountInRupees,
             createdVia: "WEB_CHECKOUT",
           },
         },
@@ -331,8 +605,18 @@ export class SubscriptionsService {
     return {
       success: true,
       orderId,
-      amount: amountInPaise,
+      amount: finalAmountInPaise,
       amountRupees: amountInRupees,
+      originalAmountPaise: targetPlanBasePaise,
+      originalAmountRupees: targetPlanBasePaise / 100,
+      unusedCreditPaise,
+      unusedCreditRupees: unusedCreditPaise / 100,
+      couponCode: dto.couponCode ? String(dto.couponCode).toUpperCase().trim() : null,
+      couponDiscountRupees: couponDiscountPaise / 100,
+      daysRemaining,
+      isUpgrade,
+      isRenewal,
+      currentTier,
       currency: "INR",
       keyId,
       tier: dto.tier,
@@ -353,7 +637,7 @@ export class SubscriptionsService {
     }
 
     const { orderId, paymentId, signature, tier, billingCycle } = dto;
-    const plan = SUBSCRIPTION_PLANS[tier];
+    const plan = this.getPlanConfig(tier) || SUBSCRIPTION_PLANS[tier as SubscriptionTier];
     if (!plan) {
       throw new BadRequestException(`Invalid subscription tier: ${tier}`);
     }
@@ -389,12 +673,23 @@ export class SubscriptionsService {
       }
 
       const tenant = org.tenant;
+      const currentTier = (tenant.subscriptionTier || SubscriptionTier.TRIAL) as SubscriptionTier;
+      const currentRank = TIER_RANKS[currentTier] ?? 0;
+      const targetRank = TIER_RANKS[tier as SubscriptionTier] ?? 0;
+      const isUpgrade = targetRank > currentRank;
 
-      // Extend subscription from existing end date if active, or from today
       const daysToAdd = billingCycle === "yearly" ? 365 : 30;
-      const currentEnds = tenant.subscriptionEnds ? new Date(tenant.subscriptionEnds) : new Date();
-      const baseDate = currentEnds.getTime() > Date.now() ? currentEnds : new Date();
-      const newSubscriptionEnds = new Date(baseDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+      let newSubscriptionEnds: Date;
+
+      if (isUpgrade) {
+        // Upgrading with prorated credit starts fresh full period from today
+        newSubscriptionEnds = new Date(Date.now() + daysToAdd * 24 * 60 * 60 * 1000);
+      } else {
+        // Renewal extends existing end date if active, or starts from today
+        const currentEnds = tenant.subscriptionEnds ? new Date(tenant.subscriptionEnds) : new Date();
+        const baseDate = currentEnds.getTime() > Date.now() ? currentEnds : new Date();
+        newSubscriptionEnds = new Date(baseDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+      }
 
       // Update or create payment record
       const existingPayment = await tx.subscriptionPayment.findUnique({
@@ -413,6 +708,10 @@ export class SubscriptionsService {
             billingCycle,
           },
         });
+        const couponUsed = (existingPayment.notes as any)?.couponCode;
+        if (couponUsed) {
+          this.recordCouponUsage(couponUsed);
+        }
       } else {
         const amountPaise = billingCycle === "yearly" ? plan.yearlyPaise : plan.monthlyPaise;
         await tx.subscriptionPayment.create({

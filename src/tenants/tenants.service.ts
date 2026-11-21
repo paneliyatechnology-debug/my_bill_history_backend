@@ -5,6 +5,8 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import * as bcrypt from "bcryptjs";
+import * as fs from "fs";
+import * as path from "path";
 import { DatabaseService } from "../database/database.service";
 import { AuditService } from "../audit/audit.service";
 import { LedgersService } from "../ledgers/ledgers.service";
@@ -23,6 +25,7 @@ import {
   companySettingsCatalog,
   matchIndianStateCode,
 } from "./company-settings.catalog";
+import { TIER_RANKS } from "../subscriptions/subscriptions.constants";
 import {
   STANDARD_SME_GROUPS,
   STANDARD_SME_ACCOUNTS,
@@ -90,6 +93,37 @@ export class TenantsService {
     private readonly sessionEvents: SessionEventsService,
   ) {}
 
+  private getBypassPlanRestrictions(): boolean {
+    try {
+      const file = path.resolve(process.cwd(), "data", "platform-settings.json");
+      if (fs.existsSync(file)) {
+        const data = JSON.parse(fs.readFileSync(file, "utf-8"));
+        return Boolean(data.bypassPlanRestrictions);
+      }
+    } catch {}
+    return false;
+  }
+
+  private getEntitlementsForTier(tier: string): Record<string, boolean> {
+    try {
+      const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
+      if (fs.existsSync(plansFile)) {
+        const list = JSON.parse(fs.readFileSync(plansFile, "utf-8"));
+        if (Array.isArray(list)) {
+          const found = list.find(
+            (p: any) =>
+              p.tier?.toUpperCase() === tier?.toUpperCase() ||
+              p.id?.toLowerCase() === tier?.toLowerCase(),
+          );
+          if (found && found.entitlements) {
+            return found.entitlements;
+          }
+        }
+      }
+    } catch {}
+    return {};
+  }
+
   async getCompanies(ctx: TenantContext) {
     return this.prisma.executeBypassRls(async (tx) => {
       return tx.company.findMany({
@@ -147,6 +181,8 @@ export class TenantsService {
 
     const tier = org?.tenant?.subscriptionTier || SubscriptionTier.TRIAL;
     const plan = getPlanEntitlements(tier);
+    const bypassPlanRestrictions = this.getBypassPlanRestrictions();
+    const granularEntitlements = this.getEntitlementsForTier(tier);
 
     return {
       companies: companies.map((c) => ({
@@ -178,14 +214,16 @@ export class TenantsService {
         nameGujarati: plan.nameGujarati,
         maxCompanies: plan.maxCompanies,
         currentCount: companies.length,
-        canAddCompany: companies.length < plan.maxCompanies,
+        canAddCompany: bypassPlanRestrictions || companies.length < plan.maxCompanies,
         maxBranchesPerCompany: plan.maxBranchesPerCompany,
         maxUsers: plan.maxUsers,
         subscriptionEnds: org?.tenant?.subscriptionEnds,
         isExpired: org?.tenant?.subscriptionEnds ? new Date(org.tenant.subscriptionEnds).getTime() < Date.now() : false,
         daysRemaining: org?.tenant?.subscriptionEnds ? Math.ceil((new Date(org.tenant.subscriptionEnds).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0,
-        isActive: (org?.tenant?.isActive ?? true) && (org?.tenant?.subscriptionEnds ? new Date(org.tenant.subscriptionEnds).getTime() >= Date.now() : true),
+        isActive: bypassPlanRestrictions || ((org?.tenant?.isActive ?? true) && (org?.tenant?.subscriptionEnds ? new Date(org.tenant.subscriptionEnds).getTime() >= Date.now() : true)),
         features: plan.features,
+        granularEntitlements,
+        bypassPlanRestrictions,
       },
     };
   }
@@ -230,8 +268,9 @@ export class TenantsService {
         where: { organizationId: ctx.organizationId },
       });
 
+      const bypassPlanRestrictions = this.getBypassPlanRestrictions();
       const plan = getPlanEntitlements(org.tenant.subscriptionTier);
-      if (currentCount >= plan.maxCompanies) {
+      if (!bypassPlanRestrictions && currentCount >= plan.maxCompanies) {
         throw new ForbiddenException({
           statusCode: 403,
           error: "PLAN_LIMIT_REACHED",
@@ -1364,10 +1403,31 @@ export class TenantsService {
       throw new NotFoundException("Organization or Tenant not found");
     }
 
+    const currentTier = (org.tenant.subscriptionTier || SubscriptionTier.TRIAL) as SubscriptionTier;
+    const currentRank = TIER_RANKS[currentTier] ?? 0;
+    const targetRank = TIER_RANKS[dto.tier as SubscriptionTier] ?? 0;
+    const ends = org.tenant.subscriptionEnds ? new Date(org.tenant.subscriptionEnds) : null;
+    const isExpired = ends ? ends.getTime() < Date.now() : true;
+    const daysRemaining = ends && !isExpired ? Math.ceil((ends.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+
+    // Prevent downgrade during active subscription
+    if (!isExpired && daysRemaining > 0 && targetRank < currentRank) {
+      throw new BadRequestException(
+        `Downgrading from ${currentTier} to ${dto.tier} is not allowed during an active subscription period (${daysRemaining} days remaining).`,
+      );
+    }
+
     const daysToAdd = dto.billingCycle === "3years" ? 365 * 3 : 365;
-    const currentEnds = org.tenant.subscriptionEnds ? new Date(org.tenant.subscriptionEnds) : new Date();
-    const baseDate = currentEnds.getTime() > Date.now() ? currentEnds : new Date();
-    const newSubscriptionEnds = new Date(baseDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+    const isUpgrade = targetRank > currentRank;
+    let newSubscriptionEnds: Date;
+
+    if (isUpgrade) {
+      newSubscriptionEnds = new Date(Date.now() + daysToAdd * 24 * 60 * 60 * 1000);
+    } else {
+      const currentEnds = org.tenant.subscriptionEnds ? new Date(org.tenant.subscriptionEnds) : new Date();
+      const baseDate = currentEnds.getTime() > Date.now() ? currentEnds : new Date();
+      newSubscriptionEnds = new Date(baseDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+    }
 
     const updatedTenant = await this.prisma.executeBypassRls(async (tx) => {
       return tx.tenant.update({

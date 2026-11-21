@@ -422,6 +422,21 @@ describe("GST compliance phase", () => {
     });
     expect(gstr3b.statusCode).toBe(200);
     expect(JSON.parse(gstr3b.body).filingStatus).toBe("NOT_FILED");
+
+    const dashSummary = await app.inject({
+      method: "GET",
+      url: "/api/v1/gst/dashboard-summary?fromDate=2026-04-01&toDate=2026-04-30",
+      headers: headersA(),
+    });
+    expect(dashSummary.statusCode).toBe(200);
+    const summaryBody = JSON.parse(dashSummary.body);
+    expect(summaryBody.company).toBeDefined();
+    expect(summaryBody.salesTaxableValue).toBeDefined();
+    expect(summaryBody.estimatedCashPayable).toBeDefined();
+    expect(summaryBody.complianceStatuses).toBeDefined();
+    expect(summaryBody.complianceStatuses.gstr1).toBeDefined();
+    expect(summaryBody.complianceStatuses.reconciliationCounts).toBeDefined();
+
     const after = await prisma.executeBypassRls((tx) =>
       tx.voucher.count({ where: { companyId: companyA } }),
     );
