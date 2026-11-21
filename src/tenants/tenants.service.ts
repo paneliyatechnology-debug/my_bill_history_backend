@@ -93,32 +93,34 @@ export class TenantsService {
     private readonly sessionEvents: SessionEventsService,
   ) {}
 
-  private getBypassPlanRestrictions(): boolean {
+  private async getBypassPlanRestrictions(): Promise<boolean> {
     try {
-      const file = path.resolve(process.cwd(), "data", "platform-settings.json");
-      if (fs.existsSync(file)) {
-        const data = JSON.parse(fs.readFileSync(file, "utf-8"));
-        return Boolean(data.bypassPlanRestrictions);
+      const row = await this.prisma.executeBypassRls(async (tx) => {
+        return tx.platformSetting.findUnique({
+          where: { id: "default" },
+        });
+      });
+      if (row && row.data) {
+        return Boolean((row.data as any).bypassPlanRestrictions);
       }
     } catch {}
     return false;
   }
 
-  private getEntitlementsForTier(tier: string): Record<string, boolean> {
+  private async getEntitlementsForTier(tier: string): Promise<Record<string, boolean>> {
     try {
-      const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
-      if (fs.existsSync(plansFile)) {
-        const list = JSON.parse(fs.readFileSync(plansFile, "utf-8"));
-        if (Array.isArray(list)) {
-          const found = list.find(
-            (p: any) =>
-              p.tier?.toUpperCase() === tier?.toUpperCase() ||
-              p.id?.toLowerCase() === tier?.toLowerCase(),
-          );
-          if (found && found.entitlements) {
-            return found.entitlements;
-          }
-        }
+      const found = await this.prisma.executeBypassRls(async (tx) => {
+        return tx.subscriptionPlan.findFirst({
+          where: {
+            OR: [
+              { tier: tier?.toUpperCase() },
+              { id: tier?.toLowerCase() },
+            ],
+          },
+        });
+      });
+      if (found && found.entitlements) {
+        return found.entitlements as Record<string, boolean>;
       }
     } catch {}
     return {};
@@ -181,8 +183,8 @@ export class TenantsService {
 
     const tier = org?.tenant?.subscriptionTier || SubscriptionTier.TRIAL;
     const plan = getPlanEntitlements(tier);
-    const bypassPlanRestrictions = this.getBypassPlanRestrictions();
-    const granularEntitlements = this.getEntitlementsForTier(tier);
+    const bypassPlanRestrictions = await this.getBypassPlanRestrictions();
+    const granularEntitlements = await this.getEntitlementsForTier(tier);
 
     return {
       companies: companies.map((c) => ({
@@ -268,7 +270,7 @@ export class TenantsService {
         where: { organizationId: ctx.organizationId },
       });
 
-      const bypassPlanRestrictions = this.getBypassPlanRestrictions();
+      const bypassPlanRestrictions = await this.getBypassPlanRestrictions();
       const plan = getPlanEntitlements(org.tenant.subscriptionTier);
       if (!bypassPlanRestrictions && currentCount >= plan.maxCompanies) {
         throw new ForbiddenException({
@@ -908,6 +910,186 @@ export class TenantsService {
           isLocked: true,
         },
       });
+    });
+  }
+
+  async createFinancialYear(
+    ctx: TenantContext,
+    dto: { name: string; startDate: string; endDate: string; isCurrent?: boolean },
+  ) {
+    if (!dto.name || !dto.name.trim()) {
+      throw new BadRequestException("Financial year name is required (e.g. FY 2027-28).");
+    }
+    const start = new Date(dto.startDate);
+    const end = new Date(dto.endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new BadRequestException("Valid start and end dates are required.");
+    }
+    if (start >= end) {
+      throw new BadRequestException("Start date must be before end date.");
+    }
+
+    return this.prisma.executeBypassRls(async (tx) => {
+      let compId = ctx.companyId;
+      if (!compId) {
+        const primary = await tx.company.findFirst({
+          where: { organizationId: ctx.organizationId },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        });
+        compId = primary?.id;
+      }
+      if (!compId) throw new NotFoundException("Company not found.");
+
+      const existing = await tx.financialYear.findFirst({
+        where: {
+          companyId: compId,
+          OR: [
+            { name: dto.name.trim() },
+            { startDate: start, endDate: end },
+          ],
+        },
+      });
+      if (existing) {
+        throw new BadRequestException(`A financial year with name "${dto.name}" or matching dates already exists.`);
+      }
+
+      if (dto.isCurrent) {
+        await tx.financialYear.updateMany({
+          where: { companyId: compId },
+          data: { isCurrent: false },
+        });
+      }
+
+      return tx.financialYear.create({
+        data: {
+          companyId: compId,
+          name: dto.name.trim(),
+          startDate: start,
+          endDate: end,
+          isCurrent: Boolean(dto.isCurrent),
+          isLocked: false,
+        },
+      });
+    });
+  }
+
+  async updateFinancialYear(
+    ctx: TenantContext,
+    id: string,
+    dto: { name?: string; startDate?: string; endDate?: string; isLocked?: boolean; isCurrent?: boolean },
+  ) {
+    return this.prisma.executeBypassRls(async (tx) => {
+      let compId = ctx.companyId;
+      if (!compId) {
+        const primary = await tx.company.findFirst({
+          where: { organizationId: ctx.organizationId },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        });
+        compId = primary?.id;
+      }
+      if (!compId) throw new NotFoundException("Company not found.");
+
+      const fy = await tx.financialYear.findFirst({
+        where: { id, companyId: compId },
+      });
+      if (!fy) throw new NotFoundException("Financial year not found.");
+
+      const dataToUpdate: any = {};
+      if (dto.name !== undefined) {
+        if (!dto.name.trim()) throw new BadRequestException("Financial year name cannot be empty.");
+        dataToUpdate.name = dto.name.trim();
+      }
+
+      if (dto.startDate !== undefined) {
+        const start = new Date(dto.startDate);
+        if (isNaN(start.getTime())) throw new BadRequestException("Invalid start date.");
+        dataToUpdate.startDate = start;
+      }
+
+      if (dto.endDate !== undefined) {
+        const end = new Date(dto.endDate);
+        if (isNaN(end.getTime())) throw new BadRequestException("Invalid end date.");
+        dataToUpdate.endDate = end;
+      }
+
+      const finalStart = dataToUpdate.startDate || fy.startDate;
+      const finalEnd = dataToUpdate.endDate || fy.endDate;
+      if (new Date(finalStart) >= new Date(finalEnd)) {
+        throw new BadRequestException("Start date must be before end date.");
+      }
+
+      if (dto.isLocked !== undefined) {
+        dataToUpdate.isLocked = Boolean(dto.isLocked);
+      }
+
+      if (dto.isCurrent) {
+        await tx.financialYear.updateMany({
+          where: { companyId: compId },
+          data: { isCurrent: false },
+        });
+        dataToUpdate.isCurrent = true;
+      } else if (dto.isCurrent === false && fy.isCurrent) {
+        dataToUpdate.isCurrent = false;
+      }
+
+      return tx.financialYear.update({
+        where: { id: fy.id },
+        data: dataToUpdate,
+      });
+    });
+  }
+
+  async deleteFinancialYear(ctx: TenantContext, id: string) {
+    return this.prisma.executeBypassRls(async (tx) => {
+      let compId = ctx.companyId;
+      if (!compId) {
+        const primary = await tx.company.findFirst({
+          where: { organizationId: ctx.organizationId },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        });
+        compId = primary?.id;
+      }
+      if (!compId) throw new NotFoundException("Company not found.");
+
+      const fy = await tx.financialYear.findFirst({
+        where: { id, companyId: compId },
+        include: {
+          _count: {
+            select: {
+              salesInvoices: true,
+              purchaseInvoices: true,
+              vouchers: true,
+              salesReturns: true,
+              purchaseReturns: true,
+            },
+          },
+        },
+      });
+      if (!fy) throw new NotFoundException("Financial year not found.");
+
+      const totalTransactions =
+        (fy._count?.salesInvoices || 0) +
+        (fy._count?.purchaseInvoices || 0) +
+        (fy._count?.vouchers || 0) +
+        (fy._count?.salesReturns || 0) +
+        (fy._count?.purchaseReturns || 0);
+
+      if (totalTransactions > 0) {
+        throw new BadRequestException(
+          `Cannot delete financial year "${fy.name}" because it contains ${totalTransactions} transaction(s). You can lock or close it instead.`
+        );
+      }
+
+      const countTotal = await tx.financialYear.count({ where: { companyId: compId } });
+      if (countTotal <= 1) {
+        throw new BadRequestException("Cannot delete the only financial year of the company.");
+      }
+
+      await tx.financialYear.delete({ where: { id: fy.id } });
+      return { success: true, message: `Financial year ${fy.name} deleted successfully.` };
     });
   }
 

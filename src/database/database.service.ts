@@ -168,6 +168,86 @@ export class DatabaseService
       `).catch((err) => {
         this.logger.warn(`Notice: staff_payments table init: ${err.message}`);
       });
+
+      // Self-healing schema initialization for Super Admin Platform Management
+      await this.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "coupons" (
+            "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+            "code" VARCHAR(50) NOT NULL UNIQUE,
+            "description" TEXT,
+            "discount_type" VARCHAR(20) NOT NULL DEFAULT 'PERCENTAGE',
+            "discount_value" DECIMAL(10,2) NOT NULL DEFAULT 10,
+            "valid_tiers" JSONB NOT NULL DEFAULT '[]',
+            "min_amount" DECIMAL(12,2) NOT NULL DEFAULT 0,
+            "max_discount" DECIMAL(12,2) NOT NULL DEFAULT 5000,
+            "valid_until" TIMESTAMPTZ,
+            "usage_limit" INTEGER NOT NULL DEFAULT 100,
+            "used_count" INTEGER NOT NULL DEFAULT 0,
+            "is_active" BOOLEAN NOT NULL DEFAULT true,
+            "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "coupons_pkey" PRIMARY KEY ("id")
+        );
+        CREATE INDEX IF NOT EXISTS "coupons_code_is_active_idx" ON "coupons"("code", "is_active");
+
+        CREATE TABLE IF NOT EXISTS "subscription_plans" (
+            "id" VARCHAR(100) NOT NULL PRIMARY KEY,
+            "tier" VARCHAR(50) NOT NULL UNIQUE,
+            "name" VARCHAR(150) NOT NULL,
+            "name_gujarati" VARCHAR(150),
+            "subtitle" TEXT,
+            "subtitle_gujarati" TEXT,
+            "monthly_price" DECIMAL(12,2) NOT NULL DEFAULT 0,
+            "yearly_price" DECIMAL(12,2) NOT NULL DEFAULT 0,
+            "annual_total" DECIMAL(12,2) NOT NULL DEFAULT 0,
+            "discount_percent" INTEGER NOT NULL DEFAULT 0,
+            "monthly_paise" INTEGER NOT NULL DEFAULT 0,
+            "yearly_paise" INTEGER NOT NULL DEFAULT 0,
+            "max_companies" INTEGER NOT NULL DEFAULT 1,
+            "max_invoices_per_year" INTEGER NOT NULL DEFAULT -1,
+            "max_users" INTEGER NOT NULL DEFAULT 2,
+            "max_godowns" INTEGER NOT NULL DEFAULT 1,
+            "features" JSONB NOT NULL DEFAULT '[]',
+            "features_gujarati" JSONB NOT NULL DEFAULT '[]',
+            "entitlements" JSONB NOT NULL DEFAULT '{}',
+            "is_active" BOOLEAN NOT NULL DEFAULT true,
+            "is_popular" BOOLEAN NOT NULL DEFAULT false,
+            "badge" VARCHAR(50),
+            "badge_color" VARCHAR(100),
+            "accent_color" VARCHAR(30),
+            "is_default" BOOLEAN NOT NULL DEFAULT false,
+            "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS "subscription_plans_tier_is_active_idx" ON "subscription_plans"("tier", "is_active");
+
+        CREATE TABLE IF NOT EXISTS "platform_addons" (
+            "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+            "name" VARCHAR(150) NOT NULL,
+            "name_gujarati" VARCHAR(150),
+            "code" VARCHAR(50) NOT NULL UNIQUE,
+            "category" VARCHAR(50) NOT NULL DEFAULT 'GENERAL',
+            "description" TEXT,
+            "price" DECIMAL(12,2) NOT NULL DEFAULT 0,
+            "billing_cycle" VARCHAR(20) NOT NULL DEFAULT 'YEARLY',
+            "quota_added" INTEGER NOT NULL DEFAULT 1,
+            "unit" VARCHAR(50) NOT NULL DEFAULT 'Unit',
+            "is_active" BOOLEAN NOT NULL DEFAULT true,
+            "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "platform_addons_pkey" PRIMARY KEY ("id")
+        );
+        CREATE INDEX IF NOT EXISTS "platform_addons_code_is_active_idx" ON "platform_addons"("code", "is_active");
+
+        CREATE TABLE IF NOT EXISTS "platform_settings" (
+            "id" VARCHAR(50) NOT NULL PRIMARY KEY,
+            "data" JSONB NOT NULL DEFAULT '{}',
+            "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `).catch((err) => {
+        this.logger.warn(`Notice: super admin tables init: ${err.message}`);
+      });
     } catch {
       // Allow startup in environments without active DB
     }

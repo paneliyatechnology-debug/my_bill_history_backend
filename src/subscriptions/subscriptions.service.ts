@@ -68,133 +68,146 @@ export class SubscriptionsService {
     }
   }
 
-  private getPlanConfig(tier: string): any {
+  private async getPlanConfig(tier: string): Promise<any> {
     try {
-      const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
-      if (fs.existsSync(plansFile)) {
-        const raw = fs.readFileSync(plansFile, "utf-8");
-        const list = JSON.parse(raw);
-        if (Array.isArray(list)) {
-          const found = list.find(
-            (p: any) =>
-              p.tier?.toUpperCase() === tier?.toUpperCase() ||
-              p.id?.toLowerCase() === tier?.toLowerCase(),
-          );
-          if (found) {
-            const monthlyPrice = Number(found.monthlyPrice) || 0;
-            const yearlyPrice = Number(found.yearlyPrice) || 0;
-            const annualTotal = Number(found.annualTotal) || yearlyPrice * 12;
-            return {
-              ...found,
-              monthlyPaise: found.monthlyPaise || monthlyPrice * 100,
-              yearlyPaise: found.yearlyPaise || annualTotal * 100,
-            };
-          }
-        }
+      const found = await this.prisma.executeBypassRls(async (tx) => {
+        return tx.subscriptionPlan.findFirst({
+          where: {
+            OR: [
+              { tier: tier?.toUpperCase() },
+              { id: tier?.toLowerCase() },
+            ],
+          },
+        });
+      });
+      if (found) {
+        const monthlyPrice = Number(found.monthlyPrice) || 0;
+        const yearlyPrice = Number(found.yearlyPrice) || 0;
+        const annualTotal = Number(found.annualTotal) || yearlyPrice * 12;
+        return {
+          ...found,
+          monthlyPrice,
+          yearlyPrice,
+          annualTotal,
+          monthlyPaise: found.monthlyPaise || monthlyPrice * 100,
+          yearlyPaise: found.yearlyPaise || annualTotal * 100,
+        };
       }
     } catch (err: any) {
-      this.logger.warn(`Error resolving plan config from file: ${err?.message}`);
+      this.logger.warn(`Error resolving plan config from database: ${err?.message}`);
     }
     return SUBSCRIPTION_PLANS[tier as SubscriptionTier] || null;
   }
 
-  private getBypassPlanRestrictions(): boolean {
+  private async getBypassPlanRestrictions(): Promise<boolean> {
     try {
-      const file = path.resolve(process.cwd(), "data", "platform-settings.json");
-      if (fs.existsSync(file)) {
-        const data = JSON.parse(fs.readFileSync(file, "utf-8"));
-        return Boolean(data.bypassPlanRestrictions);
+      const row = await this.prisma.executeBypassRls(async (tx) => {
+        return tx.platformSetting.findUnique({
+          where: { id: "default" },
+        });
+      });
+      if (row && row.data) {
+        return Boolean((row.data as any).bypassPlanRestrictions);
       }
     } catch {}
     return false;
   }
 
-  private getEntitlementsForTier(tier: string): Record<string, boolean> {
+  private async getEntitlementsForTier(tier: string): Promise<Record<string, boolean>> {
     try {
-      const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
-      if (fs.existsSync(plansFile)) {
-        const raw = fs.readFileSync(plansFile, "utf-8");
-        const list = JSON.parse(raw);
-        if (Array.isArray(list)) {
-          const found = list.find(
-            (p: any) =>
-              p.tier?.toUpperCase() === tier?.toUpperCase() ||
-              p.id?.toLowerCase() === tier?.toLowerCase(),
-          );
-          if (found && found.entitlements) {
-            return found.entitlements;
-          }
-        }
+      const found = await this.prisma.executeBypassRls(async (tx) => {
+        return tx.subscriptionPlan.findFirst({
+          where: {
+            OR: [
+              { tier: tier?.toUpperCase() },
+              { id: tier?.toLowerCase() },
+            ],
+          },
+        });
+      });
+      if (found && found.entitlements) {
+        return found.entitlements as Record<string, boolean>;
       }
     } catch {}
     return {};
   }
 
-  getPlans(): any[] {
+  async getPlans(): Promise<any[]> {
     try {
-      const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
-      if (fs.existsSync(plansFile)) {
-        const raw = fs.readFileSync(plansFile, "utf-8");
-        const list = JSON.parse(raw);
-        if (Array.isArray(list) && list.length > 0) {
-          // Return all active configured tiers from Superadmin (excluding trial for public checkout, or all active)
-          const activePlans = list.filter(
-            (p: any) => p.isActive !== false && p.tier !== SubscriptionTier.TRIAL,
-          );
-          if (activePlans.length > 0) {
-            return activePlans;
-          }
-        }
+      const dbPlans = await this.prisma.executeBypassRls(async (tx) => {
+        return tx.subscriptionPlan.findMany({
+          where: {
+            isActive: true,
+            tier: { not: "TRIAL" },
+          },
+          orderBy: { monthlyPrice: "asc" },
+        });
+      });
+      if (dbPlans && dbPlans.length > 0) {
+        return dbPlans.map((p) => ({
+          ...p,
+          monthlyPrice: Number(p.monthlyPrice),
+          yearlyPrice: Number(p.yearlyPrice),
+          annualTotal: Number(p.annualTotal),
+        }));
       }
     } catch (e: any) {
-      this.logger.warn(`Failed reading subscription-plans.json: ${e?.message}`);
+      this.logger.warn(`Failed reading subscription plans from database: ${e?.message}`);
     }
     return Object.values(SUBSCRIPTION_PLANS).filter(
       (p) => p.tier !== SubscriptionTier.TRIAL,
     );
   }
 
-  getCoupons(): any[] {
+  async getCoupons(): Promise<any[]> {
     try {
-      const file = path.resolve(process.cwd(), "data", "coupons.json");
-      if (fs.existsSync(file)) {
-        return JSON.parse(fs.readFileSync(file, "utf-8"));
-      }
+      return await this.prisma.executeBypassRls(async (tx) => {
+        const rows = await tx.coupon.findMany({
+          where: { isActive: true },
+          orderBy: { createdAt: "desc" },
+        });
+        return rows.map((c) => ({
+          ...c,
+          discountValue: Number(c.discountValue),
+          minAmount: Number(c.minAmount),
+          maxDiscount: Number(c.maxDiscount),
+        }));
+      });
     } catch (e: any) {
-      this.logger.warn(`Failed reading coupons.json: ${e?.message}`);
+      this.logger.warn(`Failed reading coupons from database: ${e?.message}`);
     }
     return [];
   }
 
-  recordCouponUsage(code: string) {
+  async recordCouponUsage(code: string) {
     if (!code) return;
     try {
-      const file = path.resolve(process.cwd(), "data", "coupons.json");
-      if (fs.existsSync(file)) {
-        const coupons = JSON.parse(fs.readFileSync(file, "utf-8"));
-        const c = coupons.find((item: any) => item.code?.toUpperCase() === code?.toUpperCase());
+      await this.prisma.executeBypassRls(async (tx) => {
+        const c = await tx.coupon.findUnique({
+          where: { code: code.toUpperCase().trim() },
+        });
         if (c) {
-          c.usedCount = (c.usedCount || 0) + 1;
-          c.updatedAt = new Date().toISOString();
-          fs.writeFileSync(file, JSON.stringify(coupons, null, 2), "utf-8");
-          const secondary = "/home/dell/Jaydeep/billing_superadmin/data/coupons.json";
-          if (fs.existsSync(path.dirname(secondary))) {
-            fs.writeFileSync(secondary, JSON.stringify(coupons, null, 2), "utf-8");
-          }
+          await tx.coupon.update({
+            where: { id: c.id },
+            data: {
+              usedCount: { increment: 1 },
+              updatedAt: new Date(),
+            },
+          });
         }
-      }
+      });
     } catch (err: any) {
-      this.logger.warn(`Failed updating coupon usage: ${err?.message}`);
+      this.logger.warn(`Failed updating coupon usage in database: ${err?.message}`);
     }
   }
 
-  validateCoupon(dto: ValidateCouponDto) {
+  async validateCoupon(dto: ValidateCouponDto) {
     const rawCode = (dto.code || "").toUpperCase().trim();
     if (!rawCode) {
       throw new BadRequestException("Please enter a valid coupon code.");
     }
 
-    const coupons = this.getCoupons();
+    const coupons = await this.getCoupons();
     const coupon = coupons.find((c: any) => c.code?.toUpperCase() === rawCode);
 
     if (!coupon) {
@@ -282,7 +295,7 @@ export class SubscriptionsService {
       const tenant = org.tenant;
       const currentTier = tenant.subscriptionTier || SubscriptionTier.TRIAL;
       const planEntitlements = getPlanEntitlements(currentTier);
-      const planConfig = this.getPlanConfig(currentTier);
+      const planConfig = await this.getPlanConfig(currentTier);
       const planPricing = planConfig || SUBSCRIPTION_PLANS[currentTier] || SUBSCRIPTION_PLANS[SubscriptionTier.RETAIL_BASIC];
 
       const currentCompanies = await tx.company.count({
@@ -299,9 +312,9 @@ export class SubscriptionsService {
       const ends = tenant.subscriptionEnds ? new Date(tenant.subscriptionEnds) : null;
       const isExpired = ends ? ends.getTime() < Date.now() : false;
       const daysRemaining = ends ? Math.ceil((ends.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
-      const bypassPlanRestrictions = this.getBypassPlanRestrictions();
+      const bypassPlanRestrictions = await this.getBypassPlanRestrictions();
       const isActive = bypassPlanRestrictions || (tenant.isActive && !isExpired);
-      const granularEntitlements = this.getEntitlementsForTier(currentTier);
+      const granularEntitlements = await this.getEntitlementsForTier(currentTier);
 
       return {
         tenantId: tenant.id,
@@ -330,7 +343,7 @@ export class SubscriptionsService {
   }
 
   async createPublicOrder(dto: PublicOrderDto) {
-    const plan = this.getPlanConfig(dto.tier);
+    const plan = await this.getPlanConfig(dto.tier);
     if (!plan || dto.tier === SubscriptionTier.TRIAL) {
       throw new BadRequestException(`Invalid subscription tier: ${dto.tier}`);
     }
@@ -449,7 +462,7 @@ export class SubscriptionsService {
       throw new BadRequestException("Organization context is required.");
     }
 
-    const plan = this.getPlanConfig(dto.tier);
+    const plan = await this.getPlanConfig(dto.tier);
     if (!plan || dto.tier === SubscriptionTier.TRIAL) {
       throw new BadRequestException(`Invalid subscription tier: ${dto.tier}`);
     }
@@ -489,7 +502,7 @@ export class SubscriptionsService {
     const isRenewal = targetRank === currentRank;
 
     if (isUpgrade) {
-      const currentPlanConfig = this.getPlanConfig(currentTier);
+      const currentPlanConfig = await this.getPlanConfig(currentTier);
       const currentCyclePaise = currentPlanConfig
         ? (billingCycle === "yearly" ? (currentPlanConfig.yearlyPaise || (currentPlanConfig.annualTotal * 100)) : (currentPlanConfig.monthlyPaise || (currentPlanConfig.monthlyPrice * 100)))
         : 0;
@@ -637,7 +650,7 @@ export class SubscriptionsService {
     }
 
     const { orderId, paymentId, signature, tier, billingCycle } = dto;
-    const plan = this.getPlanConfig(tier) || SUBSCRIPTION_PLANS[tier as SubscriptionTier];
+    const plan = (await this.getPlanConfig(tier)) || SUBSCRIPTION_PLANS[tier as SubscriptionTier];
     if (!plan) {
       throw new BadRequestException(`Invalid subscription tier: ${tier}`);
     }
@@ -710,7 +723,7 @@ export class SubscriptionsService {
         });
         const couponUsed = (existingPayment.notes as any)?.couponCode;
         if (couponUsed) {
-          this.recordCouponUsage(couponUsed);
+          await this.recordCouponUsage(couponUsed);
         }
       } else {
         const amountPaise = billingCycle === "yearly" ? plan.yearlyPaise : plan.monthlyPaise;

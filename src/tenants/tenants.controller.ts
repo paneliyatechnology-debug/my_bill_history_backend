@@ -209,6 +209,34 @@ export class TenantsController {
     return this.tenantsService.getFinancialYears(ctx);
   }
 
+  @Post("financial-years")
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN)
+  async createFinancialYear(
+    @CurrentTenant() ctx: TenantContext,
+    @Body() dto: { name: string; startDate: string; endDate: string; isCurrent?: boolean },
+  ) {
+    return this.tenantsService.createFinancialYear(ctx, dto);
+  }
+
+  @Patch("financial-years/:id")
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN)
+  async updateFinancialYear(
+    @CurrentTenant() ctx: TenantContext,
+    @Param("id") id: string,
+    @Body() dto: { name?: string; startDate?: string; endDate?: string; isLocked?: boolean; isCurrent?: boolean },
+  ) {
+    return this.tenantsService.updateFinancialYear(ctx, id, dto);
+  }
+
+  @Delete("financial-years/:id")
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN)
+  async deleteFinancialYear(
+    @CurrentTenant() ctx: TenantContext,
+    @Param("id") id: string,
+  ) {
+    return this.tenantsService.deleteFinancialYear(ctx, id);
+  }
+
   @Get("warehouses")
   async getWarehouses(@CurrentTenant() ctx: TenantContext) {
     return this.tenantsService.getWarehouses(ctx);

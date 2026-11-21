@@ -2753,3 +2753,88 @@ model AiCollectionStaffTask {
   @@index([assignedUserId])
   @@map("ai_collection_staff_tasks")
 }
+
+// ============================================================================
+// Super Admin Platform Management Models (Real Database Persistence)
+// ============================================================================
+
+model Coupon {
+  id            String    @id @default(uuid()) @db.Uuid
+  code          String    @unique @db.VarChar(50)
+  description   String?   @db.Text
+  discountType  String    @default("PERCENTAGE") @map("discount_type") @db.VarChar(20)
+  discountValue Decimal   @default(10) @map("discount_value") @db.Decimal(10, 2)
+  validTiers    Json      @default("[]") @map("valid_tiers")
+  minAmount     Decimal   @default(0) @map("min_amount") @db.Decimal(12, 2)
+  maxDiscount   Decimal   @default(5000) @map("max_discount") @db.Decimal(12, 2)
+  validUntil    DateTime? @map("valid_until")
+  usageLimit    Int       @default(100) @map("usage_limit")
+  usedCount     Int       @default(0) @map("used_count")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([code, isActive])
+  @@map("coupons")
+}
+
+model SubscriptionPlan {
+  id                 String   @id @db.VarChar(100)
+  tier               String   @unique @db.VarChar(50)
+  name               String   @db.VarChar(150)
+  nameGujarati       String?  @map("name_gujarati") @db.VarChar(150)
+  subtitle           String?  @db.Text
+  subtitleGujarati   String?  @map("subtitle_gujarati") @db.Text
+  monthlyPrice       Decimal  @default(0) @map("monthly_price") @db.Decimal(12, 2)
+  yearlyPrice        Decimal  @default(0) @map("yearly_price") @db.Decimal(12, 2)
+  annualTotal        Decimal  @default(0) @map("annual_total") @db.Decimal(12, 2)
+  discountPercent    Int      @default(0) @map("discount_percent")
+  monthlyPaise       Int      @default(0) @map("monthly_paise")
+  yearlyPaise        Int      @default(0) @map("yearly_paise")
+  maxCompanies       Int      @default(1) @map("max_companies")
+  maxInvoicesPerYear Int      @default(-1) @map("max_invoices_per_year")
+  maxUsers           Int      @default(2) @map("max_users")
+  maxGodowns         Int      @default(1) @map("max_godowns")
+  features           Json     @default("[]")
+  featuresGujarati   Json     @default("[]") @map("features_gujarati")
+  entitlements       Json     @default("{}")
+  isActive           Boolean  @default(true) @map("is_active")
+  isPopular          Boolean  @default(false) @map("is_popular")
+  badge              String?  @db.VarChar(50)
+  badgeColor         String?  @map("badge_color") @db.VarChar(100)
+  accentColor        String?  @map("accent_color") @db.VarChar(30)
+  isDefault          Boolean  @default(false) @map("is_default")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@index([tier, isActive])
+  @@map("subscription_plans")
+}
+
+model PlatformAddon {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   @db.VarChar(150)
+  nameGujarati String?  @map("name_gujarati") @db.VarChar(150)
+  code         String   @unique @db.VarChar(50)
+  category     String   @default("GENERAL") @db.VarChar(50)
+  description  String?  @db.Text
+  price        Decimal  @default(0) @db.Decimal(12, 2)
+  billingCycle String   @default("YEARLY") @map("billing_cycle") @db.VarChar(20)
+  quotaAdded   Int      @default(1) @map("quota_added")
+  unit         String   @default("Unit") @db.VarChar(50)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([code, isActive])
+  @@map("platform_addons")
+}
+
+model PlatformSetting {
+  id        String   @id @default("default") @db.VarChar(50)
+  data      Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_settings")
+}

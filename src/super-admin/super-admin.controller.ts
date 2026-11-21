@@ -306,6 +306,14 @@ export class SuperAdminController {
     return this.superAdminService.updateAddon(id, dto, superAdminUserId);
   }
 
+  @Delete("addons/:id")
+  async deleteAddon(
+    @Param("id") id: string,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.deleteAddon(id, superAdminUserId);
+  }
+
   // 6. Platform Settings
   @Get("settings")
   async getSettings() {

@@ -1513,145 +1513,160 @@ export class SuperAdminService {
    * Subscription Plans Management (CRUD)
    */
   async getSubscriptionPlans() {
-    const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
-    try {
-      if (fs.existsSync(plansFile)) {
-        const raw = fs.readFileSync(plansFile, "utf-8");
-        return JSON.parse(raw);
+    return this.prisma.executeBypassRls(async (tx) => {
+      const dbPlans = await tx.subscriptionPlan.findMany({
+        orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+      });
+      if (dbPlans && dbPlans.length > 0) {
+        return dbPlans;
       }
-    } catch {}
-    return Object.values(SUBSCRIPTION_PLANS);
+      return Object.values(SUBSCRIPTION_PLANS);
+    });
   }
 
   async createSubscriptionPlan(body: any, superAdminUserId: string) {
-    const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
-    let plans: any[] = [];
-    try {
-      if (fs.existsSync(plansFile)) {
-        plans = JSON.parse(fs.readFileSync(plansFile, "utf-8"));
-      } else {
-        plans = Object.values(SUBSCRIPTION_PLANS);
-      }
-    } catch {
-      plans = Object.values(SUBSCRIPTION_PLANS);
-    }
-
     const tierKey = (body.tier || body.name).trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_");
     const idSlug = (body.id || body.name).toLowerCase().trim().replace(/[^a-z0-9_-]/g, "-");
 
-    const newPlan = {
-      id: idSlug,
-      tier: tierKey,
-      name: body.name,
-      nameGujarati: body.nameGujarati || body.name,
-      subtitle: body.subtitle || "",
-      subtitleGujarati: body.subtitleGujarati || "",
-      monthlyPrice: Number(body.monthlyPrice) || 0,
-      yearlyPrice: Number(body.yearlyPrice) || 0,
-      annualTotal: (Number(body.yearlyPrice) || 0) * 12,
-      discountPercent:
-        body.monthlyPrice > 0
-          ? Math.round(((body.monthlyPrice - body.yearlyPrice) / body.monthlyPrice) * 100)
-          : 0,
-      monthlyPaise: (Number(body.monthlyPrice) || 0) * 100,
-      yearlyPaise: (Number(body.yearlyPrice) || 0) * 12 * 100,
-      maxCompanies: body.maxCompanies !== undefined ? Number(body.maxCompanies) : 1,
-      maxInvoicesPerYear:
-        body.maxInvoicesPerYear !== undefined ? Number(body.maxInvoicesPerYear) : -1,
-      maxUsers: body.maxUsers !== undefined ? Number(body.maxUsers) : 2,
-      maxGodowns: body.maxGodowns !== undefined ? Number(body.maxGodowns) : 1,
-      features: Array.isArray(body.features) ? body.features : [],
-      featuresGujarati: Array.isArray(body.featuresGujarati) ? body.featuresGujarati : [],
-      entitlements: body.entitlements || {},
-      isActive: body.isActive !== undefined ? Boolean(body.isActive) : true,
-      isPopular: Boolean(body.isPopular),
-      badge: body.badge || null,
-      badgeColor: body.badgeColor || "bg-blue-50 text-blue-700 border-blue-200",
-      accentColor: body.accentColor || "#1677E8",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const monthlyPrice = Math.max(0, Number(body.monthlyPrice) || 0);
+    const yearlyPrice = Math.max(0, Number(body.yearlyPrice) || 0);
+    const annualTotal = yearlyPrice * 12;
+    const discountPercent =
+      monthlyPrice > 0 && yearlyPrice < monthlyPrice
+        ? Math.round(((monthlyPrice - yearlyPrice) / monthlyPrice) * 100)
+        : 0;
 
-    plans.push(newPlan);
-    const dir = path.dirname(plansFile);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(plansFile, JSON.stringify(plans, null, 2), "utf-8");
+    return this.prisma.executeBypassRls(async (tx) => {
+      const existing = await tx.subscriptionPlan.findFirst({
+        where: { OR: [{ id: idSlug }, { tier: tierKey }] },
+      });
+      if (existing) {
+        throw new BadRequestException(`A plan with tier "${tierKey}" or ID "${idSlug}" already exists.`);
+      }
 
-    // Also sync to frontend data folder
-    const frontendPlansFile = path.resolve(
-      process.cwd(),
-      "..",
-      "billing_superadmin",
-      "data",
-      "subscription-plans.json"
-    );
-    try {
-      const fDir = path.dirname(frontendPlansFile);
-      if (!fs.existsSync(fDir)) fs.mkdirSync(fDir, { recursive: true });
-      fs.writeFileSync(frontendPlansFile, JSON.stringify(plans, null, 2), "utf-8");
-    } catch {}
+      const newPlan = await tx.subscriptionPlan.create({
+        data: {
+          id: idSlug,
+          tier: tierKey,
+          name: body.name.trim(),
+          nameGujarati: body.nameGujarati || body.name,
+          subtitle: body.subtitle || "",
+          subtitleGujarati: body.subtitleGujarati || "",
+          monthlyPrice,
+          yearlyPrice,
+          annualTotal,
+          discountPercent,
+          monthlyPaise: monthlyPrice * 100,
+          yearlyPaise: annualTotal * 100,
+          maxCompanies: body.maxCompanies !== undefined ? Number(body.maxCompanies) : 1,
+          maxInvoicesPerYear:
+            body.maxInvoicesPerYear !== undefined ? Number(body.maxInvoicesPerYear) : -1,
+          maxUsers: body.maxUsers !== undefined ? Number(body.maxUsers) : 2,
+          maxGodowns: body.maxGodowns !== undefined ? Number(body.maxGodowns) : 1,
+          features: Array.isArray(body.features) ? body.features : [],
+          featuresGujarati: Array.isArray(body.featuresGujarati) ? body.featuresGujarati : [],
+          entitlements: body.entitlements || {},
+          isActive: body.isActive !== undefined ? Boolean(body.isActive) : true,
+          isPopular: Boolean(body.isPopular),
+          badge: body.badge || null,
+          badgeColor: body.badgeColor || "bg-blue-50 text-blue-700 border-blue-200",
+          accentColor: body.accentColor || "#1677E8",
+          isDefault: false,
+        },
+      });
 
-    return newPlan;
+      return newPlan;
+    });
   }
 
   async updateSubscriptionPlan(id: string, body: any, superAdminUserId: string) {
-    const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
-    let plans: any[] = [];
-    try {
-      if (fs.existsSync(plansFile)) {
-        plans = JSON.parse(fs.readFileSync(plansFile, "utf-8"));
+    return this.prisma.executeBypassRls(async (tx) => {
+      const existing = await tx.subscriptionPlan.findFirst({
+        where: { OR: [{ id }, { tier: id }] },
+      });
+      if (!existing) {
+        throw new NotFoundException(`Plan with id ${id} not found.`);
       }
-    } catch {}
 
-    const index = plans.findIndex((p) => p.id === id || p.tier === id);
-    if (index === -1) {
-      throw new NotFoundException(`Plan with id ${id} not found.`);
-    }
+      const monthlyPrice =
+        body.monthlyPrice !== undefined ? Number(body.monthlyPrice) : Number(existing.monthlyPrice);
+      const yearlyPrice =
+        body.yearlyPrice !== undefined ? Number(body.yearlyPrice) : Number(existing.yearlyPrice);
+      const annualTotal = yearlyPrice * 12;
+      const discountPercent =
+        monthlyPrice > 0 && yearlyPrice < monthlyPrice
+          ? Math.round(((monthlyPrice - yearlyPrice) / monthlyPrice) * 100)
+          : 0;
 
-    plans[index] = {
-      ...plans[index],
-      ...body,
-      updatedAt: new Date().toISOString(),
-    };
+      const updateData: any = {
+        updatedAt: new Date(),
+      };
+      if (body.name !== undefined) updateData.name = body.name;
+      if (body.nameGujarati !== undefined) updateData.nameGujarati = body.nameGujarati;
+      if (body.subtitle !== undefined) updateData.subtitle = body.subtitle;
+      if (body.subtitleGujarati !== undefined) updateData.subtitleGujarati = body.subtitleGujarati;
+      if (body.monthlyPrice !== undefined) {
+        updateData.monthlyPrice = monthlyPrice;
+        updateData.monthlyPaise = monthlyPrice * 100;
+      }
+      if (body.yearlyPrice !== undefined) {
+        updateData.yearlyPrice = yearlyPrice;
+        updateData.annualTotal = annualTotal;
+        updateData.yearlyPaise = annualTotal * 100;
+      }
+      updateData.discountPercent = discountPercent;
+      if (body.maxCompanies !== undefined) updateData.maxCompanies = Number(body.maxCompanies);
+      if (body.maxInvoicesPerYear !== undefined) updateData.maxInvoicesPerYear = Number(body.maxInvoicesPerYear);
+      if (body.maxUsers !== undefined) updateData.maxUsers = Number(body.maxUsers);
+      if (body.maxGodowns !== undefined) updateData.maxGodowns = Number(body.maxGodowns);
+      if (body.features !== undefined) updateData.features = body.features;
+      if (body.featuresGujarati !== undefined) updateData.featuresGujarati = body.featuresGujarati;
+      if (body.entitlements !== undefined) updateData.entitlements = body.entitlements;
+      if (body.isActive !== undefined) updateData.isActive = Boolean(body.isActive);
+      if (body.isPopular !== undefined) updateData.isPopular = Boolean(body.isPopular);
+      if (body.badge !== undefined) updateData.badge = body.badge;
+      if (body.badgeColor !== undefined) updateData.badgeColor = body.badgeColor;
+      if (body.accentColor !== undefined) updateData.accentColor = body.accentColor;
 
-    fs.writeFileSync(plansFile, JSON.stringify(plans, null, 2), "utf-8");
-    return plans[index];
+      const updated = await tx.subscriptionPlan.update({
+        where: { id: existing.id },
+        data: updateData,
+      });
+
+      return updated;
+    });
   }
 
   async deleteSubscriptionPlan(id: string, superAdminUserId: string) {
-    const plansFile = path.resolve(process.cwd(), "data", "subscription-plans.json");
-    let plans: any[] = [];
-    try {
-      if (fs.existsSync(plansFile)) {
-        plans = JSON.parse(fs.readFileSync(plansFile, "utf-8"));
+    return this.prisma.executeBypassRls(async (tx) => {
+      const target = await tx.subscriptionPlan.findFirst({
+        where: { OR: [{ id }, { tier: id }] },
+      });
+      if (!target) {
+        throw new NotFoundException(`Plan with id ${id} not found.`);
       }
-    } catch {}
 
-    const target = plans.find((p) => p.id === id || p.tier === id);
-    if (!target) {
-      throw new NotFoundException(`Plan with id ${id} not found.`);
-    }
-
-    // Check if any tenants currently use this tier
-    const tenantCount = await this.prisma.executeBypassRls(async (tx) => {
-      return tx.tenant.count({
+      // Check if any tenants currently use this tier
+      const tenantCount = await tx.tenant.count({
         where: { subscriptionTier: target.tier as any },
       });
+
+      if (tenantCount > 0 || target.isDefault) {
+        await tx.subscriptionPlan.update({
+          where: { id: target.id },
+          data: { isActive: false, updatedAt: new Date() },
+        });
+        return {
+          success: true,
+          message: `Plan archived and deactivated because ${tenantCount} active tenants or default tier assignment exists.`,
+        };
+      }
+
+      await tx.subscriptionPlan.delete({
+        where: { id: target.id },
+      });
+      return { success: true, message: "Plan deleted successfully." };
     });
-
-    if (tenantCount > 0) {
-      target.isActive = false;
-      fs.writeFileSync(plansFile, JSON.stringify(plans, null, 2), "utf-8");
-      return {
-        success: true,
-        message: `Plan archived because ${tenantCount} active tenants are assigned.`,
-        plan: target,
-      };
-    }
-
-    plans = plans.filter((p) => p.id !== id && p.tier !== id);
-    fs.writeFileSync(plansFile, JSON.stringify(plans, null, 2), "utf-8");
-    return { success: true, message: "Plan deleted successfully." };
   }
 
   /**
@@ -2121,206 +2136,255 @@ export class SuperAdminService {
 
   /**
    * ==========================================
-   * 4. PROMOTIONAL COUPONS MANAGEMENT
+   * 4. PROMOTIONAL COUPONS MANAGEMENT (DATABASE DRIVEN)
    * ==========================================
    */
-  private getCouponsFilePath(): string {
-    return path.resolve(process.cwd(), "data", "coupons.json");
-  }
-
-  private syncCoupons(coupons: any[]) {
-    const primary = this.getCouponsFilePath();
-    fs.writeFileSync(primary, JSON.stringify(coupons, null, 2), "utf-8");
-
-    const secondary = "/home/dell/Jaydeep/billing_superadmin/data/coupons.json";
-    try {
-      if (fs.existsSync(path.dirname(secondary))) {
-        fs.writeFileSync(secondary, JSON.stringify(coupons, null, 2), "utf-8");
-      }
-    } catch {}
-  }
-
   async getCoupons() {
-    try {
-      const file = this.getCouponsFilePath();
-      if (fs.existsSync(file)) {
-        return JSON.parse(fs.readFileSync(file, "utf-8"));
-      }
-    } catch {}
-    return [];
+    return this.prisma.executeBypassRls(async (tx) => {
+      const dbCoupons = await tx.coupon.findMany({
+        orderBy: { createdAt: "desc" },
+      });
+      return dbCoupons.map((c) => ({
+        ...c,
+        discountValue: Number(c.discountValue),
+        minAmount: Number(c.minAmount),
+        maxDiscount: Number(c.maxDiscount),
+      }));
+    });
   }
 
   async createCoupon(dto: any, superAdminUserId: string) {
-    const coupons = await this.getCoupons();
     const code = (dto.code || "").toUpperCase().trim();
-
-    if (coupons.some((c: any) => c.code === code)) {
-      throw new BadRequestException(`Coupon code "${code}" already exists.`);
+    if (!code) {
+      throw new BadRequestException("Coupon code is required.");
     }
 
-    const newCoupon = {
-      id: `coup_${randomUUID().slice(0, 8)}`,
-      code,
-      description: dto.description || "",
-      discountType: dto.discountType || "PERCENTAGE",
-      discountValue: Number(dto.discountValue || 10),
-      validTiers: dto.validTiers || [],
-      minAmount: Number(dto.minAmount || 0),
-      maxDiscount: Number(dto.maxDiscount || 5000),
-      validUntil: dto.validUntil || new Date(Date.now() + 90 * 86400000).toISOString(),
-      usageLimit: Number(dto.usageLimit || 100),
-      usedCount: 0,
-      isActive: dto.isActive !== false,
-      createdAt: new Date().toISOString(),
-    };
+    return this.prisma.executeBypassRls(async (tx) => {
+      const existing = await tx.coupon.findUnique({
+        where: { code },
+      });
+      if (existing) {
+        throw new BadRequestException(`Coupon code "${code}" already exists.`);
+      }
 
-    coupons.unshift(newCoupon);
-    this.syncCoupons(coupons);
+      const newCoupon = await tx.coupon.create({
+        data: {
+          code,
+          description: dto.description || "",
+          discountType: dto.discountType || "PERCENTAGE",
+          discountValue: Number(dto.discountValue || 10),
+          validTiers: dto.validTiers || [],
+          minAmount: Number(dto.minAmount || 0),
+          maxDiscount: Number(dto.maxDiscount || 5000),
+          validUntil: dto.validUntil ? new Date(dto.validUntil) : null,
+          usageLimit: Number(dto.usageLimit || 100),
+          usedCount: 0,
+          isActive: dto.isActive !== false,
+        },
+      });
 
-    return newCoupon;
+      return {
+        ...newCoupon,
+        discountValue: Number(newCoupon.discountValue),
+        minAmount: Number(newCoupon.minAmount),
+        maxDiscount: Number(newCoupon.maxDiscount),
+      };
+    });
   }
 
   async updateCoupon(id: string, dto: any, superAdminUserId: string) {
-    const coupons = await this.getCoupons();
-    const index = coupons.findIndex((c: any) => c.id === id || c.code === id);
-    if (index === -1) {
-      throw new NotFoundException(`Coupon with id ${id} not found.`);
-    }
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    return this.prisma.executeBypassRls(async (tx) => {
+      const existing = await tx.coupon.findFirst({
+        where: isUuid ? { OR: [{ id }, { code: id.toUpperCase().trim() }] } : { code: id.toUpperCase().trim() },
+      });
+      if (!existing) {
+        throw new NotFoundException(`Coupon with id ${id} not found.`);
+      }
 
-    coupons[index] = {
-      ...coupons[index],
-      ...dto,
-      code: dto.code ? dto.code.toUpperCase().trim() : coupons[index].code,
-      updatedAt: new Date().toISOString(),
-    };
+      const updateData: any = {
+        updatedAt: new Date(),
+      };
+      if (dto.code) updateData.code = dto.code.toUpperCase().trim();
+      if (dto.description !== undefined) updateData.description = dto.description;
+      if (dto.discountType !== undefined) updateData.discountType = dto.discountType;
+      if (dto.discountValue !== undefined) updateData.discountValue = Number(dto.discountValue);
+      if (dto.validTiers !== undefined) updateData.validTiers = dto.validTiers;
+      if (dto.minAmount !== undefined) updateData.minAmount = Number(dto.minAmount);
+      if (dto.maxDiscount !== undefined) updateData.maxDiscount = Number(dto.maxDiscount);
+      if (dto.validUntil !== undefined) updateData.validUntil = dto.validUntil ? new Date(dto.validUntil) : null;
+      if (dto.usageLimit !== undefined) updateData.usageLimit = Number(dto.usageLimit);
+      if (dto.isActive !== undefined) updateData.isActive = Boolean(dto.isActive);
 
-    this.syncCoupons(coupons);
-    return coupons[index];
+      const updated = await tx.coupon.update({
+        where: { id: existing.id },
+        data: updateData,
+      });
+
+      return {
+        ...updated,
+        discountValue: Number(updated.discountValue),
+        minAmount: Number(updated.minAmount),
+        maxDiscount: Number(updated.maxDiscount),
+      };
+    });
   }
 
   async deleteCoupon(id: string, superAdminUserId: string) {
-    let coupons = await this.getCoupons();
-    const target = coupons.find((c: any) => c.id === id || c.code === id);
-    if (!target) {
-      throw new NotFoundException(`Coupon with id ${id} not found.`);
-    }
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    return this.prisma.executeBypassRls(async (tx) => {
+      const existing = await tx.coupon.findFirst({
+        where: isUuid ? { OR: [{ id }, { code: id.toUpperCase().trim() }] } : { code: id.toUpperCase().trim() },
+      });
+      if (!existing) {
+        throw new NotFoundException(`Coupon with id ${id} not found.`);
+      }
 
-    coupons = coupons.filter((c: any) => c.id !== id && c.code !== id);
-    this.syncCoupons(coupons);
-    return { success: true, message: `Coupon ${target.code} deleted successfully.` };
+      await tx.coupon.delete({
+        where: { id: existing.id },
+      });
+      return { success: true, message: `Coupon ${existing.code} deleted successfully.` };
+    });
   }
 
   /**
    * ==========================================
-   * 5. ADD-ONS & EXTRA FEATURES CATALOG
+   * 5. ADD-ONS & EXTRA FEATURES CATALOG (DATABASE DRIVEN)
    * ==========================================
    */
-  private getAddonsFilePath(): string {
-    return path.resolve(process.cwd(), "data", "addons.json");
-  }
-
-  private syncAddons(addons: any[]) {
-    const primary = this.getAddonsFilePath();
-    fs.writeFileSync(primary, JSON.stringify(addons, null, 2), "utf-8");
-
-    const secondary = "/home/dell/Jaydeep/billing_superadmin/data/addons.json";
-    try {
-      if (fs.existsSync(path.dirname(secondary))) {
-        fs.writeFileSync(secondary, JSON.stringify(addons, null, 2), "utf-8");
-      }
-    } catch {}
-  }
-
   async getAddons() {
-    try {
-      const file = this.getAddonsFilePath();
-      if (fs.existsSync(file)) {
-        return JSON.parse(fs.readFileSync(file, "utf-8"));
-      }
-    } catch {}
-    return [];
+    return this.prisma.executeBypassRls(async (tx) => {
+      const dbAddons = await tx.platformAddon.findMany({
+        orderBy: { createdAt: "asc" },
+      });
+      return dbAddons.map((a) => ({
+        ...a,
+        price: Number(a.price),
+      }));
+    });
   }
 
   async createAddon(dto: any, superAdminUserId: string) {
-    const addons = await this.getAddons();
-    const newAddon = {
-      id: `addon_${randomUUID().slice(0, 8)}`,
-      name: dto.name,
-      nameGujarati: dto.nameGujarati || dto.name,
-      code: (dto.code || "").toUpperCase().trim(),
-      category: dto.category || "GENERAL",
-      description: dto.description || "",
-      price: Number(dto.price || 0),
-      billingCycle: dto.billingCycle || "YEARLY",
-      quotaAdded: Number(dto.quotaAdded || 1),
-      unit: dto.unit || "Unit",
-      isActive: dto.isActive !== false,
-      createdAt: new Date().toISOString(),
-    };
+    const code = (dto.code || "").toUpperCase().trim();
+    if (!code) {
+      throw new BadRequestException("Addon code is required.");
+    }
 
-    addons.push(newAddon);
-    this.syncAddons(addons);
-    return newAddon;
+    return this.prisma.executeBypassRls(async (tx) => {
+      const existing = await tx.platformAddon.findUnique({
+        where: { code },
+      });
+      if (existing) {
+        throw new BadRequestException(`Addon with code "${code}" already exists.`);
+      }
+
+      const newAddon = await tx.platformAddon.create({
+        data: {
+          name: dto.name,
+          nameGujarati: dto.nameGujarati || dto.name,
+          code,
+          category: dto.category || "GENERAL",
+          description: dto.description || "",
+          price: Number(dto.price || 0),
+          billingCycle: dto.billingCycle || "YEARLY",
+          quotaAdded: Number(dto.quotaAdded || 1),
+          unit: dto.unit || "Unit",
+          isActive: dto.isActive !== false,
+        },
+      });
+
+      return {
+        ...newAddon,
+        price: Number(newAddon.price),
+      };
+    });
   }
 
   async updateAddon(id: string, dto: any, superAdminUserId: string) {
-    const addons = await this.getAddons();
-    const index = addons.findIndex((a: any) => a.id === id || a.code === id);
-    if (index === -1) {
-      throw new NotFoundException(`Addon with id ${id} not found.`);
-    }
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    return this.prisma.executeBypassRls(async (tx) => {
+      const existing = await tx.platformAddon.findFirst({
+        where: isUuid ? { OR: [{ id }, { code: id.toUpperCase().trim() }] } : { code: id.toUpperCase().trim() },
+      });
+      if (!existing) {
+        throw new NotFoundException(`Addon with id ${id} not found.`);
+      }
 
-    addons[index] = {
-      ...addons[index],
-      ...dto,
-      updatedAt: new Date().toISOString(),
-    };
+      const updateData: any = {
+        updatedAt: new Date(),
+      };
+      if (dto.name !== undefined) updateData.name = dto.name;
+      if (dto.nameGujarati !== undefined) updateData.nameGujarati = dto.nameGujarati;
+      if (dto.category !== undefined) updateData.category = dto.category;
+      if (dto.description !== undefined) updateData.description = dto.description;
+      if (dto.price !== undefined) updateData.price = Number(dto.price);
+      if (dto.billingCycle !== undefined) updateData.billingCycle = dto.billingCycle;
+      if (dto.quotaAdded !== undefined) updateData.quotaAdded = Number(dto.quotaAdded);
+      if (dto.unit !== undefined) updateData.unit = dto.unit;
+      if (dto.isActive !== undefined) updateData.isActive = Boolean(dto.isActive);
 
-    this.syncAddons(addons);
-    return addons[index];
+      const updated = await tx.platformAddon.update({
+        where: { id: existing.id },
+        data: updateData,
+      });
+
+      return {
+        ...updated,
+        price: Number(updated.price),
+      };
+    });
+  }
+
+  async deleteAddon(id: string, superAdminUserId: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    return this.prisma.executeBypassRls(async (tx) => {
+      const existing = await tx.platformAddon.findFirst({
+        where: isUuid ? { OR: [{ id }, { code: id.toUpperCase().trim() }] } : { code: id.toUpperCase().trim() },
+      });
+      if (!existing) {
+        throw new NotFoundException(`Addon with id ${id} not found.`);
+      }
+
+      await tx.platformAddon.delete({
+        where: { id: existing.id },
+      });
+      return { success: true, message: `Addon ${existing.code} deleted successfully.` };
+    });
   }
 
   /**
    * ==========================================
-   * 6. PLATFORM SETTINGS & CONFIGURATION
+   * 6. PLATFORM SETTINGS & CONFIGURATION (DATABASE DRIVEN)
    * ==========================================
    */
-  private getSettingsFilePath(): string {
-    return path.resolve(process.cwd(), "data", "platform-settings.json");
-  }
-
-  private syncSettings(settings: any) {
-    const primary = this.getSettingsFilePath();
-    fs.writeFileSync(primary, JSON.stringify(settings, null, 2), "utf-8");
-
-    const secondary = "/home/dell/Jaydeep/billing_superadmin/data/platform-settings.json";
-    try {
-      if (fs.existsSync(path.dirname(secondary))) {
-        fs.writeFileSync(secondary, JSON.stringify(settings, null, 2), "utf-8");
-      }
-    } catch {}
-  }
-
   async getPlatformSettings() {
-    try {
-      const file = this.getSettingsFilePath();
-      if (fs.existsSync(file)) {
-        return JSON.parse(fs.readFileSync(file, "utf-8"));
-      }
-    } catch {}
-    return {};
+    return this.prisma.executeBypassRls(async (tx) => {
+      const row = await tx.platformSetting.findUnique({
+        where: { id: "default" },
+      });
+      return row ? (row.data as Record<string, any>) : {};
+    });
   }
 
   async updatePlatformSettings(dto: any, superAdminUserId: string) {
-    const current = await this.getPlatformSettings();
-    const updated = {
-      ...current,
-      ...dto,
-      updatedAt: new Date().toISOString(),
-    };
+    return this.prisma.executeBypassRls(async (tx) => {
+      const existing = await tx.platformSetting.findUnique({
+        where: { id: "default" },
+      });
+      const current = (existing?.data as Record<string, any>) || {};
+      const updated = {
+        ...current,
+        ...dto,
+        updatedAt: new Date().toISOString(),
+      };
 
-    this.syncSettings(updated);
+      await tx.platformSetting.upsert({
+        where: { id: "default" },
+        create: { id: "default", data: updated },
+        update: { data: updated, updatedAt: new Date() },
+      });
 
-    return updated;
+      return updated;
+    });
   }
 }
