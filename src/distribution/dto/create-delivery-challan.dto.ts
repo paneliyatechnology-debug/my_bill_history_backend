@@ -18,6 +18,8 @@ export interface CreateDeliveryChallanDto {
   challanType: DeliveryChallanType;
   placeOfSupply?: string;
   vehicleNumber?: string;
+  transporterName?: string;
+  eWayBillNumber?: string;
   isTaxable?: boolean;
   notes?: string;
   items: CreateDeliveryChallanItemDto[];

@@ -373,7 +373,21 @@ export class PurchasesService {
         });
       }
 
-      const grandTotal = sumTaxable.plus(sumCgst).plus(sumSgst).plus(sumUtgst).plus(sumIgst);
+      const freightAmt = Number(
+        (dto as any).freightAmount ??
+        (dto as any).freight ??
+        (dto.additionalCharges
+          ? Array.isArray(dto.additionalCharges)
+            ? dto.additionalCharges.reduce((a: number, b: any) => a + (Number(b.amount) || 0), 0)
+            : dto.additionalCharges
+          : 0)
+      ) || 0;
+
+      const rawGrandTotal = sumTaxable.plus(sumCgst).plus(sumSgst).plus(sumUtgst).plus(sumIgst).plus(freightAmt);
+      const roundedGrandTotal = new Decimal(Math.round(rawGrandTotal.toNumber()));
+      const roundOff = roundedGrandTotal.minus(rawGrandTotal);
+      const grandTotal = roundedGrandTotal;
+
       const invoiceDate = dto.invoiceDate
         ? new Date(dto.invoiceDate)
         : new Date();
@@ -427,10 +441,22 @@ export class PurchasesService {
           utgstAmount: sumUtgst.toFixed(2),
           igstAmount: sumIgst.toFixed(2),
           cessAmount: "0.00",
+          roundOff: roundOff.toFixed(2),
           grandTotal: grandTotal.toFixed(2),
           paidAmount: initialPaid.toFixed(2),
           balanceAmount: initialBalance.toFixed(2),
           itcEligibility: dto.itcEligibility || "INPUT",
+          notes: dto.notes || null,
+          termsAndConditions: dto.termsAndConditions || null,
+          shippingAddress: (() => {
+            const baseShip = (dto as any).shippingAddress || {};
+            const shipObj = typeof baseShip === "object" && baseShip !== null ? { ...baseShip } : (baseShip ? { address: baseShip } : {});
+            shipObj.freight = freightAmt;
+            shipObj.freightAmount = freightAmt;
+            if ((dto as any).vehicleNumber) shipObj.vehicleNo = (dto as any).vehicleNumber;
+            if ((dto as any).transportMode) shipObj.transportMode = (dto as any).transportMode;
+            return shipObj;
+          })(),
           items: {
             create: lineItemsData.map((item) => ({
               itemId: item.itemId,
@@ -797,6 +823,105 @@ export class PurchasesService {
             lineNarration: `Input IGST on bill ${dto.vendorInvoiceNumber}`,
             sequenceOrder: seq++,
           });
+        }
+
+        // Dr: Freight Charges
+        if (freightAmt > 0) {
+          let freightAccount = await tx.ledgerAccount.findFirst({
+            where: {
+              companyId: tenant.companyId,
+              OR: [
+                { name: { contains: "Freight", mode: "insensitive" } },
+                { name: { contains: "Transportation", mode: "insensitive" } },
+                { name: { contains: "Cartage", mode: "insensitive" } },
+                { code: "5020" },
+              ],
+            },
+          });
+          if (!freightAccount) {
+            let expenseGroup = await tx.ledgerGroup.findFirst({
+              where: {
+                companyId: tenant.companyId,
+                name: { contains: "Direct Expenses", mode: "insensitive" },
+              },
+            });
+            if (!expenseGroup) {
+              expenseGroup = await tx.ledgerGroup.findFirst({
+                where: { companyId: tenant.companyId, nature: "EXPENSE" },
+              });
+            }
+            if (expenseGroup) {
+              freightAccount = await tx.ledgerAccount.create({
+                data: {
+                  organizationId: tenant.organizationId,
+                  companyId: tenant.companyId,
+                  groupId: expenseGroup.id,
+                  name: "Freight & Delivery Charges",
+                  nameGujarati: "વાહન અને ડિલિવરી ખર્ચ",
+                  code: "5020",
+                  openingType: "DR",
+                },
+              });
+            }
+          }
+          if (freightAccount) {
+            journalLines.push({
+              accountId: freightAccount.id,
+              debitAmount: new Decimal(freightAmt),
+              creditAmount: new Decimal(0),
+              lineNarration: `Freight on bill ${dto.vendorInvoiceNumber}`,
+              sequenceOrder: seq++,
+            });
+          } else {
+            const purLine = journalLines.find((l) => l.accountId === purchaseAccount.id);
+            if (purLine) {
+              purLine.debitAmount = purLine.debitAmount.plus(freightAmt);
+            }
+          }
+        }
+
+        // Dr/Cr: Round Off
+        if (!roundOff.isZero()) {
+          let roundOffAccount = await tx.ledgerAccount.findFirst({
+            where: {
+              companyId: tenant.companyId,
+              OR: [
+                { name: { contains: "Round Off", mode: "insensitive" } },
+                { code: "5099" },
+              ],
+            },
+          });
+          if (!roundOffAccount) {
+            let expenseGroup = await tx.ledgerGroup.findFirst({
+              where: { companyId: tenant.companyId, nature: "EXPENSE" },
+            });
+            if (expenseGroup) {
+              roundOffAccount = await tx.ledgerAccount.create({
+                data: {
+                  organizationId: tenant.organizationId,
+                  companyId: tenant.companyId,
+                  groupId: expenseGroup.id,
+                  name: "Round Off Account",
+                  code: "5099",
+                  openingType: "DR",
+                },
+              });
+            }
+          }
+          if (roundOffAccount) {
+            journalLines.push({
+              accountId: roundOffAccount.id,
+              debitAmount: roundOff.gt(0) ? roundOff : new Decimal(0),
+              creditAmount: roundOff.lt(0) ? roundOff.abs() : new Decimal(0),
+              lineNarration: `Round-off on bill ${dto.vendorInvoiceNumber}`,
+              sequenceOrder: seq++,
+            });
+          } else {
+            const purLine = journalLines.find((l) => l.accountId === purchaseAccount.id);
+            if (purLine) {
+              purLine.debitAmount = purLine.debitAmount.plus(roundOff);
+            }
+          }
         }
 
         // Cr: Supplier Account
@@ -3109,6 +3234,20 @@ export class PurchasesService {
         where: { invoiceId: id },
       });
 
+      const freightAmt = Number(
+        (dto as any).freightAmount ??
+        (dto as any).freight ??
+        (dto.additionalCharges
+          ? Array.isArray(dto.additionalCharges)
+            ? dto.additionalCharges.reduce((a: number, b: any) => a + (Number(b.amount) || 0), 0)
+            : dto.additionalCharges
+          : 0)
+      ) || 0;
+
+      const rawGrand = sumTaxable.plus(sumCgst).plus(sumSgst).plus(sumIgst).plus(freightAmt);
+      const roundedGrand = new Decimal(Math.round(rawGrand.toNumber()));
+      const roundOff = roundedGrand.minus(rawGrand);
+
       // Update purchase invoice record
       const updated = await tx.purchaseInvoice.update({
         where: { id },
@@ -3122,8 +3261,20 @@ export class PurchasesService {
           cgstAmount: sumCgst.toNumber(),
           sgstAmount: sumSgst.toNumber(),
           igstAmount: sumIgst.toNumber(),
-          grandTotal: sumGrand.toNumber(),
-          balanceAmount: Math.max(0, sumGrand.minus(existing.paidAmount.toString()).toNumber()),
+          roundOff: roundOff.toNumber(),
+          grandTotal: roundedGrand.toNumber(),
+          balanceAmount: Math.max(0, roundedGrand.minus(existing.paidAmount.toString()).toNumber()),
+          notes: dto.notes !== undefined ? dto.notes : existing.notes,
+          termsAndConditions: dto.termsAndConditions !== undefined ? dto.termsAndConditions : existing.termsAndConditions,
+          shippingAddress: (() => {
+            const baseShip = (dto as any).shippingAddress !== undefined ? (dto as any).shippingAddress : existing.shippingAddress;
+            const shipObj = typeof baseShip === "object" && baseShip !== null ? { ...baseShip } : (baseShip ? { address: baseShip } : {});
+            shipObj.freight = freightAmt;
+            shipObj.freightAmount = freightAmt;
+            if ((dto as any).vehicleNumber !== undefined) shipObj.vehicleNo = (dto as any).vehicleNumber;
+            if ((dto as any).transportMode !== undefined) shipObj.transportMode = (dto as any).transportMode;
+            return shipObj;
+          })(),
           items: {
             create: resolvedItems.map((r) => ({
               itemId: r.itemId,

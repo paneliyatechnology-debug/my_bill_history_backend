@@ -2157,6 +2157,15 @@ export class InvoicesService {
       quotation.party?.stateCode?.trim() ||
       company.stateCode;
 
+    const normalizedAddCharges: any[] = [];
+    const shipAddr: any = quotation.shippingAddress || {};
+    const loadedFreight = Number(
+      (quotation as any).freightAmount ?? (quotation as any).freight ?? shipAddr.freightAmount ?? shipAddr.freight ?? 0
+    );
+    if (loadedFreight > 0) {
+      normalizedAddCharges.push({ name: "Freight", amount: loadedFreight });
+    }
+
     const taxCalc = calculateSalesInvoiceTaxes(
       company.stateCode,
       placeOfSupply,
@@ -2170,6 +2179,9 @@ export class InvoicesService {
         isTaxInclusive: false,
         supplyCategory: line.supplyCategory || "TAXABLE",
       })),
+      {
+        additionalCharges: normalizedAddCharges,
+      },
     );
 
     // 5. Handling Draft vs Issued creation

@@ -19,5 +19,13 @@ export interface CreatePurchaseInvoiceDto {
   paidFromAccountId?: string;
   paymentDate?: string;
   paymentReference?: string;
+  freightAmount?: number | string;
+  additionalCharges?: number | string | Array<{ name?: string; amount: number | string }>;
+  shippingAddress?: any;
+  vehicleNumber?: string;
+  transportMode?: string;
+  notes?: string;
+  termsAndConditions?: string;
+  roundOff?: number | string;
   items: CreatePurchaseInvoiceItemDto[];
 }

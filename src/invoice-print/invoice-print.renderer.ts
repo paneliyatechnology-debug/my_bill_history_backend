@@ -702,8 +702,12 @@ function luxuryBody(ctx: any) {
         <div>Freight <span style="float:right">₹ ${money(inv.freightAmount || inv.freight || (inv.shippingAddress?.freight) || (inv.shippingAddress?.freightAmount) || 0)}</span></div>
         <div>Discount <span style="float:right">${Number(inv.discountTotal || 0) > 0 ? `- ₹ ${money(inv.discountTotal)}` : "₹ 0.00"}</span></div>
         ${taxLines(ctx)}
+        ${Number(inv.roundOff || 0) !== 0 ? `<div>Round Off <span style="float:right">₹ ${money(inv.roundOff)}</span></div>` : ""}
         <div style="margin-top:8px"><b>Total Amount</b> <span style="float:right"><b>₹ ${money(inv.grandTotal)}</b></span></div>
-        ${ctx.s.showReceivedAmount ? `<div>Received Amount <span style="float:right">₹ ${money(ctx.received)}</span></div>` : ""}
+        ${ctx.s.showReceivedAmount ? `
+          <div>Received Amount <span style="float:right">₹ ${money(ctx.received)}</span></div>
+          <div style="color:${ctx.balance > 0 ? '#b91c1c' : '#15803d'};"><b>Balance Due</b> <span style="float:right"><b>₹ ${money(ctx.balance)}</b></span></div>
+        ` : ""}
       </div>
     </div>
     ${ctx.s.showAmountInWords ? `<div class="words"><b>Total Amount (in words)</b><br/>${esc(amountInWords(Number(inv.grandTotal || 0)))}</div>` : ""}
@@ -797,8 +801,12 @@ function stylishBody(ctx: any, layout: InvoiceLayout = "stylish") {
         <div>Freight <span style="float:right">₹ ${money(inv.freightAmount || inv.freight || (inv.shippingAddress?.freight) || (inv.shippingAddress?.freightAmount) || 0)}</span></div>
         <div>Discount <span style="float:right">${Number(inv.discountTotal || 0) > 0 ? `- ₹ ${money(inv.discountTotal)}` : "₹ 0.00"}</span></div>
         ${taxLines(ctx)}
+        ${Number(inv.roundOff || 0) !== 0 ? `<div>Round Off <span style="float:right">₹ ${money(inv.roundOff)}</span></div>` : ""}
         <div style="margin-top:8px"><b>Total Amount</b> <span style="float:right"><b>₹ ${money(inv.grandTotal)}</b></span></div>
-        ${ctx.s.showReceivedAmount ? `<div>Received Amount <span style="float:right">₹ ${money(ctx.received)}</span></div>` : ""}
+        ${ctx.s.showReceivedAmount ? `
+          <div>Received Amount <span style="float:right">₹ ${money(ctx.received)}</span></div>
+          <div style="color:${ctx.balance > 0 ? '#b91c1c' : '#15803d'};"><b>Balance Due</b> <span style="float:right"><b>₹ ${money(ctx.balance)}</b></span></div>
+        ` : ""}
       </div>
     </div>
     ${ctx.s.showAmountInWords ? `<div class="words"><b>Total Amount (in words)</b><br/>${esc(amountInWords(Number(inv.grandTotal || 0)))}</div>` : ""}

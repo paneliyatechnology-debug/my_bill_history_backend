@@ -219,6 +219,7 @@ export class DeliveryChallansService {
           challanType: dto.challanType,
           status: DeliveryChallanStatus.DRAFT,
           placeOfSupply: dto.placeOfSupply || partyStateCode,
+          eWayBillNumber: dto.eWayBillNumber || null,
           taxableAmount: totalTaxable.toNumber(),
           cgstAmount: totalCgst.toNumber(),
           sgstAmount: totalSgst.toNumber(),
@@ -763,6 +764,9 @@ export class DeliveryChallansService {
         isDraft: options?.asDraft ?? false,
         paymentMode: "UNPAID_CREDIT",
         notes: `Converted from Delivery Challan #${challan.challanNumber}. ${challan.notes || ""}`.trim(),
+        shippingAddress: challan.eWayBillNumber ? {
+          ewayBillNo: challan.eWayBillNumber,
+        } : undefined,
         items: challan.items.map((ci) => ({
           itemId: ci.itemId,
           batchId: ci.batchId || undefined,
