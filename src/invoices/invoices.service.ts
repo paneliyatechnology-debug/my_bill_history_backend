@@ -827,7 +827,7 @@ export class InvoicesService {
             newState: {
               invoiceNumber,
               grandTotal: invoice.grandTotal,
-              voucherId: voucher.id,
+              voucherId: voucher?.id || null,
             },
           },
           tx,
@@ -839,11 +839,13 @@ export class InvoicesService {
           grandTotalWords: taxCalc.grandTotalWords,
           grandTotalWordsGujarati: taxCalc.grandTotalWordsGujarati,
           items: createdItems,
-          voucher: {
-            id: voucher.id,
-            voucherNumber: voucher.voucherNumber,
-            balanced: true,
-          },
+          voucher: voucher
+            ? {
+                id: voucher.id,
+                voucherNumber: voucher.voucherNumber,
+                balanced: true,
+              }
+            : null,
           ...buildInvoiceUrls(invoice.id),
         };
       });
@@ -1925,7 +1927,7 @@ export class InvoicesService {
           newState: {
             invoiceNumber: legalInvoiceNumber,
             grandTotal: invoice.grandTotal,
-            voucherId: voucher.id,
+            voucherId: voucher?.id || null,
             status,
           },
         },
@@ -1934,11 +1936,13 @@ export class InvoicesService {
 
       return {
         ...updatedInvoice,
-        voucher: {
-          id: voucher.id,
-          voucherNumber: voucher.voucherNumber,
-          balanced: true,
-        },
+        voucher: voucher
+          ? {
+              id: voucher.id,
+              voucherNumber: voucher.voucherNumber,
+              balanced: true,
+            }
+          : null,
         ...buildInvoiceUrls(updatedInvoice.id),
       };
     });
@@ -3242,6 +3246,12 @@ export class InvoicesService {
     validatedSplit?: any,
     discountType?: "BEFORE_TAX" | "AFTER_TAX",
   ): Promise<any> {
+    // If both grandTotal and taxableAmount are zero (e.g. ₹0 bill / free sample / zero-value invoice),
+    // no monetary flow affects financial ledger accounts. Skip voucher posting to preserve double-entry balance.
+    if (taxCalc.grandTotal.isZero() && taxCalc.taxableAmount.isZero()) {
+      return null;
+    }
+
     await this.ensureRequiredLedgerAccounts(tx, tenant, party);
 
     let paymentMode: PaymentMode;
@@ -3272,19 +3282,21 @@ export class InvoicesService {
       lineNarration: string;
     }> = [];
 
-    // DR Posting based on Payment Mode & Split Tender
+    // DR Posting based on Payment Mode & Split Tender (only post debit if grandTotal > 0)
     if (isUnpaidCredit) {
-      const partyAcc = await this.getOrCreatePartyLedgerAccount(
-        tx,
-        tenant,
-        party,
-      );
-      voucherLines.push({
-        accountId: partyAcc.id,
-        debitAmount: taxCalc.grandTotal.toNumber(),
-        creditAmount: 0,
-        lineNarration: `Sales Bill #${invoiceNumber} (Credit)`,
-      });
+      if (taxCalc.grandTotal.greaterThan(0)) {
+        const partyAcc = await this.getOrCreatePartyLedgerAccount(
+          tx,
+          tenant,
+          party,
+        );
+        voucherLines.push({
+          accountId: partyAcc.id,
+          debitAmount: taxCalc.grandTotal.toNumber(),
+          creditAmount: 0,
+          lineNarration: `Sales Bill #${invoiceNumber} (Credit)`,
+        });
+      }
     } else if (paymentMode === PaymentMode.SPLIT && validatedSplit) {
       // Split tender multi-debit posting
       if (validatedSplit.cash && validatedSplit.cash.greaterThan(0)) {
@@ -3356,50 +3368,58 @@ export class InvoicesService {
         });
       }
     } else if (paymentMode === PaymentMode.UPI_QR) {
-      const upiAcc = await this.resolvePaymentLedgerAccount(tx, tenant, "UPI");
-      voucherLines.push({
-        accountId: upiAcc.id,
-        debitAmount: taxCalc.grandTotal.toNumber(),
-        creditAmount: 0,
-        lineNarration: `Sales Bill #${invoiceNumber} (UPI)`,
-      });
+      if (taxCalc.grandTotal.greaterThan(0)) {
+        const upiAcc = await this.resolvePaymentLedgerAccount(tx, tenant, "UPI");
+        voucherLines.push({
+          accountId: upiAcc.id,
+          debitAmount: taxCalc.grandTotal.toNumber(),
+          creditAmount: 0,
+          lineNarration: `Sales Bill #${invoiceNumber} (UPI)`,
+        });
+      }
     } else if (
       paymentMode === PaymentMode.BANK_TRANSFER ||
       paymentMode === PaymentMode.CHEQUE
     ) {
-      const bankAcc = await this.resolvePaymentLedgerAccount(
-        tx,
-        tenant,
-        "BANK",
-      );
-      voucherLines.push({
-        accountId: bankAcc.id,
-        debitAmount: taxCalc.grandTotal.toNumber(),
-        creditAmount: 0,
-        lineNarration: `Sales Bill #${invoiceNumber} (${paymentMode})`,
-      });
+      if (taxCalc.grandTotal.greaterThan(0)) {
+        const bankAcc = await this.resolvePaymentLedgerAccount(
+          tx,
+          tenant,
+          "BANK",
+        );
+        voucherLines.push({
+          accountId: bankAcc.id,
+          debitAmount: taxCalc.grandTotal.toNumber(),
+          creditAmount: 0,
+          lineNarration: `Sales Bill #${invoiceNumber} (${paymentMode})`,
+        });
+      }
     } else {
       // CASH or other cash-like tender
-      const cashAcc = await this.resolvePaymentLedgerAccount(
-        tx,
-        tenant,
-        "CASH",
-      );
-      voucherLines.push({
-        accountId: cashAcc.id,
-        debitAmount: taxCalc.grandTotal.toNumber(),
-        creditAmount: 0,
-        lineNarration: `Sales Bill #${invoiceNumber} (Cash)`,
-      });
+      if (taxCalc.grandTotal.greaterThan(0)) {
+        const cashAcc = await this.resolvePaymentLedgerAccount(
+          tx,
+          tenant,
+          "CASH",
+        );
+        voucherLines.push({
+          accountId: cashAcc.id,
+          debitAmount: taxCalc.grandTotal.toNumber(),
+          creditAmount: 0,
+          lineNarration: `Sales Bill #${invoiceNumber} (Cash)`,
+        });
+      }
     }
 
-    // CR Sales Account for Taxable Amount
-    voucherLines.push({
-      accountId: salesAccount.id,
-      debitAmount: 0,
-      creditAmount: taxCalc.taxableAmount.toNumber(),
-      lineNarration: `Taxable sales #${invoiceNumber}`,
-    });
+    // CR Sales Account for Taxable Amount (only if > 0)
+    if (taxCalc.taxableAmount.greaterThan(0)) {
+      voucherLines.push({
+        accountId: salesAccount.id,
+        debitAmount: 0,
+        creditAmount: taxCalc.taxableAmount.toNumber(),
+        lineNarration: `Taxable sales #${invoiceNumber}`,
+      });
+    }
 
     // CR Taxes
     if (taxCalc.cgstAmount.greaterThan(0)) {
@@ -3512,7 +3532,16 @@ export class InvoicesService {
       });
     }
 
-    const validation = validateJournalLines(voucherLines);
+    // Filter out zero-amount lines to maintain double-entry invariants
+    const activeLines = voucherLines.filter(
+      (vl) => Number(vl.debitAmount) > 0 || Number(vl.creditAmount) > 0,
+    );
+
+    if (activeLines.length === 0) {
+      return null;
+    }
+
+    const validation = validateJournalLines(activeLines);
     if (!validation.isValid) {
       throw new BadRequestException(
         `Voucher double-entry invariant failure: ${validation.errors.join("; ")}`,
@@ -3539,8 +3568,8 @@ export class InvoicesService {
       },
     });
 
-    for (let idx = 0; idx < voucherLines.length; idx++) {
-      const vl = voucherLines[idx];
+    for (let idx = 0; idx < activeLines.length; idx++) {
+      const vl = activeLines[idx];
       await tx.journalEntry.create({
         data: {
           voucherId: voucher.id,
