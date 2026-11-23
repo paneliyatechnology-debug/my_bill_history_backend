@@ -1235,7 +1235,7 @@ model PurchaseInvoice {
   grandTotal          Decimal   @map("grand_total") @db.Decimal(15, 2)
   paidAmount          Decimal   @default(0.00) @map("paid_amount") @db.Decimal(15, 2)
   balanceAmount       Decimal   @map("balance_amount") @db.Decimal(15, 2)
-  roundOff            Decimal   @default(0.00) @map("round_off") @db.Decimal(6, 2)
+  roundOff            Decimal?  @default(0.00) @map("round_off") @db.Decimal(6, 2)
   shippingAddress     Json?     @map("shipping_address")
   notes               String?   @db.Text
   termsAndConditions  String?   @map("terms_and_conditions") @db.Text
