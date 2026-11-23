@@ -374,4 +374,63 @@ describe("Purchases & Supplier Invoices Workflow Integration", () => {
     expect(comp.enableGujaratiPrint).toBe(true);
     expect(comp.allowNegativeStock).toBe(false);
   });
+
+  it("6. Rejects purchase bill creation when vendor invoice number is missing (NO AUTO-SEQUENCE)", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/purchases",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        partyId: supplierAId,
+        // vendorInvoiceNumber omitted / empty
+        invoiceDate: "2026-10-15",
+        warehouseId: warehouseAId,
+        items: [
+          {
+            itemId: itemAId,
+            quantity: 2,
+            unitPrice: 450,
+            taxRate: 18,
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.body);
+    expect(body.message).toContain("Supplier bill/invoice number is required");
+  });
+
+  it("7. Updates an existing purchase invoice and preserves entered vendor invoice number", async () => {
+    const listRes = await app.inject({
+      method: "GET",
+      url: "/api/v1/purchases",
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    const invId = JSON.parse(listRes.body).items[0].id;
+
+    const updateRes = await app.inject({
+      method: "PUT",
+      url: `/api/v1/purchases/${invId}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        partyId: supplierAId,
+        vendorInvoiceNumber: "APEX-2026-881-EDITED",
+        invoiceDate: "2026-10-16",
+        items: [
+          {
+            itemId: itemAId,
+            quantity: 12,
+            unitPrice: 450,
+            taxRate: 18,
+          },
+        ],
+      },
+    });
+
+    expect(updateRes.statusCode).toBe(200);
+    const updated = JSON.parse(updateRes.body);
+    expect(updated.vendorInvoiceNumber).toBe("APEX-2026-881-EDITED");
+    expect(Number(updated.taxableAmount)).toBe(5400); // 12 * 450
+  });
 });

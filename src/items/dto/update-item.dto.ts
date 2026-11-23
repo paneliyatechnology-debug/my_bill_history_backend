@@ -17,7 +17,9 @@ export interface UpdateItemDto {
   cessRate?: number;
   cessPerUnit?: number;
   purchaseRate?: number;
+  purchasePrice?: number;
   retailPrice?: number;
+  salesPrice?: number;
   wholesalePrice?: number;
   mrp?: number | null;
   minStockLevel?: number;

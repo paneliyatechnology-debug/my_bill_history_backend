@@ -439,7 +439,6 @@ export class SharedLedgerService {
           where: { id: conn.partyId },
           include: {
             salesInvoices: {
-              where: { status: { not: "CANCELLED" } },
               orderBy: { invoiceDate: "desc" },
             },
             purchaseInvoices: {
@@ -466,7 +465,6 @@ export class SharedLedgerService {
               where: { id: p.id },
               include: {
                 salesInvoices: {
-                  where: { status: { not: "CANCELLED" } },
                   orderBy: { invoiceDate: "desc" },
                 },
                 purchaseInvoices: {
@@ -655,7 +653,6 @@ export class SharedLedgerService {
           where: { id: partyId, companyId: ctx.companyId },
           include: {
             salesInvoices: {
-              where: { status: { not: "CANCELLED" } },
               include: { items: true },
               orderBy: { invoiceDate: "desc" },
             },
@@ -702,6 +699,7 @@ export class SharedLedgerService {
         const d = inv.invoiceDate || inv.createdAt;
         const grand = Number(inv.grandTotal || 0);
         const paid = Number(inv.paidAmount || 0);
+        const isCancelled = inv.status === "CANCELLED";
         rawItems.push({
           id: inv.id,
           rawType: "SALES_INVOICE",
@@ -710,11 +708,17 @@ export class SharedLedgerService {
           date: d ? new Date(d).toISOString().slice(0, 10) : "",
           rawDate: d ? new Date(d).getTime() : 0,
           amount: grand,
-          debit: grand,
+          debit: isCancelled ? 0 : grand,
           credit: 0,
           paidAmount: paid,
-          status: paid >= grand ? "Completed" : paid > 0 ? "Partial" : "Unpaid",
-          canConvertToPurchase: true,
+          status: isCancelled
+            ? "Cancelled"
+            : paid >= grand
+            ? "Completed"
+            : paid > 0
+            ? "Partial"
+            : "Unpaid",
+          canConvertToPurchase: !isCancelled,
           details: {
             itemsCount: inv.items?.length || 0,
             dueDate: inv.dueDate,

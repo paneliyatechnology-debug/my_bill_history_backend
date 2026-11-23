@@ -874,7 +874,19 @@ export class VouchersService {
           },
           select: { voucherNumber: true },
         });
-        nextNumber = String(maxNumericPaymentNumber(numbered) + 1);
+        const existingSet = new Set(
+          numbered.map((r) => r.voucherNumber?.trim().toUpperCase()).filter(Boolean),
+        );
+        let seq = maxNumericPaymentNumber(numbered) + 1;
+        let candidate = String(seq);
+        while (
+          existingSet.has(candidate.toUpperCase()) ||
+          existingSet.has(`PAY-${candidate}`.toUpperCase())
+        ) {
+          seq++;
+          candidate = String(seq);
+        }
+        nextNumber = candidate;
       }
 
       return {
@@ -897,11 +909,13 @@ export class VouchersService {
   ): Promise<any> {
     const paymentMode = normalizePaymentMode(dto.paymentMode);
 
-    const amountPaid = toMoney(dto.amount || 0);
+    const rawAmount = dto.amount !== undefined ? dto.amount : (dto as any).amountPaid;
+    const amountPaid = toMoney(rawAmount || 0);
     if (amountPaid.lessThan(0)) {
       throw new BadRequestException("Amount paid cannot be negative.");
     }
-    const headerDiscount = toMoney(dto.discount || 0);
+    const rawDiscount = dto.discount !== undefined ? dto.discount : (dto as any).discountAmount;
+    const headerDiscount = toMoney(rawDiscount || 0);
     if (headerDiscount.lessThan(0)) {
       throw new BadRequestException("Discount cannot be negative.");
     }
@@ -996,19 +1010,20 @@ export class VouchersService {
 
       const seenInvoices = new Set<string>();
       for (const alloc of dto.allocations || []) {
-        if (!alloc.purchaseInvoiceId) continue;
-        if (seenInvoices.has(alloc.purchaseInvoiceId)) {
+        const invId = alloc.purchaseInvoiceId || (alloc as any).invoiceId;
+        if (!invId) continue;
+        if (seenInvoices.has(invId)) {
           throw new BadRequestException(
             "The same purchase invoice cannot be settled twice on one payment.",
           );
         }
-        seenInvoices.add(alloc.purchaseInvoiceId);
+        seenInvoices.add(invId);
         const inv = await tx.purchaseInvoice.findFirst({
-          where: { id: alloc.purchaseInvoiceId, companyId: tenant.companyId },
+          where: { id: invId, companyId: tenant.companyId },
         });
         if (!inv) {
           throw new NotFoundException(
-            `Purchase invoice '${alloc.purchaseInvoiceId}' not found.`,
+            `Purchase invoice '${invId}' not found.`,
           );
         }
         if (inv.partyId !== party.id) {
@@ -1016,8 +1031,8 @@ export class VouchersService {
             `Invoice '${inv.vendorInvoiceNumber}' belongs to a different party.`,
           );
         }
-        const rowCash = toMoney(alloc.amount || 0);
-        const rowDisc = toMoney(alloc.cashDiscount || 0);
+        const rowCash = toMoney(alloc.amount !== undefined ? alloc.amount : (alloc as any).settledAmount || 0);
+        const rowDisc = toMoney(alloc.cashDiscount !== undefined ? alloc.cashDiscount : (alloc as any).cashDiscountReceived || 0);
         const allocTotal = rowCash.plus(rowDisc);
         if (allocTotal.lessThanOrEqualTo(0)) continue;
         const invBalance = toMoney(inv.balanceAmount);
@@ -1130,10 +1145,19 @@ export class VouchersService {
           },
           select: { voucherNumber: true },
         });
-        voucherNumber = String(maxNumericPaymentNumber(numbered) + 1);
+        const existingSet = new Set(
+          numbered.map((r) => r.voucherNumber?.trim().toUpperCase()).filter(Boolean),
+        );
+        let seq = maxNumericPaymentNumber(numbered) + 1;
+        let candidate = `PAY-${seq}`;
+        while (existingSet.has(candidate.toUpperCase())) {
+          seq++;
+          candidate = `PAY-${seq}`;
+        }
+        voucherNumber = candidate;
       }
 
-      const duplicate = await tx.voucher.findUnique({
+      let duplicate = await tx.voucher.findUnique({
         where: {
           companyId_financialYearId_voucherType_voucherNumber: {
             companyId: tenant.companyId,
@@ -1143,10 +1167,38 @@ export class VouchersService {
           },
         },
       });
+
+      // If duplicate voucher number exists for this FY, auto-advance to the next unique sequence number
       if (duplicate) {
-        throw new ConflictException(
-          `Payment Out voucher number '${voucherNumber}' already exists for this financial year.`,
+        const numbered = await tx.voucher.findMany({
+          where: {
+            companyId: tenant.companyId,
+            financialYearId: fy.id,
+            voucherType: "PAYMENT",
+          },
+          select: { voucherNumber: true },
+        });
+        const existingSet = new Set(
+          numbered.map((r) => r.voucherNumber?.trim().toUpperCase()).filter(Boolean),
         );
+
+        let prefix = "PAY-";
+        let seq = 1;
+        const match = voucherNumber.match(/^(.*?)(\d+)$/);
+        if (match) {
+          prefix = match[1];
+          seq = parseInt(match[2], 10);
+        } else {
+          prefix = `${voucherNumber}-`;
+          seq = 1;
+        }
+
+        let candidate = voucherNumber;
+        while (existingSet.has(candidate.trim().toUpperCase())) {
+          seq++;
+          candidate = `${prefix}${seq}`;
+        }
+        voucherNumber = candidate;
       }
 
       // 8. Create Voucher
@@ -1927,7 +1979,16 @@ export class VouchersService {
         },
         select: { voucherNumber: true },
       });
-      const voucherNumber = String(maxNumericReceiptNumber(numbered) + 1);
+      const existingSet = new Set(
+        numbered.map((r) => r.voucherNumber?.trim().toUpperCase()).filter(Boolean),
+      );
+      let seq = maxNumericReceiptNumber(numbered) + 1;
+      let candidate = String(seq);
+      while (existingSet.has(candidate.toUpperCase())) {
+        seq++;
+        candidate = String(seq);
+      }
+      const voucherNumber = candidate;
       const voucher = await tx.voucher.create({
         data: {
           organizationId: tenant.organizationId,
@@ -3781,8 +3842,18 @@ function paymentModeLabel(mode?: string | null): string {
 function maxNumericReceiptNumber(rows: Array<{ voucherNumber: string }>): number {
   let max = 0;
   for (const row of rows) {
-    if (/^\d+$/.test(row.voucherNumber)) {
-      max = Math.max(max, Number(row.voucherNumber));
+    if (!row.voucherNumber) continue;
+    const raw = row.voucherNumber.trim();
+    if (/^\d+$/.test(raw)) {
+      max = Math.max(max, Number(raw));
+    } else {
+      const match = raw.match(/(\d+)$/);
+      if (match) {
+        const num = Number(match[1]);
+        if (num < 100000) {
+          max = Math.max(max, num);
+        }
+      }
     }
   }
   return max;
@@ -3869,8 +3940,18 @@ function shapeReceipt(voucher: any) {
 function maxNumericPaymentNumber(rows: Array<{ voucherNumber: string }>): number {
   let max = 0;
   for (const row of rows) {
-    if (/^\d+$/.test(row.voucherNumber)) {
-      max = Math.max(max, Number(row.voucherNumber));
+    if (!row.voucherNumber) continue;
+    const raw = row.voucherNumber.trim();
+    if (/^\d+$/.test(raw)) {
+      max = Math.max(max, Number(raw));
+    } else {
+      const match = raw.match(/(\d+)$/);
+      if (match) {
+        const num = Number(match[1]);
+        if (num < 100000) {
+          max = Math.max(max, num);
+        }
+      }
     }
   }
   return max;

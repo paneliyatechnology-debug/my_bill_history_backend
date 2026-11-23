@@ -300,10 +300,7 @@ function buildCtx(input: { settings: any; company: any; invoice: any; copyType: 
 function invoiceMetaExtras(ctx: any) {
   const inv = ctx.inv;
   const fields = Array.isArray(ctx.s.invoiceCustomFields) ? ctx.s.invoiceCustomFields : [];
-  const time =
-    ctx.s.showTimeOnInvoice && inv.invoiceDate
-      ? `<div style="margin-top:8px"><b>Time</b><br/>${esc(formatTime(inv.invoiceDate))}</div>`
-      : "";
+  const time = "";
   const custom = fields
     .filter((f: any) => f && f.enabled !== false && (f.label || f.name))
     .map(
@@ -396,7 +393,6 @@ function itemRowsTally(ctx: any, showLineTax = false) {
         ${ctx.s.showQuantity !== false ? `<td class="r">${qtyCell(ctx, row)}</td>` : ""}
         ${ctx.s.enableFreeItemQuantity ? `<td class="r">${qty(row.freeQuantity || 0)}</td>` : ""}
         ${ctx.s.showPricePerItem !== false ? `<td class="r">${money(row.unitPrice)}</td>` : ""}
-        ${ctx.s.showDiscount ? `<td class="r">${disc ? `${money(disc)}<div class="muted">(${discPct}%)</div>` : "0"}</td>` : ""}
         ${showLineTax && ctx.s.showTaxColumn ? `<td class="r">${money(lineTax(row))}</td>` : ""}
         ${extraItemCells(ctx, row)}
         <td class="r">${money(row.totalAmount)}</td>
@@ -418,7 +414,6 @@ function itemRowsOpen(ctx: any) {
         ${ctx.s.showHsn ? `<td class="c">${esc(row.hsnCode || row.item?.hsnCode || "")}</td>` : ""}
         ${ctx.s.showQuantity !== false ? `<td class="r">${qtyCell(ctx, row)}</td>` : ""}
         ${ctx.s.showPricePerItem !== false ? `<td class="r">${money(row.unitPrice)}</td>` : ""}
-        ${ctx.s.showDiscount ? `<td class="r">${disc ? `${money(disc)}<div class="muted">(${discPct}%)</div>` : "0 <div class='muted'>(0%)</div>"}</td>` : ""}
         ${ctx.s.showTaxColumn ? `<td class="r">${money(taxAmt)}<div class="muted">(${taxPct}%)</div></td>` : ""}
         ${extraItemCells(ctx, row)}
         <td class="r">${money(Number(row.totalAmount || 0))}</td>
@@ -685,7 +680,6 @@ function luxuryBody(ctx: any) {
         ${ctx.s.showHsn ? "<th>HSN No.</th>" : ""}
         ${ctx.s.showQuantity !== false ? '<th class="r">Qty</th>' : ""}
         ${ctx.s.showPricePerItem !== false ? '<th class="r">Rate</th>' : ""}
-        ${ctx.s.showDiscount ? '<th class="r">Disc.</th>' : ""}
         ${ctx.s.showTaxColumn ? '<th class="r">Tax</th>' : ""}
         ${extraItemHeaders(ctx)}
         <th class="r">Total</th>
@@ -705,6 +699,8 @@ function luxuryBody(ctx: any) {
       </div>
       <div>
         <div>Taxable Amount <span style="float:right">₹ ${money(inv.taxableAmount || inv.subTotal)}</span></div>
+        <div>Freight <span style="float:right">₹ ${money(inv.freightAmount || inv.freight || (inv.shippingAddress?.freight) || (inv.shippingAddress?.freightAmount) || 0)}</span></div>
+        <div>Discount <span style="float:right">${Number(inv.discountTotal || 0) > 0 ? `- ₹ ${money(inv.discountTotal)}` : "₹ 0.00"}</span></div>
         ${taxLines(ctx)}
         <div style="margin-top:8px"><b>Total Amount</b> <span style="float:right"><b>₹ ${money(inv.grandTotal)}</b></span></div>
         ${ctx.s.showReceivedAmount ? `<div>Received Amount <span style="float:right">₹ ${money(ctx.received)}</span></div>` : ""}
@@ -779,7 +775,6 @@ function stylishBody(ctx: any, layout: InvoiceLayout = "stylish") {
         ${ctx.s.showHsn ? "<th>HSN</th>" : ""}
         ${ctx.s.showQuantity !== false ? '<th class="r">QTY.</th>' : ""}
         ${ctx.s.showPricePerItem !== false ? '<th class="r">RATE</th>' : ""}
-        ${ctx.s.showDiscount ? '<th class="r">DISC.</th>' : ""}
         ${ctx.s.showTaxColumn ? '<th class="r">TAX</th>' : ""}
         ${extraItemHeaders(ctx)}
         <th class="r">AMOUNT</th>
@@ -799,6 +794,8 @@ function stylishBody(ctx: any, layout: InvoiceLayout = "stylish") {
       </div>
       <div>
         <div>Taxable Amount <span style="float:right">₹ ${money(inv.taxableAmount || inv.subTotal)}</span></div>
+        <div>Freight <span style="float:right">₹ ${money(inv.freightAmount || inv.freight || (inv.shippingAddress?.freight) || (inv.shippingAddress?.freightAmount) || 0)}</span></div>
+        <div>Discount <span style="float:right">${Number(inv.discountTotal || 0) > 0 ? `- ₹ ${money(inv.discountTotal)}` : "₹ 0.00"}</span></div>
         ${taxLines(ctx)}
         <div style="margin-top:8px"><b>Total Amount</b> <span style="float:right"><b>₹ ${money(inv.grandTotal)}</b></span></div>
         ${ctx.s.showReceivedAmount ? `<div>Received Amount <span style="float:right">₹ ${money(ctx.received)}</span></div>` : ""}
@@ -1203,7 +1200,6 @@ function festivalBody(ctx: any) {
                 ${ctx.s.showHsn !== false ? '<th class="c" style="width:70px;">HSN</th>' : ""}
                 ${ctx.s.showQuantity !== false ? '<th class="r" style="width:80px;">QTY</th>' : ""}
                 ${ctx.s.showPricePerItem !== false ? '<th class="r" style="width:80px;">RATE</th>' : ""}
-                ${ctx.s.showDiscount ? '<th class="r" style="width:70px;">DISC</th>' : ""}
                 ${ctx.s.showTaxColumn !== false ? '<th class="r" style="width:90px;">TAX</th>' : ""}
                 ${extraItemHeaders(ctx)}
                 <th class="r" style="width:95px;">AMOUNT</th>
@@ -1233,6 +1229,8 @@ function festivalBody(ctx: any) {
             <div class="fest-cell-right" style="display:flex; flex-direction:column; justify-content:space-between;">
               <div>
                 <div class="fest-total-line"><span>Taxable Amount</span> <b>₹ ${money(inv.taxableAmount || inv.subTotal)}</b></div>
+                <div class="fest-total-line"><span>Freight</span> <b>₹ ${money(inv.freightAmount || inv.freight || (inv.shippingAddress?.freight) || (inv.shippingAddress?.freightAmount) || 0)}</b></div>
+                <div class="fest-total-line"><span>Discount</span> <b>${Number(inv.discountTotal || 0) > 0 ? `- ₹ ${money(inv.discountTotal)}` : "₹ 0.00"}</b></div>
                 ${festiveTaxLines(ctx)}
                 ${Number(inv.roundOff || 0) !== 0 ? `<div class="fest-total-line"><span>Round Off</span> <b>₹ ${money(inv.roundOff)}</b></div>` : ""}
                 <div class="fest-total-line grand-total" style="color:${accent};">

@@ -250,8 +250,19 @@ export class ItemsService {
           taxRate: dto.taxRate,
           cessRate: dto.cessRate ?? 0.0,
           cessPerUnit: dto.cessPerUnit ?? 0.0,
-          purchaseRate: dto.purchaseRate ?? 0.0,
-          retailPrice: dto.retailPrice,
+          purchaseRate: Number(
+            dto.purchaseRate ??
+              (dto as any).purchasePrice ??
+              (dto as any).costPrice ??
+              0.0,
+          ),
+          retailPrice: Number(
+            dto.retailPrice ??
+              (dto as any).salesPrice ??
+              dto.purchaseRate ??
+              (dto as any).purchasePrice ??
+              0.0,
+          ),
           wholesalePrice: dto.wholesalePrice ?? 0.0,
           mrp: dto.mrp ?? null,
           minStockLevel: dto.minStockLevel ?? 0.0,
@@ -334,6 +345,13 @@ export class ItemsService {
       return {
         ...item,
         currentStock: initialStock,
+        stock: initialStock,
+        stockQuantity: initialStock,
+        salesPrice: Number(item.retailPrice || 0),
+        salePrice: Number(item.retailPrice || 0),
+        purchasePrice: Number(item.purchaseRate || 0),
+        purchaseRate: Number(item.purchaseRate || 0),
+        retailPrice: Number(item.retailPrice || 0),
       };
     });
   }
@@ -442,9 +460,14 @@ export class ItemsService {
               orderBy: { createdAt: "desc" },
               take: 1,
             },
+            purchaseInvoiceItems: {
+              orderBy: { id: "desc" },
+              take: 1,
+              select: { unitPrice: true },
+            },
             stockTransactions: {
               where: { companyId: ctx.companyId },
-              select: { quantity: true },
+              select: { quantity: true, transactionType: true, valuationRate: true },
             },
           },
           orderBy: { name: "asc" },
@@ -463,7 +486,21 @@ export class ItemsService {
         const firstBatch = it.batches?.[0];
 
         const salesPrice = Number(it.retailPrice || 0);
-        const purchasePrice = Number(it.purchaseRate || 0);
+        let purchasePrice = Number(it.purchaseRate || 0);
+        if (purchasePrice === 0 && (it as any).purchaseInvoiceItems && (it as any).purchaseInvoiceItems.length > 0) {
+          purchasePrice = Number((it as any).purchaseInvoiceItems[0].unitPrice || 0);
+        }
+        if (purchasePrice === 0 && it.batches && it.batches.length > 0 && Number(it.batches[0].purchaseRate) > 0) {
+          purchasePrice = Number(it.batches[0].purchaseRate);
+        }
+        if (purchasePrice === 0 && it.stockTransactions) {
+          const receiptTx = it.stockTransactions.find(
+            (st: any) => st.transactionType === "PURCHASE_RECEIPT" && Number(st.valuationRate) > 0,
+          );
+          if (receiptTx) {
+            purchasePrice = Number(receiptTx.valuationRate);
+          }
+        }
         const unit = it.primaryUom?.symbol || it.primaryUom?.name || "BOX";
         const unitName = it.primaryUom?.name || it.primaryUom?.symbol || "BOX";
         const categoryName = it.category?.name || null;
@@ -509,9 +546,14 @@ export class ItemsService {
           category: true,
           batches: true,
           hsnMaster: true,
+          purchaseInvoiceItems: {
+            orderBy: { id: "desc" },
+            take: 1,
+            select: { unitPrice: true },
+          },
           stockTransactions: {
             where: { companyId: ctx.companyId },
-            select: { quantity: true },
+            select: { quantity: true, transactionType: true, valuationRate: true },
           },
         },
       });
@@ -530,7 +572,21 @@ export class ItemsService {
       );
       const { stockTransactions, ...rest } = item;
       const salesPrice = Number(item.retailPrice || 0);
-      const purchasePrice = Number(item.purchaseRate || 0);
+      let purchasePrice = Number(item.purchaseRate || 0);
+      if (purchasePrice === 0 && (item as any).purchaseInvoiceItems && (item as any).purchaseInvoiceItems.length > 0) {
+        purchasePrice = Number((item as any).purchaseInvoiceItems[0].unitPrice || 0);
+      }
+      if (purchasePrice === 0 && item.batches && item.batches.length > 0 && Number(item.batches[0].purchaseRate) > 0) {
+        purchasePrice = Number(item.batches[0].purchaseRate);
+      }
+      if (purchasePrice === 0 && item.stockTransactions) {
+        const receiptTx = item.stockTransactions.find(
+          (st: any) => st.transactionType === "PURCHASE_RECEIPT" && Number(st.valuationRate) > 0,
+        );
+        if (receiptTx) {
+          purchasePrice = Number(receiptTx.valuationRate);
+        }
+      }
       const unit = item.primaryUom?.symbol || item.primaryUom?.name || "BOX";
       const unitName = item.primaryUom?.name || item.primaryUom?.symbol || "BOX";
       const categoryName = item.category?.name || null;
@@ -679,10 +735,14 @@ export class ItemsService {
           purchaseRate:
             dto.purchaseRate !== undefined
               ? dto.purchaseRate
+              : (dto as any).purchasePrice !== undefined
+              ? (dto as any).purchasePrice
               : existing.purchaseRate,
           retailPrice:
             dto.retailPrice !== undefined
               ? dto.retailPrice
+              : (dto as any).salesPrice !== undefined
+              ? (dto as any).salesPrice
               : existing.retailPrice,
           wholesalePrice:
             dto.wholesalePrice !== undefined

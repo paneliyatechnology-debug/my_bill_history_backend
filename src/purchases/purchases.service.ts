@@ -56,6 +56,105 @@ export class PurchasesService {
   ) {}
 
   /**
+   * Intelligently resolves an active Cash or Bank ledger account for purchase settlement.
+   * Checks explicit account first, then matches by ledger type / name / group, with auto-fallback.
+   */
+  private async resolveCreditAccount(
+    tx: any,
+    tenant: TenantContext,
+    mode: string = "CASH",
+    preferredAccountId?: string,
+  ) {
+    if (preferredAccountId) {
+      const acc = await tx.ledgerAccount.findFirst({
+        where: { id: preferredAccountId, companyId: tenant.companyId, isActive: true },
+        include: { group: true },
+      });
+      if (acc) return acc;
+    }
+
+    const isCash = mode === "CASH" || mode === PaymentMode.CASH;
+    if (isCash) {
+      const cashAcc = await tx.ledgerAccount.findFirst({
+        where: {
+          companyId: tenant.companyId,
+          isActive: true,
+          OR: [
+            { isCashLedger: true },
+            { name: { in: ["Cash Account", "Cash", "Cash in Hand", "રોકડ ખાતું"] } },
+            { name: { contains: "Cash", mode: "insensitive" } },
+            { group: { name: { contains: "Cash", mode: "insensitive" } } },
+          ],
+        },
+        include: { group: true },
+      });
+      if (cashAcc) return cashAcc;
+    } else {
+      const bankAcc = await tx.ledgerAccount.findFirst({
+        where: {
+          companyId: tenant.companyId,
+          isActive: true,
+          OR: [
+            { isBankLedger: true },
+            { name: { in: ["Bank Account", "Bank", "બેંક ખાતું"] } },
+            { name: { contains: "Bank", mode: "insensitive" } },
+            { group: { name: { contains: "Bank", mode: "insensitive" } } },
+          ],
+        },
+        include: { group: true },
+      });
+      if (bankAcc) return bankAcc;
+    }
+
+    // Fallback: any active cash or bank account in the company
+    const anyCashBank = await tx.ledgerAccount.findFirst({
+      where: {
+        companyId: tenant.companyId,
+        isActive: true,
+        OR: [{ isCashLedger: true }, { isBankLedger: true }],
+      },
+      include: { group: true },
+    });
+    if (anyCashBank) return anyCashBank;
+
+    // Auto-create Cash Account under Cash-in-Hand group if neither exists
+    let cashGroup = await tx.ledgerGroup.findFirst({
+      where: {
+        companyId: tenant.companyId,
+        OR: [
+          { name: { contains: "Cash", mode: "insensitive" } },
+          { nature: "ASSET" },
+        ],
+      },
+    });
+    if (!cashGroup) {
+      cashGroup = await tx.ledgerGroup.create({
+        data: {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          name: "Cash-in-Hand",
+          nature: "ASSET",
+          isSystem: true,
+        },
+      });
+    }
+    return await tx.ledgerAccount.create({
+      data: {
+        organizationId: tenant.organizationId,
+        companyId: tenant.companyId,
+        groupId: cashGroup.id,
+        name: "Cash Account",
+        nameGujarati: "રોકડ ખાતું",
+        isCashLedger: true,
+        openingType: "DR",
+        openingBalance: "0.00",
+        currentBalance: "0.00",
+      },
+      include: { group: true },
+    });
+  }
+
+  /**
    * Records a purchase bill/invoice with atomic inward inventory receipts
    * and double-entry voucher postings to the general ledger.
    */
@@ -99,30 +198,15 @@ export class PurchasesService {
         });
       }
 
-      // Auto-generate unique sequential bill number if not provided by vendor
+      // Inward Purchase Invoice must NOT be auto-sequenced: vendor's bill number is required
       if (!dto.vendorInvoiceNumber || dto.vendorInvoiceNumber.trim() === "") {
-        const vYear = new Date(dto.invoiceDate || Date.now()).getFullYear();
-        const count = await tx.purchaseInvoice.count({
-          where: { companyId: tenant.companyId },
+        throw new BadRequestException({
+          statusCode: 400,
+          message: "Supplier bill/invoice number is required for purchase invoices.",
+          messageGujarati: "ખરીદ બિલ માટે વેપારીનું બિલ નંબર દાખલ કરવું ફરજિયાત છે.",
         });
-        let candidateSeq = count + 1;
-        let candidate = `PUR-${vYear}-${String(candidateSeq).padStart(4, "0")}`;
-        while (
-          await tx.purchaseInvoice.findUnique({
-            where: {
-              companyId_partyId_vendorInvoiceNumber: {
-                companyId: tenant.companyId,
-                partyId: dto.partyId,
-                vendorInvoiceNumber: candidate,
-              },
-            },
-          })
-        ) {
-          candidateSeq++;
-          candidate = `PUR-${vYear}-${String(candidateSeq).padStart(4, "0")}`;
-        }
-        dto.vendorInvoiceNumber = candidate;
       }
+      dto.vendorInvoiceNumber = dto.vendorInvoiceNumber.trim();
 
       // Check unique vendor invoice number per company & supplier
       const existing = await tx.purchaseInvoice.findUnique({
@@ -130,7 +214,7 @@ export class PurchasesService {
           companyId_partyId_vendorInvoiceNumber: {
             companyId: tenant.companyId,
             partyId: dto.partyId,
-            vendorInvoiceNumber: dto.vendorInvoiceNumber.trim(),
+            vendorInvoiceNumber: dto.vendorInvoiceNumber,
           },
         },
       });
@@ -320,6 +404,11 @@ export class PurchasesService {
         financialYearId = fy.id;
       }
 
+      // Calculate initial paid amount and balance due if paid at creation
+      const requestedPaid = Math.max(0, Number(dto.paidAmount || 0));
+      const initialPaid = Math.min(grandTotal.toNumber(), requestedPaid);
+      const initialBalance = Math.max(0, grandTotal.toNumber() - initialPaid);
+
       // 4. Create PurchaseInvoice & items
       const purchaseInvoice = await tx.purchaseInvoice.create({
         data: {
@@ -339,8 +428,8 @@ export class PurchasesService {
           igstAmount: sumIgst.toFixed(2),
           cessAmount: "0.00",
           grandTotal: grandTotal.toFixed(2),
-          paidAmount: "0.00",
-          balanceAmount: grandTotal.toFixed(2),
+          paidAmount: initialPaid.toFixed(2),
+          balanceAmount: initialBalance.toFixed(2),
           itcEligibility: dto.itcEligibility || "INPUT",
           items: {
             create: lineItemsData.map((item) => ({
@@ -390,6 +479,22 @@ export class PurchasesService {
             referenceDocId: purchaseInvoice.id,
           },
         });
+      }
+
+      // 5b. Update item catalog purchaseRate with latest purchase price
+      for (const line of lineItemsData) {
+        if (line.unitPrice && line.unitPrice.gt(0)) {
+          const itemRecord = dbItemMap.get(line.itemId);
+          await tx.item.update({
+            where: { id: line.itemId },
+            data: {
+              purchaseRate: line.unitPrice.toFixed(4),
+              ...(itemRecord && Number(itemRecord.retailPrice || 0) === 0
+                ? { retailPrice: line.unitPrice.toFixed(2) }
+                : {}),
+            },
+          });
+        }
       }
 
       // 6. Double-Entry General Ledger Voucher Posting
@@ -751,6 +856,122 @@ export class PurchasesService {
         }
       }
 
+      // 6.1. If initial payment was made during bill creation, post payment voucher and allocation atomically
+      if (initialPaid > 0 && supplierAccount) {
+        try {
+          const payMode = (dto.paymentMode as any) || PaymentMode.CASH;
+          const creditAccount = await this.resolveCreditAccount(
+            tx,
+            tenant,
+            payMode,
+            dto.paidFromAccountId,
+          );
+
+          if (creditAccount) {
+            const payDate = dto.paymentDate ? new Date(dto.paymentDate) : invoiceDate;
+            const pYear = payDate.getFullYear();
+            const pPrefix = `PAY-${pYear}-`;
+            const existingPayVouchers = await tx.voucher.findMany({
+              where: {
+                companyId: tenant.companyId,
+                financialYearId,
+                voucherType: VoucherType.PAYMENT,
+              },
+              select: { voucherNumber: true },
+            });
+            let maxPaySeq = 0;
+            for (const v of existingPayVouchers) {
+              if (!v.voucherNumber) continue;
+              const raw = v.voucherNumber.trim();
+              if (raw.toUpperCase().startsWith(pPrefix.toUpperCase())) {
+                const num = parseInt(raw.slice(pPrefix.length), 10);
+                if (!isNaN(num) && num > maxPaySeq) maxPaySeq = num;
+              } else {
+                const match = raw.match(/(\d+)$/);
+                if (match) {
+                  const num = parseInt(match[1], 10);
+                  if (!isNaN(num) && num > maxPaySeq) maxPaySeq = num;
+                }
+              }
+            }
+            const nextPaySeq = Math.max(maxPaySeq + 1, existingPayVouchers.length + 1);
+            const payVoucherNumber = `${pPrefix}${String(nextPaySeq).padStart(4, "0")}`;
+
+            const payVoucher = await tx.voucher.create({
+              data: {
+                organizationId: tenant.organizationId,
+                companyId: tenant.companyId,
+                financialYearId,
+                voucherType: VoucherType.PAYMENT,
+                voucherNumber: payVoucherNumber,
+                voucherDate: payDate,
+                referenceNo: dto.paymentReference || dto.vendorInvoiceNumber,
+                narration: `Payment for purchase bill ${dto.vendorInvoiceNumber} to ${party.name}`,
+                narrationGujarati: `ચુકવણી ખરીદી બિલ ${dto.vendorInvoiceNumber} - ${party.nameGujarati || party.name}`,
+                totalAmount: initialPaid.toFixed(2),
+                isAutoGenerated: true,
+                sourceDocument: "PURCHASE_PAYMENT",
+                sourceEntityId: party.id,
+                journalEntries: {
+                  create: [
+                    {
+                      accountId: supplierAccount.id,
+                      debitAmount: initialPaid.toFixed(2),
+                      creditAmount: "0.00",
+                      lineNarration: `Settlement for bill ${dto.vendorInvoiceNumber}`,
+                      sequenceOrder: 1,
+                    },
+                    {
+                      accountId: creditAccount.id,
+                      debitAmount: "0.00",
+                      creditAmount: initialPaid.toFixed(2),
+                      lineNarration: `Paid via ${payMode} for bill ${dto.vendorInvoiceNumber}`,
+                      sequenceOrder: 2,
+                    },
+                  ],
+                },
+              },
+            });
+
+            // Update Account Balances
+            const sBal = applyTransactionToBalance(
+              ((supplierAccount as any).group?.nature as any) || "LIABILITY",
+              supplierAccount.currentBalance.toString(),
+              new Decimal(initialPaid),
+              new Decimal(0),
+            );
+            await tx.ledgerAccount.update({
+              where: { id: supplierAccount.id },
+              data: { currentBalance: sBal.toNumber() },
+            });
+
+            const cBal = applyTransactionToBalance(
+              ((creditAccount as any).group?.nature as any) || "ASSET",
+              creditAccount.currentBalance.toString(),
+              new Decimal(0),
+              new Decimal(initialPaid),
+            );
+            await tx.ledgerAccount.update({
+              where: { id: creditAccount.id },
+              data: { currentBalance: cBal.toNumber() },
+            });
+
+            // Create Payment Allocation
+            await tx.paymentAllocation.create({
+              data: {
+                voucherId: payVoucher.id,
+                purchaseInvoiceId: purchaseInvoice.id,
+                allocatedAmount: initialPaid.toFixed(2),
+                cashDiscount: "0.00",
+                allocationDate: payDate,
+              },
+            });
+          }
+        } catch (initPayErr: any) {
+          this.logger.warn(`Failed to auto-post initial purchase payment: ${initPayErr?.message}`);
+        }
+      }
+
       // 7. Audit Log
       await this.audit.record({
         organizationId: tenant.organizationId,
@@ -1080,6 +1301,35 @@ export class PurchasesService {
           };
         }
         throw new NotFoundException(`Purchase invoice with ID ${id} not found.`);
+      }
+
+      if (invoice) {
+        // Self-heal: ensure paidAmount and balanceAmount reflect any recorded payment allocations
+        const allocations = await tx.paymentAllocation.findMany({
+          where: {
+            purchaseInvoiceId: invoice.id,
+            voucher: { isCancelled: false },
+          },
+        });
+        const sumAllocated = allocations.reduce(
+          (sum: number, a: any) => sum + Number(a.allocatedAmount || 0) + Number(a.cashDiscount || 0),
+          0,
+        );
+        const dbPaid = Number(invoice.paidAmount || 0);
+        const effectivePaid = Math.max(dbPaid, sumAllocated);
+        const effectiveBalance = Math.max(0, Number(invoice.grandTotal || 0) - effectivePaid);
+
+        if (dbPaid < effectivePaid || Number(invoice.balanceAmount || 0) !== effectiveBalance) {
+          await tx.purchaseInvoice.update({
+            where: { id: invoice.id },
+            data: {
+              paidAmount: effectivePaid.toFixed(2),
+              balanceAmount: effectiveBalance.toFixed(2),
+            },
+          });
+          (invoice as any).paidAmount = effectivePaid;
+          (invoice as any).balanceAmount = effectiveBalance;
+        }
       }
 
       return invoice;
@@ -2288,18 +2538,12 @@ export class PurchasesService {
         }
 
         const mode = dto.paymentMode || PaymentMode.CASH;
-        let creditAccount = dto.paidFromAccountId
-          ? await tx.ledgerAccount.findFirst({
-              where: { id: dto.paidFromAccountId, companyId: tenant.companyId, isActive: true },
-              include: { group: true },
-            })
-          : null;
-        if (!creditAccount && mode === PaymentMode.CASH) {
-          creditAccount = await tx.ledgerAccount.findFirst({
-            where: { companyId: tenant.companyId, name: "Cash Account", isActive: true },
-            include: { group: true },
-          });
-        }
+        const creditAccount = await this.resolveCreditAccount(
+          tx,
+          tenant,
+          mode as any,
+          dto.paidFromAccountId,
+        );
         if (!creditAccount) {
           throw new NotFoundException("Choose an active cash or bank account for this payment.");
         }
@@ -2699,5 +2943,209 @@ export class PurchasesService {
       message: `${deletedCount} purchase bills deleted successfully.`,
       messageGujarati: `${deletedCount} ખરીદી બિલો સફળતાપૂર્વક કાઢી નાખવામાં આવ્યા છે.`,
     };
+  }
+
+  async updatePurchaseInvoice(
+    id: string,
+    dto: CreatePurchaseInvoiceDto,
+    tenant: TenantContext,
+  ) {
+    if (!dto.items || dto.items.length === 0) {
+      throw new BadRequestException("Purchase invoice must contain at least one line item.");
+    }
+
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const existing = await tx.purchaseInvoice.findFirst({
+        where: { id, companyId: tenant.companyId },
+        include: { items: true, party: true },
+      });
+
+      if (!existing) {
+        throw new NotFoundException(`Purchase invoice with ID '${id}' not found.`);
+      }
+
+      // If a new vendor invoice number is provided, use it; otherwise preserve existing manual number
+      const vendorInvoiceNumber = dto.vendorInvoiceNumber?.trim() || existing.vendorInvoiceNumber;
+      const targetPartyId = dto.partyId || existing.partyId;
+
+      if (
+        vendorInvoiceNumber !== existing.vendorInvoiceNumber ||
+        targetPartyId !== existing.partyId
+      ) {
+        const conflict = await tx.purchaseInvoice.findFirst({
+          where: {
+            companyId: tenant.companyId,
+            partyId: targetPartyId,
+            vendorInvoiceNumber,
+            id: { not: id },
+          },
+        });
+        if (conflict) {
+          throw new ConflictException(
+            `Purchase invoice with vendor invoice number '${vendorInvoiceNumber}' already exists for this supplier.`,
+          );
+        }
+      }
+
+      const party = await tx.party.findFirst({
+        where: { id: targetPartyId, companyId: tenant.companyId },
+        include: { ledgerAccount: true },
+      });
+      if (!party) {
+        throw new NotFoundException("Supplier party not found.");
+      }
+
+      const company = await tx.company.findUnique({
+        where: { id: tenant.companyId },
+      });
+      if (!company) {
+        throw new NotFoundException("Company context not found.");
+      }
+
+      const invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : existing.invoiceDate;
+      const dueDate = dto.dueDate ? new Date(dto.dueDate) : existing.dueDate;
+      const placeOfSupply = dto.placeOfSupply?.trim() || existing.placeOfSupply;
+
+      const isInterState = company.stateCode !== placeOfSupply;
+      let sumTaxable = new Decimal(0);
+      let sumCgst = new Decimal(0);
+      let sumSgst = new Decimal(0);
+      let sumIgst = new Decimal(0);
+      let sumGrand = new Decimal(0);
+
+      const resolvedItems: Array<{
+        itemId: string;
+        hsnCode: string;
+        quantity: Decimal;
+        unitPrice: Decimal;
+        taxRate: Decimal;
+        taxableAmount: Decimal;
+        cgstAmount: Decimal;
+        sgstAmount: Decimal;
+        igstAmount: Decimal;
+        totalAmount: Decimal;
+      }> = [];
+
+      for (const item of dto.items) {
+        const it = await tx.item.findFirst({
+          where: { id: item.itemId, companyId: tenant.companyId },
+        });
+        if (!it) {
+          throw new NotFoundException(`Item with ID '${item.itemId}' not found.`);
+        }
+        const qty = new Decimal(item.quantity);
+        const rate = new Decimal(item.unitPrice);
+        const taxRate = new Decimal(item.taxRate !== undefined ? item.taxRate : it.taxRate);
+        const taxable = qty.times(rate).toDecimalPlaces(2);
+
+        let cgst = new Decimal(0);
+        let sgst = new Decimal(0);
+        let igst = new Decimal(0);
+
+        if (taxRate.greaterThan(0)) {
+          if (isInterState) {
+            igst = taxable.times(taxRate).dividedBy(100).toDecimalPlaces(2);
+          } else {
+            cgst = taxable.times(taxRate).dividedBy(200).toDecimalPlaces(2);
+            sgst = cgst;
+          }
+        }
+        const total = taxable.plus(cgst).plus(sgst).plus(igst);
+
+        sumTaxable = sumTaxable.plus(taxable);
+        sumCgst = sumCgst.plus(cgst);
+        sumSgst = sumSgst.plus(sgst);
+        sumIgst = sumIgst.plus(igst);
+        sumGrand = sumGrand.plus(total);
+
+        resolvedItems.push({
+          itemId: it.id,
+          hsnCode: item.hsnCode || it.hsnCode || "1001",
+          quantity: qty,
+          unitPrice: rate,
+          taxRate,
+          taxableAmount: taxable,
+          cgstAmount: cgst,
+          sgstAmount: sgst,
+          igstAmount: igst,
+          totalAmount: total,
+        });
+      }
+
+      // Re-adjust stock transactions
+      await tx.stockTransaction.deleteMany({
+        where: {
+          referenceDocId: id,
+          referenceDocType: "PURCHASE_INVOICE",
+        },
+      });
+
+      let warehouseId = dto.warehouseId || existing.branchId;
+      const defaultWh = await tx.warehouse.findFirst({
+        where: { companyId: tenant.companyId, isDefault: true },
+      });
+      if (defaultWh) warehouseId = defaultWh.id;
+
+      for (const rItem of resolvedItems) {
+        await tx.stockTransaction.create({
+          data: {
+            organizationId: tenant.organizationId,
+            companyId: tenant.companyId,
+            warehouseId,
+            itemId: rItem.itemId,
+            transactionType: StockTransactionType.PURCHASE_RECEIPT,
+            transactionDate: invoiceDate,
+            quantity: rItem.quantity.toNumber(),
+            valuationRate: rItem.unitPrice.toNumber(),
+            totalValuation: rItem.taxableAmount.toNumber(),
+            referenceDocType: "PURCHASE_INVOICE",
+            referenceDocId: id,
+          },
+        });
+      }
+
+      // Delete old items & recreate
+      await tx.purchaseInvoiceItem.deleteMany({
+        where: { invoiceId: id },
+      });
+
+      // Update purchase invoice record
+      const updated = await tx.purchaseInvoice.update({
+        where: { id },
+        data: {
+          partyId: targetPartyId,
+          vendorInvoiceNumber,
+          invoiceDate,
+          dueDate,
+          placeOfSupply,
+          taxableAmount: sumTaxable.toNumber(),
+          cgstAmount: sumCgst.toNumber(),
+          sgstAmount: sumSgst.toNumber(),
+          igstAmount: sumIgst.toNumber(),
+          grandTotal: sumGrand.toNumber(),
+          balanceAmount: Math.max(0, sumGrand.minus(existing.paidAmount.toString()).toNumber()),
+          items: {
+            create: resolvedItems.map((r) => ({
+              itemId: r.itemId,
+              hsnCode: r.hsnCode,
+              quantity: r.quantity.toNumber(),
+              unitPrice: r.unitPrice.toNumber(),
+              taxableAmount: r.taxableAmount.toNumber(),
+              taxRate: r.taxRate.toNumber(),
+              cgstAmount: r.cgstAmount.toNumber(),
+              sgstAmount: r.sgstAmount.toNumber(),
+              igstAmount: r.igstAmount.toNumber(),
+              totalAmount: r.totalAmount.toNumber(),
+            })),
+          },
+        },
+        include: {
+          items: { include: { item: true } },
+          party: true,
+        },
+      });
+
+      return updated;
+    });
   }
 }

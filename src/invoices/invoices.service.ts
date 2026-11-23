@@ -384,16 +384,17 @@ export class InvoicesService {
           category === InvoiceCategory.PROFORMA_INVOICE;
         let invoiceNumber: string;
 
-        if (dto.invoiceNumber && dto.invoiceNumber.trim() !== "") {
-          invoiceNumber = dto.invoiceNumber.trim();
-        } else if (isDraft && !isCommercialQuoteOrProforma) {
+        if (isDraft && !isCommercialQuoteOrProforma) {
           invoiceNumber = `DFT-${Date.now().toString(36).toUpperCase()}-${Math.floor(
             Math.random() * 1000,
           )}
             .toString()
             .padStart(3, "0")}`;
+        } else if (isCommercialQuoteOrProforma && dto.invoiceNumber && dto.invoiceNumber.trim() !== "") {
+          invoiceNumber = dto.invoiceNumber.trim();
         } else {
           // 8. Concurrency-Safe Legal Invoice Numbering using Transaction Advisory Lock
+          // Security: Never trust client-submitted invoiceNumber for Sales Invoices. Always use the backend sequence.
           const fyStart = new Date(fy.startDate);
           const fyEnd = new Date(fy.endDate);
           const fyCode = `${fyStart.getFullYear().toString().slice(-2)}-${fyEnd.getFullYear().toString().slice(-2)}`;
@@ -437,16 +438,36 @@ export class InvoicesService {
             nextNum = 1;
           } else {
             nextNum = seq.currentNumber + 1;
-            await tx.invoiceSequence.update({
-              where: { id: seq.id },
-              data: { currentNumber: nextNum },
-            });
           }
 
-          invoiceNumber = `${seq.prefix}${String(nextNum).padStart(
+          let candidate = `${seq.prefix}${String(nextNum).padStart(
             seq.padding || 4,
             "0",
           )}`;
+          while (
+            await tx.salesInvoice.findUnique({
+              where: {
+                companyId_financialYearId_invoiceNumber: {
+                  companyId: tenant.companyId,
+                  financialYearId: fy.id,
+                  invoiceNumber: candidate,
+                },
+              },
+            })
+          ) {
+            nextNum++;
+            candidate = `${seq.prefix}${String(nextNum).padStart(
+              seq.padding || 4,
+              "0",
+            )}`;
+          }
+
+          await tx.invoiceSequence.update({
+            where: { id: seq.id },
+            data: { currentNumber: nextNum },
+          });
+
+          invoiceNumber = candidate;
         }
 
         // 9. Exact Decimal Statutory Tax & Line Calculations
@@ -454,6 +475,18 @@ export class InvoicesService {
           dto.placeOfSupply?.trim() ||
           party.stateCode?.trim() ||
           company.stateCode;
+
+        const normalizedAddCharges: any[] = [];
+        if (Array.isArray(dto.additionalCharges)) {
+          normalizedAddCharges.push(...dto.additionalCharges);
+        } else if (dto.additionalCharges && Number(dto.additionalCharges) > 0) {
+          normalizedAddCharges.push({ name: "Freight", amount: Number(dto.additionalCharges) });
+        }
+        if ((dto as any).freightAmount && Number((dto as any).freightAmount) > 0) {
+          if (!normalizedAddCharges.some((c) => c.name === "Freight")) {
+            normalizedAddCharges.push({ name: "Freight", amount: Number((dto as any).freightAmount) });
+          }
+        }
 
         const taxCalc = calculateSalesInvoiceTaxes(
           company.stateCode,
@@ -473,7 +506,7 @@ export class InvoicesService {
             discountType: dto.discountType,
             discountPercent: dto.discountPercent,
             discountAmount: dto.discountAmount,
-            additionalCharges: dto.additionalCharges,
+            additionalCharges: normalizedAddCharges,
           },
         );
 
@@ -619,7 +652,20 @@ export class InvoicesService {
               city: company.city,
               pincode: company.pincode,
             },
-            shippingAddress: party.shippingAddress || null,
+            shippingAddress: (() => {
+              const freightAmt = Number((dto as any).freightAmount ?? (dto as any).freight ?? (dto.additionalCharges ? (Array.isArray(dto.additionalCharges) ? dto.additionalCharges.reduce((a, b) => a + (Number(b.amount) || 0), 0) : dto.additionalCharges) : 0)) || 0;
+              const baseShip = (dto as any).shippingAddress || party.shippingAddress || null;
+              if (!baseShip && freightAmt === 0 && !(dto as any).vehicleNumber) return null;
+              const shipObj = typeof baseShip === "object" && baseShip !== null ? { ...baseShip } : (baseShip ? { address: baseShip } : {});
+              if (freightAmt > 0) {
+                shipObj.freight = freightAmt;
+                shipObj.freightAmount = freightAmt;
+              }
+              if ((dto as any).vehicleNumber) {
+                shipObj.vehicleNo = (dto as any).vehicleNumber;
+              }
+              return shipObj;
+            })(),
             subTotal: taxCalc.subTotal.toNumber(),
             discountTotal: taxCalc.discountTotal.toNumber(),
             taxableAmount: taxCalc.taxableAmount.toNumber(),
@@ -1555,8 +1601,17 @@ export class InvoicesService {
         });
       }
 
+      const shipAddr: any = invoice.shippingAddress || {};
+      const explicitFreight = Number(shipAddr.freightAmount ?? shipAddr.freight ?? 0);
+      const invoiceTaxTotal = Number(invoice.cgstAmount || 0) + Number(invoice.sgstAmount || 0) + Number(invoice.igstAmount || 0) + Number(invoice.utgstAmount || 0) + Number(invoice.cessAmount || 0);
+      const diffFreight = Math.max(0, Number(invoice.grandTotal || 0) - (Number(invoice.taxableAmount || 0) + invoiceTaxTotal + Number(invoice.roundOff || 0)));
+      const finalFreight = explicitFreight > 0 ? explicitFreight : (diffFreight > 0.01 ? Math.round(diffFreight * 100) / 100 : 0);
+
       return {
         ...invoice,
+        discountTotal: Number(invoice.discountTotal || 0),
+        freightAmount: finalFreight,
+        freight: finalFreight,
         sourceQuotation,
         quotationNumber: sourceQuotation?.invoiceNumber || null,
         quotationId: sourceQuotation?.id || (invoice as any).quotationId || null,
@@ -1734,16 +1789,36 @@ export class InvoicesService {
         nextNum = 1;
       } else {
         nextNum = seq.currentNumber + 1;
-        await tx.invoiceSequence.update({
-          where: { id: seq.id },
-          data: { currentNumber: nextNum },
-        });
       }
 
-      const legalInvoiceNumber = `${seq.prefix}${String(nextNum).padStart(
+      let candidate = `${seq.prefix}${String(nextNum).padStart(
         seq.padding || 4,
         "0",
       )}`;
+      while (
+        await tx.salesInvoice.findUnique({
+          where: {
+            companyId_financialYearId_invoiceNumber: {
+              companyId: tenant.companyId,
+              financialYearId: fy.id,
+              invoiceNumber: candidate,
+            },
+          },
+        })
+      ) {
+        nextNum++;
+        candidate = `${seq.prefix}${String(nextNum).padStart(
+          seq.padding || 4,
+          "0",
+        )}`;
+      }
+
+      await tx.invoiceSequence.update({
+        where: { id: seq.id },
+        data: { currentNumber: nextNum },
+      });
+
+      const legalInvoiceNumber = candidate;
 
       // Append-only stock dispatch for physical items (skip if issued via Delivery Challan)
       if (warehouse && !(invoice as any).deliveryChallanId) {
@@ -2187,16 +2262,36 @@ export class InvoicesService {
         nextNum = 1;
       } else {
         nextNum = seq.currentNumber + 1;
-        await tx.invoiceSequence.update({
-          where: { id: seq.id },
-          data: { currentNumber: nextNum },
-        });
       }
 
-      targetInvoiceNumber = `${seq.prefix}${String(nextNum).padStart(
+      let candidate = `${seq.prefix}${String(nextNum).padStart(
         seq.padding || 4,
         "0",
       )}`;
+      while (
+        await tx.salesInvoice.findUnique({
+          where: {
+            companyId_financialYearId_invoiceNumber: {
+              companyId: tenant.companyId,
+              financialYearId: fy.id,
+              invoiceNumber: candidate,
+            },
+          },
+        })
+      ) {
+        nextNum++;
+        candidate = `${seq.prefix}${String(nextNum).padStart(
+          seq.padding || 4,
+          "0",
+        )}`;
+      }
+
+      await tx.invoiceSequence.update({
+        where: { id: seq.id },
+        data: { currentNumber: nextNum },
+      });
+
+      targetInvoiceNumber = candidate;
 
       const isUnpaidCredit =
         quotation.paymentMode === PaymentMode.UNPAID_CREDIT;
@@ -5612,6 +5707,18 @@ export class InvoicesService {
         party?.stateCode?.trim() ||
         company.stateCode;
 
+      const normalizedAddCharges: any[] = [];
+      if (Array.isArray(dto.additionalCharges)) {
+        normalizedAddCharges.push(...dto.additionalCharges);
+      } else if (dto.additionalCharges && Number(dto.additionalCharges) > 0) {
+        normalizedAddCharges.push({ name: "Freight", amount: Number(dto.additionalCharges) });
+      }
+      if ((dto as any).freightAmount && Number((dto as any).freightAmount) > 0) {
+        if (!normalizedAddCharges.some((c) => c.name === "Freight")) {
+          normalizedAddCharges.push({ name: "Freight", amount: Number((dto as any).freightAmount) });
+        }
+      }
+
       const taxCalc = calculateSalesInvoiceTaxes(
         company.stateCode,
         placeOfSupply,
@@ -5626,6 +5733,12 @@ export class InvoicesService {
           supplyCategory:
             (itemMap.get(i.itemId) as any)?.supplyCategory || "TAXABLE",
         })),
+        {
+          discountType: dto.discountType,
+          discountPercent: dto.discountPercent,
+          discountAmount: dto.discountAmount,
+          additionalCharges: normalizedAddCharges,
+        },
       );
 
       // 5. Clean up old stock transactions and old items
@@ -5683,6 +5796,32 @@ export class InvoicesService {
             dto.termsAndConditions !== undefined
               ? dto.termsAndConditions
               : existing.termsAndConditions,
+          shippingAddress: (() => {
+            const freightAmt = Number(
+              (dto as any).freightAmount ??
+              (dto as any).freight ??
+              (dto.additionalCharges
+                ? Array.isArray(dto.additionalCharges)
+                  ? dto.additionalCharges.reduce((a: number, b: any) => a + (Number(b.amount) || 0), 0)
+                  : dto.additionalCharges
+                : 0)
+            ) || 0;
+            const baseShip = (dto as any).shippingAddress !== undefined
+              ? (dto as any).shippingAddress
+              : existing.shippingAddress;
+            const shipObj = typeof baseShip === "object" && baseShip !== null
+              ? { ...baseShip }
+              : (baseShip ? { address: baseShip } : {});
+            shipObj.freight = freightAmt;
+            shipObj.freightAmount = freightAmt;
+            if ((dto as any).vehicleNumber !== undefined) {
+              shipObj.vehicleNo = (dto as any).vehicleNumber;
+            }
+            if ((dto as any).transportMode !== undefined) {
+              shipObj.transportMode = (dto as any).transportMode;
+            }
+            return shipObj;
+          })(),
         },
       });
 
@@ -6048,9 +6187,26 @@ export class InvoicesService {
           },
         })
       : null;
-    const nextNum = seq ? seq.currentNumber + 1 : 1;
+    let nextNum = seq ? seq.currentNumber + 1 : 1;
+    let candidate = `${prefix}${String(nextNum).padStart(seq?.padding || 4, "0")}`;
+    if (fy) {
+      while (
+        await this.prisma.salesInvoice.findUnique({
+          where: {
+            companyId_financialYearId_invoiceNumber: {
+              companyId: tenant.companyId,
+              financialYearId: fy.id,
+              invoiceNumber: candidate,
+            },
+          },
+        })
+      ) {
+        nextNum++;
+        candidate = `${prefix}${String(nextNum).padStart(seq?.padding || 4, "0")}`;
+      }
+    }
     return {
-      nextNumber: `${prefix}${String(nextNum).padStart(seq?.padding || 4, "0")}`,
+      nextNumber: candidate,
     };
   }
 }

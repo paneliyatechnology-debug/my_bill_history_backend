@@ -17,7 +17,9 @@ export interface CreateItemDto {
   cessRate?: number;
   cessPerUnit?: number;
   purchaseRate?: number;
+  purchasePrice?: number;
   retailPrice: number;
+  salesPrice?: number;
   wholesalePrice?: number;
   mrp?: number;
   minStockLevel?: number;

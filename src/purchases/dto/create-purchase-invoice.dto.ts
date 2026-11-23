@@ -14,5 +14,10 @@ export interface CreatePurchaseInvoiceDto {
   placeOfSupply?: string;
   warehouseId?: string;
   itcEligibility?: string;
+  paidAmount?: number | string;
+  paymentMode?: string;
+  paidFromAccountId?: string;
+  paymentDate?: string;
+  paymentReference?: string;
   items: CreatePurchaseInvoiceItemDto[];
 }

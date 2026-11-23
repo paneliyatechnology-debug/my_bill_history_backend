@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Delete,
   Body,
   Param,
@@ -96,6 +97,23 @@ export class PurchasesController {
     @CurrentTenant() tenant: TenantContext,
   ) {
     return await this.purchasesService.getPurchaseInvoiceById(id, tenant);
+  }
+
+  @RequirePermissions({ module: "purchases", action: "edit" })
+  @Put(":id")
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+    UserRole.BRANCH_MANAGER,
+  )
+  async updatePurchaseInvoice(
+    @Param("id") id: string,
+    @Body() dto: CreatePurchaseInvoiceDto,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.purchasesService.updatePurchaseInvoice(id, dto, tenant);
   }
 
   @Get(":purchaseId/payments")
