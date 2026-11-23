@@ -3960,11 +3960,6 @@ export class InvoicesService {
         where: { companyId, name: groupName },
       });
       if (!group) {
-        group = await tx.ledgerGroup.findFirst({
-          where: { companyId, nature: groupNature },
-        });
-      }
-      if (!group) {
         const comp = await tx.company.findUnique({
           where: { id: companyId },
           select: { organizationId: true },
@@ -4034,11 +4029,6 @@ export class InvoicesService {
     let sundryDebtors = await tx.ledgerGroup.findFirst({
       where: { companyId: tenant.companyId, name: "Sundry Debtors" },
     });
-    if (!sundryDebtors) {
-      sundryDebtors = await tx.ledgerGroup.findFirst({
-        where: { companyId: tenant.companyId, nature: "ASSET" },
-      });
-    }
     if (!sundryDebtors) {
       sundryDebtors = await tx.ledgerGroup.create({
         data: {

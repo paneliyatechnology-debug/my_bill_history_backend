@@ -1542,10 +1542,39 @@ export class ReportsService {
     tenant: TenantContext,
   ): Promise<any> {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
-      const party = await tx.party.findUnique({
+      let party = await tx.party.findUnique({
         where: { id: query.partyId },
         include: { ledgerAccount: true },
       });
+
+      let partyLedgerAccount = party?.ledgerAccount;
+
+      // Fallback: If not found by Party ID, check if query.partyId is actually a LedgerAccount ID
+      if (!party) {
+        const account = await tx.ledgerAccount.findUnique({
+          where: { id: query.partyId },
+          include: { party: true },
+        });
+
+        if (account && account.companyId === tenant.companyId) {
+          partyLedgerAccount = account;
+          if (account.party) {
+            party = { ...account.party, ledgerAccount: account };
+          } else {
+            // Synthesize party from ledger account for non-party or unlinked ledgers
+            party = {
+              id: account.id,
+              companyId: account.companyId,
+              name: account.name,
+              nameGujarati: account.nameGujarati,
+              phone: null,
+              gstin: null,
+              type: PartyType.CUSTOMER,
+              ledgerAccount: account,
+            } as any;
+          }
+        }
+      }
 
       if (!party || party.companyId !== tenant.companyId) {
         throw new NotFoundException(
@@ -1553,7 +1582,6 @@ export class ReportsService {
         );
       }
 
-      let partyLedgerAccount = party.ledgerAccount;
       if (!partyLedgerAccount) {
         partyLedgerAccount = await tx.ledgerAccount.findFirst({
           where: { companyId: tenant.companyId, partyId: party.id },
@@ -1589,6 +1617,18 @@ export class ReportsService {
           closingBalance: {
             amount: "0.00",
             type: isSupplier ? "CR" : "DR",
+          },
+          summary: {
+            totalReceivable: 0,
+            totalPayable: 0,
+            closingBalance: 0,
+            closingBalanceType: isSupplier ? "CR" : "DR",
+            openingBalance: 0,
+            totalSales: 0,
+            totalDebits: 0,
+            totalReceived: 0,
+            totalCredits: 0,
+            overdueAmount: 0,
           },
         };
       }
@@ -1702,6 +1742,18 @@ export class ReportsService {
         closingBalance: {
           amount: runningBalance.abs().toFixed(2),
           type: runningBalance.isNegative() ? "CR" : "DR",
+        },
+        summary: {
+          totalReceivable: runningBalance.isNegative() ? 0 : Number(runningBalance.toFixed(2)),
+          totalPayable: runningBalance.isNegative() ? Number(runningBalance.abs().toFixed(2)) : 0,
+          closingBalance: Number(runningBalance.toFixed(2)),
+          closingBalanceType: runningBalance.isNegative() ? "CR" : "DR",
+          openingBalance: Number(openingBal.toFixed(2)),
+          totalSales: Number(totalDebit.toFixed(2)),
+          totalDebits: Number(totalDebit.toFixed(2)),
+          totalReceived: Number(totalCredit.toFixed(2)),
+          totalCredits: Number(totalCredit.toFixed(2)),
+          overdueAmount: runningBalance.isNegative() ? 0 : Number(runningBalance.toFixed(2)),
         },
       };
     });
@@ -1832,6 +1884,18 @@ export class ReportsService {
         closingBalance: {
           amount: runningBalance.abs().toFixed(2),
           type: runningBalance.isNegative() ? "CR" : "DR",
+        },
+        summary: {
+          totalReceivable: runningBalance.isNegative() ? 0 : Number(runningBalance.toFixed(2)),
+          totalPayable: runningBalance.isNegative() ? Number(runningBalance.abs().toFixed(2)) : 0,
+          closingBalance: Number(runningBalance.toFixed(2)),
+          closingBalanceType: runningBalance.isNegative() ? "CR" : "DR",
+          openingBalance: Number(openingBal.toFixed(2)),
+          totalSales: Number(totalDebit.toFixed(2)),
+          totalDebits: Number(totalDebit.toFixed(2)),
+          totalReceived: Number(totalCredit.toFixed(2)),
+          totalCredits: Number(totalCredit.toFixed(2)),
+          overdueAmount: runningBalance.isNegative() ? 0 : Number(runningBalance.toFixed(2)),
         },
       };
     });

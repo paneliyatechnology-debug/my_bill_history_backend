@@ -604,10 +604,7 @@ export class PurchasesService implements OnModuleInit {
           let itcGroup = await tx.ledgerGroup.findFirst({
             where: {
               companyId: tenant.companyId,
-              OR: [
-                { name: { contains: "Duties & Taxes", mode: "insensitive" } },
-                { nature: "ASSET" },
-              ],
+              name: { contains: "Duties & Taxes", mode: "insensitive" },
             },
           });
           if (!itcGroup) {
@@ -689,10 +686,7 @@ export class PurchasesService implements OnModuleInit {
           let creditorGroup = await tx.ledgerGroup.findFirst({
             where: {
               companyId: tenant.companyId,
-              OR: [
-                { name: { contains: "Creditor", mode: "insensitive" } },
-                { nature: "LIABILITY" },
-              ],
+              name: { contains: "Creditor", mode: "insensitive" },
             },
           });
           if (!creditorGroup) {

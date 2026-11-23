@@ -3768,26 +3768,27 @@ export class VouchersService {
     }
 
     // 3. Create new account under target group
-    const targetGroup = await tx.ledgerGroup.findFirst({
+    let targetGroup = await tx.ledgerGroup.findFirst({
       where: { companyId: tenant.companyId, name: groupName },
     });
-    const fallbackGroup =
-      targetGroup ||
-      (await tx.ledgerGroup.findFirst({
-        where: { companyId: tenant.companyId, nature },
-      }));
-
-    if (!fallbackGroup) {
-      throw new NotFoundException(
-        `Ledger group '${groupName}' or ${nature} not found in this company.`,
-      );
+    if (!targetGroup) {
+      targetGroup = await tx.ledgerGroup.create({
+        data: {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          name: groupName,
+          nameGujarati: groupName === "Sundry Debtors" ? "ગ્રાહકો / દેવાદારો" : "પરચૂરણ લેણદારો",
+          nature,
+          isSystem: true,
+        },
+      });
     }
 
     return await tx.ledgerAccount.create({
       data: {
         organizationId: tenant.organizationId,
         companyId: tenant.companyId,
-        groupId: fallbackGroup.id,
+        groupId: targetGroup.id,
         name: party.name,
         nameGujarati: party.nameGujarati,
         isPartyLedger: true,
