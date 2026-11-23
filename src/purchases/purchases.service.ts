@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
   Logger,
+  OnModuleInit,
 } from "@nestjs/common";
 import {
   TenantContext,
@@ -46,7 +47,7 @@ function parseEndOfDay(dateStr?: string): Date | undefined {
 }
 
 @Injectable()
-export class PurchasesService {
+export class PurchasesService implements OnModuleInit {
   private readonly logger = new Logger(PurchasesService.name);
 
   constructor(
@@ -54,6 +55,25 @@ export class PurchasesService {
     private readonly audit: AuditService,
     private readonly notificationsService: NotificationsService,
   ) {}
+
+  async onModuleInit() {
+    await this.ensurePurchaseInvoiceColumns();
+  }
+
+  private async ensurePurchaseInvoiceColumns(tx?: any) {
+    const client = tx || this.prisma;
+    try {
+      await client.$executeRawUnsafe(`
+        ALTER TABLE "purchase_invoices" ADD COLUMN IF NOT EXISTS "shipping_address" JSONB;
+        ALTER TABLE "purchase_invoices" ADD COLUMN IF NOT EXISTS "notes" TEXT;
+        ALTER TABLE "purchase_invoices" ADD COLUMN IF NOT EXISTS "terms_and_conditions" TEXT;
+        ALTER TABLE "purchase_invoices" ADD COLUMN IF NOT EXISTS "round_off" DECIMAL(6, 2);
+      `);
+      this.logger.log("Verified purchase_invoices self-healing columns.");
+    } catch (err: any) {
+      this.logger.warn(`Notice on purchase_invoices columns check: ${err.message}`);
+    }
+  }
 
   /**
    * Intelligently resolves an active Cash or Bank ledger account for purchase settlement.
@@ -1226,49 +1246,102 @@ export class PurchasesService {
         }
       }
 
-      const [invoices, total] = await Promise.all([
-        tx.purchaseInvoice.findMany({
-          where,
-          include: {
-            party: {
-              select: {
-                id: true,
-                name: true,
-                nameGujarati: true,
-                gstin: true,
-                phone: true,
+      let invoices: any[];
+      let total: number;
+      try {
+        [invoices, total] = await Promise.all([
+          tx.purchaseInvoice.findMany({
+            where,
+            include: {
+              party: {
+                select: {
+                  id: true,
+                  name: true,
+                  nameGujarati: true,
+                  gstin: true,
+                  phone: true,
+                },
+              },
+              items: {
+                include: {
+                  item: { select: { id: true, name: true, nameGujarati: true } },
+                  returnItems: true,
+                },
+              },
+              returns: {
+                select: {
+                  id: true,
+                  returnNumber: true,
+                  grandTotal: true,
+                  createdAt: true,
+                  items: true,
+                },
               },
             },
-            items: {
+            orderBy: { invoiceDate: "desc" },
+            take: (dto as any).availableForReturnOnly
+              ? undefined
+              : dto.limit
+                ? Number(dto.limit)
+                : 50,
+            skip: (dto as any).availableForReturnOnly
+              ? undefined
+              : dto.offset
+                ? Number(dto.offset)
+                : 0,
+          }),
+          tx.purchaseInvoice.count({ where }),
+        ]);
+      } catch (queryErr: any) {
+        if (queryErr?.message && (queryErr.message.includes("round_off") || queryErr.message.includes("column"))) {
+          await this.ensurePurchaseInvoiceColumns(tx);
+          [invoices, total] = await Promise.all([
+            tx.purchaseInvoice.findMany({
+              where,
               include: {
-                item: { select: { id: true, name: true, nameGujarati: true } },
-                returnItems: true,
+                party: {
+                  select: {
+                    id: true,
+                    name: true,
+                    nameGujarati: true,
+                    gstin: true,
+                    phone: true,
+                  },
+                },
+                items: {
+                  include: {
+                    item: { select: { id: true, name: true, nameGujarati: true } },
+                    returnItems: true,
+                  },
+                },
+                returns: {
+                  select: {
+                    id: true,
+                    returnNumber: true,
+                    grandTotal: true,
+                    createdAt: true,
+                    items: true,
+                  },
+                },
               },
-            },
-            returns: {
-              select: {
-                id: true,
-                returnNumber: true,
-                grandTotal: true,
-                createdAt: true,
-                items: true,
-              },
-            },
-          },
-          orderBy: { invoiceDate: "desc" },
-          take: (dto as any).availableForReturnOnly
-            ? undefined
-            : dto.limit
-              ? Number(dto.limit)
-              : 50,
-          skip: (dto as any).availableForReturnOnly
-            ? undefined
-            : dto.offset
-              ? Number(dto.offset)
-              : 0,
-        }),
-        tx.purchaseInvoice.count({ where }),
-      ]);
+              orderBy: { invoiceDate: "desc" },
+              take: (dto as any).availableForReturnOnly
+                ? undefined
+                : dto.limit
+                  ? Number(dto.limit)
+                  : 50,
+              skip: (dto as any).availableForReturnOnly
+                ? undefined
+                : dto.offset
+                  ? Number(dto.offset)
+                  : 0,
+            }),
+            tx.purchaseInvoice.count({ where }),
+          ]);
+        } else {
+          throw queryErr;
+        }
+      }
 
       let mappedInvoices = invoices.map((inv: any) => {
         const returnedAmount = (inv.returns || [])
@@ -1342,28 +1415,59 @@ export class PurchasesService {
    */
   async getPurchaseInvoiceById(id: string, tenant: TenantContext) {
     return this.prisma.executeInTenantContext(tenant, async (tx) => {
-      const invoice = await tx.purchaseInvoice.findFirst({
-        where: {
-          id,
-          companyId: tenant.companyId,
-        },
-        include: {
-          party: true,
-          items: {
-            include: {
-              item: true,
-            },
+      let invoice: any;
+      try {
+        invoice = await tx.purchaseInvoice.findFirst({
+          where: {
+            id,
+            companyId: tenant.companyId,
           },
-          branch: true,
-          returns: {
-            include: {
-              items: {
-                include: { item: true },
+          include: {
+            party: true,
+            items: {
+              include: {
+                item: true,
+              },
+            },
+            branch: true,
+            returns: {
+              include: {
+                items: {
+                  include: { item: true },
+                },
               },
             },
           },
-        },
-      });
+        });
+      } catch (findErr: any) {
+        if (findErr?.message && (findErr.message.includes("round_off") || findErr.message.includes("column"))) {
+          await this.ensurePurchaseInvoiceColumns(tx);
+          invoice = await tx.purchaseInvoice.findFirst({
+            where: {
+              id,
+              companyId: tenant.companyId,
+            },
+            include: {
+              party: true,
+              items: {
+                include: {
+                  item: true,
+                },
+              },
+              branch: true,
+              returns: {
+                include: {
+                  items: {
+                    include: { item: true },
+                  },
+                },
+              },
+            },
+          });
+        } else {
+          throw findErr;
+        }
+      }
 
       if (!invoice) {
         const voucher = await tx.voucher.findFirst({

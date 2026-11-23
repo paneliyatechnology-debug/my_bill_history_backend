@@ -248,6 +248,16 @@ export class DatabaseService
       `).catch((err) => {
         this.logger.warn(`Notice: super admin tables init: ${err.message}`);
       });
+
+      // Self-healing columns for purchase_invoices in production
+      await this.$executeRawUnsafe(`
+        ALTER TABLE "purchase_invoices" ADD COLUMN IF NOT EXISTS "shipping_address" JSONB;
+        ALTER TABLE "purchase_invoices" ADD COLUMN IF NOT EXISTS "notes" TEXT;
+        ALTER TABLE "purchase_invoices" ADD COLUMN IF NOT EXISTS "terms_and_conditions" TEXT;
+        ALTER TABLE "purchase_invoices" ADD COLUMN IF NOT EXISTS "round_off" DECIMAL(6, 2);
+      `).catch((err) => {
+        this.logger.warn(`Notice: purchase_invoices self-healing columns init: ${err.message}`);
+      });
     } catch {
       // Allow startup in environments without active DB
     }
