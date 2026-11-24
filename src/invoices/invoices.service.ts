@@ -1340,6 +1340,12 @@ export class InvoicesService {
         }
       }
 
+      const needReturnDetails = Boolean(
+        (query as any).availableForReturnOnly ||
+        (query as any).includeItems === "true" ||
+        (query as any).includeItems === true
+      );
+
       const [items, total] = await Promise.all([
         tx.salesInvoice.findMany({
           where,
@@ -1365,12 +1371,16 @@ export class InvoicesService {
                 grandTotal: true,
               },
             },
-            items: {
-              include: {
-                item: true,
-                returnItems: true,
-              },
-            },
+            ...(needReturnDetails
+              ? {
+                  items: {
+                    include: {
+                      item: true,
+                      returnItems: true,
+                    },
+                  },
+                }
+              : {}),
             returns: {
               select: {
                 id: true,
@@ -1378,7 +1388,7 @@ export class InvoicesService {
                 grandTotal: true,
                 status: true,
                 createdAt: true,
-                items: true,
+                ...(needReturnDetails ? { items: true } : {}),
               },
             },
           },

@@ -585,6 +585,13 @@ export interface FinancialSummaryDto {
   cashBalance: string;
   bankBalance: string;
   totalCashBankBalance: string;
+  totalInvoices?: number;
+  invoicesCount?: number;
+  pendingBills?: number;
+  unpaidInvoices?: number;
+  totalParties?: number;
+  totalItems?: number;
+  financialYearId?: string;
   currency: string;
   asOf: string;
 }

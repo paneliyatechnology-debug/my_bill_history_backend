@@ -1170,7 +1170,7 @@ export class ReportsService {
 
       const totalCashBank = totalCash.plus(totalBank);
 
-      const [invoiceCount, pendingInvoicesCount] = await Promise.all([
+      const [invoiceCount, pendingInvoicesCount, partyCount, itemCount] = await Promise.all([
         tx.salesInvoice.count({
           where: {
             companyId: tenant.companyId,
@@ -1200,6 +1200,18 @@ export class ReportsService {
               : {}),
           },
         }),
+        tx.party.count({
+          where: {
+            companyId: tenant.companyId,
+            isActive: true,
+          },
+        }),
+        tx.item.count({
+          where: {
+            companyId: tenant.companyId,
+            isActive: true,
+          },
+        }),
       ]);
 
       return {
@@ -1212,6 +1224,8 @@ export class ReportsService {
         invoicesCount: invoiceCount,
         pendingBills: pendingInvoicesCount,
         unpaidInvoices: pendingInvoicesCount,
+        totalParties: partyCount,
+        totalItems: itemCount,
         financialYearId: fyRecord?.id,
         currency: "INR",
         asOf: (asOfDateObj ?? new Date()).toISOString(),

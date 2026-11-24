@@ -1241,6 +1241,12 @@ export class PurchasesService implements OnModuleInit {
         }
       }
 
+      const needReturnDetails = Boolean(
+        (dto as any).availableForReturnOnly ||
+        (dto as any).includeItems === "true" ||
+        (dto as any).includeItems === true
+      );
+
       let invoices: any[];
       let total: number;
       try {
@@ -1257,19 +1263,23 @@ export class PurchasesService implements OnModuleInit {
                   phone: true,
                 },
               },
-              items: {
-                include: {
-                  item: { select: { id: true, name: true, nameGujarati: true } },
-                  returnItems: true,
-                },
-              },
+              ...(needReturnDetails
+                ? {
+                    items: {
+                      include: {
+                        item: { select: { id: true, name: true, nameGujarati: true } },
+                        returnItems: true,
+                      },
+                    },
+                  }
+                : {}),
               returns: {
                 select: {
                   id: true,
                   returnNumber: true,
                   grandTotal: true,
                   createdAt: true,
-                  items: true,
+                  ...(needReturnDetails ? { items: true } : {}),
                 },
               },
             },
@@ -1303,19 +1313,23 @@ export class PurchasesService implements OnModuleInit {
                     phone: true,
                   },
                 },
-                items: {
-                  include: {
-                    item: { select: { id: true, name: true, nameGujarati: true } },
-                    returnItems: true,
-                  },
-                },
+                ...(needReturnDetails
+                  ? {
+                      items: {
+                        include: {
+                          item: { select: { id: true, name: true, nameGujarati: true } },
+                          returnItems: true,
+                        },
+                      },
+                    }
+                  : {}),
                 returns: {
                   select: {
                     id: true,
                     returnNumber: true,
                     grandTotal: true,
                     createdAt: true,
-                    items: true,
+                    ...(needReturnDetails ? { items: true } : {}),
                   },
                 },
               },
