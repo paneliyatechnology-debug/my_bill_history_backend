@@ -61,136 +61,132 @@ export class DashboardService {
       let totalOverdueAmount = 0;
       let totalDueSoonAmount = 0;
 
-      // 1. Sales Invoices (Receivables / Collections)
-      if (typeFilter === "ALL" || typeFilter === "SALES") {
-        const salesWhere: any = {
-          companyId: tenant.companyId,
-          balanceAmount: { gt: 0 },
-          category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] as any },
-          status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT, InvoiceStatus.PAID, InvoiceStatus.CONVERTED] },
-          dueDate: { not: null, lte: horizonDate },
-        };
-        if (fyRecord) {
-          salesWhere.OR = [
-            { financialYearId: fyRecord.id },
-            { invoiceDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
-          ];
-        }
-
-        const salesInvoices = await tx.salesInvoice.findMany({
-          where: salesWhere,
-          include: {
-            party: {
-              select: { id: true, name: true, phone: true },
-            },
-          },
-          orderBy: [{ dueDate: "asc" }, { invoiceDate: "asc" }],
-        });
-
-        for (const inv of salesInvoices) {
-          if (!inv.dueDate) continue;
-          const rawDue = new Date(inv.dueDate);
-          const dueUtc = new Date(Date.UTC(rawDue.getUTCFullYear(), rawDue.getUTCMonth(), rawDue.getUTCDate()));
-          const diffDays = Math.round((dueUtc.getTime() - todayUtc.getTime()) / (1000 * 60 * 60 * 24));
-          const dueDateStr = rawDue.toISOString().split("T")[0];
-
-          let urgencyStatus: "OVERDUE" | "DUE_TODAY" | "DUE_SOON";
-          if (diffDays < 0) {
-            urgencyStatus = "OVERDUE";
-            totalOverdueAmount += Number(inv.balanceAmount);
-          } else if (diffDays === 0) {
-            urgencyStatus = "DUE_TODAY";
-            totalDueSoonAmount += Number(inv.balanceAmount);
-          } else {
-            urgencyStatus = "DUE_SOON";
-            totalDueSoonAmount += Number(inv.balanceAmount);
-          }
-
-          dues.push({
-            id: inv.id,
-            invoiceNumber: inv.invoiceNumber,
-            invoiceDate: inv.invoiceDate.toISOString().split("T")[0],
-            dueDate: dueDateStr,
-            hasExplicitDueDate: true,
-            daysRemaining: diffDays,
-            urgencyStatus,
-            partyId: inv.party?.id,
-            partyName: inv.party?.name || "Customer",
-            partyPhone: inv.party?.phone || "",
-            grandTotal: Number(inv.grandTotal),
-            paidAmount: Number(inv.paidAmount),
-            balanceAmount: Number(inv.balanceAmount),
-            type: "SALES_INVOICE",
-            deepLink: `/sales/invoices/${inv.id}`,
-            actionLink: `/sales/payment-in/new?partyId=${inv.party?.id || ""}&invoiceId=${inv.id}&amount=${inv.balanceAmount}`,
-            actionLabel: "Collect Payment",
-          });
-        }
+      // 1. Sales Invoices (Receivables / Collections) - Always query to keep counts accurate
+      const salesWhere: any = {
+        companyId: tenant.companyId,
+        balanceAmount: { gt: 0 },
+        category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] as any },
+        status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT, InvoiceStatus.PAID, InvoiceStatus.CONVERTED] },
+        dueDate: { not: null, lte: horizonDate },
+      };
+      if (fyRecord) {
+        salesWhere.OR = [
+          { financialYearId: fyRecord.id },
+          { invoiceDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
+        ];
       }
 
-      // 2. Purchase Invoices (Payables / Supplier Bills)
-      if (typeFilter === "ALL" || typeFilter === "PURCHASES") {
-        const purchaseWhere: any = {
-          companyId: tenant.companyId,
-          balanceAmount: { gt: 0 },
-          dueDate: { not: null, lte: horizonDate },
-        };
-        if (fyRecord) {
-          purchaseWhere.OR = [
-            { financialYearId: fyRecord.id },
-            { invoiceDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
-          ];
-        }
-
-        const purchaseInvoices = await tx.purchaseInvoice.findMany({
-          where: purchaseWhere,
-          include: {
-            party: {
-              select: { id: true, name: true, phone: true },
-            },
+      const salesInvoices = await tx.salesInvoice.findMany({
+        where: salesWhere,
+        include: {
+          party: {
+            select: { id: true, name: true, phone: true },
           },
-          orderBy: [{ dueDate: "asc" }, { invoiceDate: "asc" }],
-        });
+        },
+        orderBy: [{ dueDate: "asc" }, { invoiceDate: "asc" }],
+      });
 
-        for (const bill of purchaseInvoices) {
-          if (!bill.dueDate) continue;
-          const rawDue = new Date(bill.dueDate);
-          const dueUtc = new Date(Date.UTC(rawDue.getUTCFullYear(), rawDue.getUTCMonth(), rawDue.getUTCDate()));
-          const diffDays = Math.round((dueUtc.getTime() - todayUtc.getTime()) / (1000 * 60 * 60 * 24));
-          const dueDateStr = rawDue.toISOString().split("T")[0];
+      for (const inv of salesInvoices) {
+        if (!inv.dueDate) continue;
+        const rawDue = new Date(inv.dueDate);
+        const dueUtc = new Date(Date.UTC(rawDue.getUTCFullYear(), rawDue.getUTCMonth(), rawDue.getUTCDate()));
+        const diffDays = Math.round((dueUtc.getTime() - todayUtc.getTime()) / (1000 * 60 * 60 * 24));
+        const dueDateStr = rawDue.toISOString().split("T")[0];
 
-          let urgencyStatus: "OVERDUE" | "DUE_TODAY" | "DUE_SOON";
-          if (diffDays < 0) {
-            urgencyStatus = "OVERDUE";
-            totalOverdueAmount += Number(bill.balanceAmount);
-          } else if (diffDays === 0) {
-            urgencyStatus = "DUE_TODAY";
-            totalDueSoonAmount += Number(bill.balanceAmount);
-          } else {
-            urgencyStatus = "DUE_SOON";
-            totalDueSoonAmount += Number(bill.balanceAmount);
-          }
-
-          dues.push({
-            id: bill.id,
-            invoiceNumber: bill.vendorInvoiceNumber || "Bill",
-            invoiceDate: bill.invoiceDate.toISOString().split("T")[0],
-            dueDate: dueDateStr,
-            hasExplicitDueDate: true,
-            daysRemaining: diffDays,
-            urgencyStatus,
-            partyId: bill.party?.id,
-            partyName: bill.party?.name || "Supplier",
-            partyPhone: bill.party?.phone || "",
-            grandTotal: Number(bill.grandTotal),
-            paidAmount: Number(bill.paidAmount),
-            balanceAmount: Number(bill.balanceAmount),
-            type: "PURCHASE_INVOICE",
-            deepLink: `/purchases/${bill.id}`,
-            actionLink: `/purchases/payment-out/new?partyId=${bill.party?.id || ""}&billId=${bill.id}&amount=${bill.balanceAmount}`,
-            actionLabel: "Pay Bill",
-          });
+        let urgencyStatus: "OVERDUE" | "DUE_TODAY" | "DUE_SOON";
+        if (diffDays < 0) {
+          urgencyStatus = "OVERDUE";
+          totalOverdueAmount += Number(inv.balanceAmount);
+        } else if (diffDays === 0) {
+          urgencyStatus = "DUE_TODAY";
+          totalDueSoonAmount += Number(inv.balanceAmount);
+        } else {
+          urgencyStatus = "DUE_SOON";
+          totalDueSoonAmount += Number(inv.balanceAmount);
         }
+
+        dues.push({
+          id: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          invoiceDate: inv.invoiceDate.toISOString().split("T")[0],
+          dueDate: dueDateStr,
+          hasExplicitDueDate: true,
+          daysRemaining: diffDays,
+          urgencyStatus,
+          partyId: inv.party?.id,
+          partyName: inv.party?.name || "Customer",
+          partyPhone: inv.party?.phone || "",
+          grandTotal: Number(inv.grandTotal),
+          paidAmount: Number(inv.paidAmount),
+          balanceAmount: Number(inv.balanceAmount),
+          type: "SALES_INVOICE",
+          deepLink: `/sales/invoices/${inv.id}`,
+          actionLink: `/sales/payment-in/new?partyId=${inv.party?.id || ""}&invoiceId=${inv.id}&amount=${inv.balanceAmount}`,
+          actionLabel: "Collect Payment",
+        });
+      }
+
+      // 2. Purchase Invoices (Payables / Supplier Bills) - Always query to keep counts accurate
+      const purchaseWhere: any = {
+        companyId: tenant.companyId,
+        balanceAmount: { gt: 0 },
+        dueDate: { not: null, lte: horizonDate },
+      };
+      if (fyRecord) {
+        purchaseWhere.OR = [
+          { financialYearId: fyRecord.id },
+          { invoiceDate: { gte: fyRecord.startDate, lte: fyRecord.endDate } },
+        ];
+      }
+
+      const purchaseInvoices = await tx.purchaseInvoice.findMany({
+        where: purchaseWhere,
+        include: {
+          party: {
+            select: { id: true, name: true, phone: true },
+          },
+        },
+        orderBy: [{ dueDate: "asc" }, { invoiceDate: "asc" }],
+      });
+
+      for (const bill of purchaseInvoices) {
+        if (!bill.dueDate) continue;
+        const rawDue = new Date(bill.dueDate);
+        const dueUtc = new Date(Date.UTC(rawDue.getUTCFullYear(), rawDue.getUTCMonth(), rawDue.getUTCDate()));
+        const diffDays = Math.round((dueUtc.getTime() - todayUtc.getTime()) / (1000 * 60 * 60 * 24));
+        const dueDateStr = rawDue.toISOString().split("T")[0];
+
+        let urgencyStatus: "OVERDUE" | "DUE_TODAY" | "DUE_SOON";
+        if (diffDays < 0) {
+          urgencyStatus = "OVERDUE";
+          totalOverdueAmount += Number(bill.balanceAmount);
+        } else if (diffDays === 0) {
+          urgencyStatus = "DUE_TODAY";
+          totalDueSoonAmount += Number(bill.balanceAmount);
+        } else {
+          urgencyStatus = "DUE_SOON";
+          totalDueSoonAmount += Number(bill.balanceAmount);
+        }
+
+        dues.push({
+          id: bill.id,
+          invoiceNumber: bill.vendorInvoiceNumber || "Bill",
+          invoiceDate: bill.invoiceDate.toISOString().split("T")[0],
+          dueDate: dueDateStr,
+          hasExplicitDueDate: true,
+          daysRemaining: diffDays,
+          urgencyStatus,
+          partyId: bill.party?.id,
+          partyName: bill.party?.name || "Supplier",
+          partyPhone: bill.party?.phone || "",
+          grandTotal: Number(bill.grandTotal),
+          paidAmount: Number(bill.paidAmount),
+          balanceAmount: Number(bill.balanceAmount),
+          type: "PURCHASE_INVOICE",
+          deepLink: `/purchases/${bill.id}`,
+          actionLink: `/purchases/payment-out/new?partyId=${bill.party?.id || ""}&billId=${bill.id}&amount=${bill.balanceAmount}`,
+          actionLabel: "Pay Bill",
+        });
       }
 
       // Sort by urgency: most overdue first (negative diffDays), then due today, then upcoming
@@ -199,15 +195,26 @@ export class DashboardService {
       const salesDues = dues.filter((d) => d.type === "SALES_INVOICE");
       const purchaseDues = dues.filter((d) => d.type === "PURCHASE_INVOICE");
 
+      const filteredDues =
+        typeFilter === "SALES"
+          ? salesDues
+          : typeFilter === "PURCHASES"
+          ? purchaseDues
+          : dues;
+
+      const filteredOverdue = filteredDues.filter((d) => d.daysRemaining < 0);
+      const filteredOverdueAmount = filteredOverdue.reduce((sum, d) => sum + d.balanceAmount, 0);
+      const filteredDueAmount = filteredDues.reduce((sum, d) => sum + d.balanceAmount, 0);
+
       return {
-        dues,
+        dues: filteredDues,
         totalSalesDueAmount: salesDues.reduce((sum, d) => sum + d.balanceAmount, 0),
         totalPurchaseDueAmount: purchaseDues.reduce((sum, d) => sum + d.balanceAmount, 0),
         salesCount: salesDues.length,
         purchaseCount: purchaseDues.length,
-        totalOverdueAmount,
-        totalDueSoonAmount,
-        totalDueAmount: totalOverdueAmount + totalDueSoonAmount,
+        totalOverdueAmount: filteredOverdueAmount,
+        totalDueSoonAmount: filteredDueAmount - filteredOverdueAmount,
+        totalDueAmount: filteredDueAmount,
         count: dues.length,
       };
     });
