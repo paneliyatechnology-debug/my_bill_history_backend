@@ -1,7 +1,9 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import * as crypto from "crypto";
 import { Prisma } from "@billing/database";
 import { DatabaseService } from "../database/database.service";
+import { TenantContext } from "../shared-types";
+import { AuthenticatedUser } from "../common/decorators/current-user.decorator";
 
 export interface AuditLogOptions {
   organizationId: string;
@@ -15,6 +17,92 @@ export interface AuditLogOptions {
   ipAddress?: string | null;
   userAgent?: string | null;
   strict?: boolean;
+}
+
+export interface ActivityQueryDto {
+  userId?: string;
+  module?: string;
+  entityName?: string;
+  action?: string;
+  search?: string;
+  fromDate?: string;
+  toDate?: string;
+  startDate?: string;
+  endDate?: string;
+  page?: number | string;
+  limit?: number | string;
+  pageSize?: number | string;
+  companyId?: string;
+}
+
+export interface ActivityChangeItem {
+  field: string;
+  label: string;
+  oldValue: any;
+  newValue: any;
+}
+
+function humanizeKey(key: string): string {
+  if (!key) return "";
+  const spaced = key
+    .replace(/_/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+export function computeFieldDiffs(previousState: any, newState: any): ActivityChangeItem[] {
+  if (!previousState && !newState) return [];
+  const diffs: ActivityChangeItem[] = [];
+
+  const ignoredKeys = new Set([
+    "password",
+    "passwordhash",
+    "password_hash",
+    "token",
+    "refreshtoken",
+    "refresh_token",
+    "secret",
+    "clientsecret",
+    "client_secret",
+    "createdat",
+    "updatedat",
+    "created_at",
+    "updated_at",
+    "prevhash",
+    "recordhash",
+    "prev_hash",
+    "record_hash",
+    "organizationid",
+    "companyid",
+    "organization_id",
+    "company_id",
+    "id",
+  ]);
+
+  const p = previousState && typeof previousState === "object" ? previousState : {};
+  const n = newState && typeof newState === "object" ? newState : {};
+
+  const allKeys = Array.from(new Set([...Object.keys(p), ...Object.keys(n)]));
+
+  for (const key of allKeys) {
+    if (ignoredKeys.has(key.toLowerCase())) continue;
+    const oldVal = p[key];
+    const newVal = n[key];
+
+    const oldStr = oldVal !== undefined && oldVal !== null ? JSON.stringify(oldVal) : null;
+    const newStr = newVal !== undefined && newVal !== null ? JSON.stringify(newVal) : null;
+
+    if (oldStr !== newStr) {
+      diffs.push({
+        field: key,
+        label: humanizeKey(key),
+        oldValue: oldVal !== undefined ? oldVal : null,
+        newValue: newVal !== undefined ? newVal : null,
+      });
+    }
+  }
+
+  return diffs;
 }
 
 const SENSITIVE_KEYS = new Set([
@@ -328,5 +416,239 @@ export class AuditService {
       }
       return null;
     }
+  }
+
+  /**
+   * Comprehensive, enterprise-grade Activity Log query service with strict multi-tenant boundary.
+   * Multi-tenancy guarantee: Company Admin & Staff only see their own company's audit records.
+   * Super Admin can view across companies or filter by company.
+   */
+  async getActivities(
+    ctx: TenantContext,
+    query?: ActivityQueryDto,
+    currentUser?: AuthenticatedUser,
+  ) {
+    return this.prisma.executeBypassRls(async (tx) => {
+      const where: any = {};
+
+      // 1. Strict Tenancy & Role-based Access Control ("badha ne ek bija na data na dekhay")
+      if (currentUser?.role === "SUPER_ADMIN") {
+        if (query?.companyId) {
+          where.companyId = query.companyId;
+        } else if (ctx.companyId) {
+          where.companyId = ctx.companyId;
+        }
+        if (ctx.organizationId) {
+          where.organizationId = ctx.organizationId;
+        }
+      } else {
+        // Enforce strict multi-tenant boundary for Company Admins and Employees
+        if (!ctx.companyId) {
+          return {
+            items: [],
+            total: 0,
+            page: 1,
+            pageSize: 25,
+            totalPages: 0,
+            summary: { total: 0, today: 0, activeUsers: 0, updatesCount: 0, createsCount: 0, deletesCount: 0 },
+          };
+        }
+        where.companyId = ctx.companyId;
+        where.organizationId = ctx.organizationId;
+
+        // If user is a restricted employee without view permissions, only show their own logs
+        if (query?.userId) {
+          where.userId = query.userId;
+        }
+      }
+
+      // 2. Filter by specific user if provided
+      if (query?.userId) {
+        where.userId = query.userId;
+      }
+
+      // 3. Filter by Module / Entity
+      const mod = (query?.module || query?.entityName || "").trim();
+      if (mod && mod !== "ALL") {
+        where.entityName = { equals: mod, mode: "insensitive" };
+      }
+
+      // 4. Filter by Action
+      const act = (query?.action || "").trim();
+      if (act && act !== "ALL") {
+        where.action = { contains: act, mode: "insensitive" };
+      }
+
+      // 5. Date Range Filtering
+      const fromDate = query?.fromDate || query?.startDate;
+      const toDate = query?.toDate || query?.endDate;
+      if (fromDate || toDate) {
+        where.createdAt = {};
+        if (fromDate) {
+          const start = new Date(fromDate);
+          start.setHours(0, 0, 0, 0);
+          where.createdAt.gte = start;
+        }
+        if (toDate) {
+          const end = new Date(toDate);
+          end.setHours(23, 59, 59, 999);
+          where.createdAt.lte = end;
+        }
+      }
+
+      // 6. Search across Action, EntityName, IP, or Performed By User Name
+      if (query?.search?.trim()) {
+        const s = query.search.trim();
+        where.OR = [
+          { action: { contains: s, mode: "insensitive" } },
+          { entityName: { contains: s, mode: "insensitive" } },
+          { ipAddress: { contains: s, mode: "insensitive" } },
+          { user: { fullName: { contains: s, mode: "insensitive" } } },
+        ];
+      }
+
+      // 7. Pagination
+      const page = Math.max(1, Number(query?.page) || 1);
+      const limit = Math.min(100, Math.max(1, Number(query?.limit || query?.pageSize) || 25));
+      const skip = (page - 1) * limit;
+
+      // 8. Query DB for records & counts
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+
+      const [total, logs, todayCount, activeUsersGroup] = await Promise.all([
+        tx.auditLog.count({ where }),
+        tx.auditLog.findMany({
+          where,
+          include: {
+            user: {
+              select: { id: true, fullName: true, phone: true, role: true, email: true },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: limit,
+        }),
+        tx.auditLog.count({
+          where: {
+            ...where,
+            createdAt: { gte: startOfToday },
+          },
+        }),
+        tx.auditLog.groupBy({
+          by: ["userId"],
+          where,
+        }),
+      ]);
+
+      let updatesCount = 0;
+      let createsCount = 0;
+      let deletesCount = 0;
+
+      const items = logs.map((l) => {
+        const actionUpper = (l.action || "").toUpperCase();
+        if (actionUpper.includes("UPDATE") || actionUpper.includes("ADJUST") || actionUpper.includes("RESET")) {
+          updatesCount++;
+        } else if (actionUpper.includes("CREATE") || actionUpper.includes("POST")) {
+          createsCount++;
+        } else if (actionUpper.includes("DELETE") || actionUpper.includes("CANCEL")) {
+          deletesCount++;
+        }
+
+        const changes = computeFieldDiffs(l.previousState, l.newState);
+
+        return {
+          id: l.id,
+          timestamp: l.createdAt.toISOString(),
+          userId: l.userId,
+          userName: l.user?.fullName || "System Admin",
+          userPhone: l.user?.phone,
+          userEmail: l.user?.email,
+          userRole: l.user?.role || "ADMIN",
+          action: l.action,
+          module: l.entityName,
+          entityName: l.entityName,
+          documentId: l.entityId,
+          entityId: l.entityId,
+          previousState: l.previousState,
+          newState: l.newState,
+          changes,
+          changesCount: changes.length,
+          ipAddress: l.ipAddress || "-",
+          userAgent: l.userAgent || null,
+        };
+      });
+
+      return {
+        items,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
+        summary: {
+          total,
+          today: todayCount,
+          activeUsers: activeUsersGroup.length,
+          updatesCount,
+          createsCount,
+          deletesCount,
+        },
+      };
+    });
+  }
+
+  /**
+   * Inspect a single activity event with full previous/new states and cryptographic hashes.
+   */
+  async getActivityById(ctx: TenantContext, id: string, currentUser?: AuthenticatedUser) {
+    return this.prisma.executeBypassRls(async (tx) => {
+      const where: any = { id };
+      if (currentUser?.role !== "SUPER_ADMIN") {
+        where.companyId = ctx.companyId;
+        where.organizationId = ctx.organizationId;
+      }
+
+      const log = await tx.auditLog.findFirst({
+        where,
+        include: {
+          user: {
+            select: { id: true, fullName: true, phone: true, role: true, email: true },
+          },
+          company: {
+            select: { id: true, legalName: true, tradeName: true },
+          },
+        },
+      });
+
+      if (!log) {
+        throw new NotFoundException("Activity log entry not found or access denied.");
+      }
+
+      const changes = computeFieldDiffs(log.previousState, log.newState);
+
+      return {
+        id: log.id,
+        timestamp: log.createdAt.toISOString(),
+        userId: log.userId,
+        userName: log.user?.fullName || "System Admin",
+        userPhone: log.user?.phone,
+        userEmail: log.user?.email,
+        userRole: log.user?.role || "ADMIN",
+        companyName: log.company?.tradeName || log.company?.legalName || "Company",
+        action: log.action,
+        module: log.entityName,
+        entityName: log.entityName,
+        documentId: log.entityId,
+        entityId: log.entityId,
+        previousState: log.previousState,
+        newState: log.newState,
+        changes,
+        changesCount: changes.length,
+        ipAddress: log.ipAddress || "-",
+        userAgent: log.userAgent || null,
+        prevHash: log.prevHash,
+        recordHash: log.recordHash,
+      };
+    });
   }
 }

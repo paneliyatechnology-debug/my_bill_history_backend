@@ -4,6 +4,7 @@ import {
   BadRequestException,
   Logger,
 } from "@nestjs/common";
+import { computeFieldDiffs } from "../audit/audit.service";
 import {
   TenantContext,
   InvoiceStatus,
@@ -4993,6 +4994,10 @@ export class ReportsService {
         entityName: l.entityName,
         entityId: l.entityId,
         ipAddress: l.ipAddress || "-",
+        userAgent: l.userAgent || null,
+        previousState: l.previousState,
+        newState: l.newState,
+        changes: computeFieldDiffs(l.previousState, l.newState),
       }));
 
       return {

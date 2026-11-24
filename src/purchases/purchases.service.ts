@@ -3237,6 +3237,28 @@ export class PurchasesService implements OnModuleInit {
         where: { id },
       });
 
+      // 8. Audit log
+      await this.audit.record(
+        {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          userId: tenant.userId || "",
+          action: "DELETE_PURCHASE_INVOICE",
+          entityName: "PurchaseInvoice",
+          entityId: existing.id,
+          previousState: {
+            vendorInvoiceNumber: existing.vendorInvoiceNumber,
+            grandTotal: Number(existing.grandTotal),
+            partyId: existing.partyId,
+          },
+          newState: {
+            deleted: true,
+            vendorInvoiceNumber: existing.vendorInvoiceNumber,
+          },
+        },
+        tx,
+      );
+
       return {
         success: true,
         message: `Purchase bill '${existing.vendorInvoiceNumber}' deleted successfully.`,
@@ -3498,6 +3520,28 @@ export class PurchasesService implements OnModuleInit {
           party: true,
         },
       });
+
+      await this.audit.record(
+        {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          userId: tenant.userId || "",
+          action: "UPDATE_PURCHASE_INVOICE",
+          entityName: "PurchaseInvoice",
+          entityId: updated.id,
+          previousState: {
+            vendorInvoiceNumber: existing.vendorInvoiceNumber,
+            grandTotal: Number(existing.grandTotal),
+            partyId: existing.partyId,
+          },
+          newState: {
+            vendorInvoiceNumber: updated.vendorInvoiceNumber,
+            grandTotal: Number(updated.grandTotal),
+            partyId: updated.partyId,
+          },
+        },
+        tx,
+      );
 
       return updated;
     });

@@ -60,13 +60,10 @@ export class UsersController {
   @RequirePermissions({ module: "settings", action: "view" })
   async getActivities(
     @CurrentTenant() ctx: TenantContext,
-    @Query("userId") userId?: string,
-    @Query("limit") limit?: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: any,
   ) {
-    return this.usersService.getActivities(ctx, {
-      userId,
-      limit: limit ? parseInt(limit, 10) : 50,
-    });
+    return this.usersService.getActivities(ctx, query, user);
   }
 
   /**

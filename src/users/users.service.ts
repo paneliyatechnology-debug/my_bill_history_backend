@@ -11,6 +11,7 @@ import * as bcrypt from "bcryptjs";
 import { DatabaseService } from "../database/database.service";
 import { AuditService } from "../audit/audit.service";
 import { TenantContext, UserRole, DataScope, ApprovalStatus } from "@billing/shared-types";
+import { AuthenticatedUser } from "../common/decorators/current-user.decorator";
 import { CreateStaffDto } from "./dto/create-staff.dto";
 import { UpdateStaffDto } from "./dto/update-staff.dto";
 import { CreateRoleDto, UpdateRoleDto } from "./dto/create-role.dto";
@@ -1389,39 +1390,10 @@ export class UsersService {
    */
   async getActivities(
     ctx: TenantContext,
-    query?: { userId?: string; module?: string; action?: string; limit?: number },
+    query?: any,
+    currentUser?: AuthenticatedUser,
   ) {
-    return this.prisma.executeInTenantContext(ctx, async (tx) => {
-      const where: any = { organizationId: ctx.organizationId };
-      if (query?.userId) where.userId = query.userId;
-      if (query?.module) where.entityName = query.module;
-      if (query?.action) where.action = query.action;
-
-      const logs = await tx.auditLog.findMany({
-        where,
-        include: {
-          user: {
-            select: { id: true, fullName: true, phone: true, role: true },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-        take: query?.limit || 50,
-      });
-
-      return logs.map((l) => ({
-        id: l.id,
-        userName: l.user?.fullName || "System",
-        userPhone: l.user?.phone,
-        userRole: l.user?.role || "SYSTEM",
-        action: l.action,
-        module: l.entityName,
-        documentId: l.entityId,
-        timestamp: l.createdAt.toISOString(),
-        details: l.newState ? JSON.stringify(l.newState) : "",
-        newState: l.newState,
-        previousState: l.previousState,
-        ipAddress: l.ipAddress,
-      }));
-    });
+    const res = await this.audit.getActivities(ctx, query, currentUser);
+    return res.items || [];
   }
 }

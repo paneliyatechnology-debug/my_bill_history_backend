@@ -5978,10 +5978,19 @@ export class InvoicesService {
           action: "UPDATE_SALES_INVOICE",
           entityName: "SalesInvoice",
           entityId: id,
-          newState: {
+          previousState: {
             invoiceNumber: existing.invoiceNumber,
+            grandTotal: Number(existing.grandTotal),
+            status: existing.status,
+            dueDate: existing.dueDate,
+            notes: existing.notes,
+          },
+          newState: {
+            invoiceNumber: updatedInvoice.invoiceNumber,
             grandTotal: grandTotalNum,
             status: updatedStatus,
+            dueDate: updatedInvoice.dueDate,
+            notes: updatedInvoice.notes,
           },
         },
         tx,
@@ -6175,6 +6184,12 @@ export class InvoicesService {
           action: "DELETE_SALES_INVOICE",
           entityName: "SalesInvoice",
           entityId: existing.id,
+          previousState: {
+            invoiceNumber: existing.invoiceNumber,
+            grandTotal: String(existing.grandTotal),
+            status: existing.status,
+            partyId: existing.partyId,
+          },
           newState: {
             deleted: true,
             invoiceNumber: existing.invoiceNumber,
