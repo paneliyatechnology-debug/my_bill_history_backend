@@ -1,4 +1,5 @@
 import { Injectable, Logger, BadRequestException } from "@nestjs/common";
+import { randomUUID } from "crypto";
 import { DatabaseService } from "../database/database.service";
 import { AuditService } from "../audit/audit.service";
 import { FileParserService } from "./file-parser.service";
@@ -63,37 +64,53 @@ export class ImportExecutorService {
     let skippedCount = 0;
     let failedCount = 0;
 
-    // Execute within tenant database transaction
-    await this.prisma.executeInTenantContext(ctx, async (tx) => {
-      // 1. Resolve or establish default branch & warehouse
-      const defaultBranch = await this.resolveBranch(ctx, tx);
-      const defaultWarehouseId = await this.resolveWarehouseId(ctx, tx, defaultBranch.id);
-      const defaultFY = await this.resolveFinancialYear(ctx, tx);
+    // Execute within tenant database transaction with 5-minute timeout for large bulk imports
+    await this.prisma.executeInTenantContext(
+      ctx,
+      async (tx) => {
+        // 1. Resolve or establish default branch & warehouse
+        const defaultBranch = await this.resolveBranch(ctx, tx);
+        const defaultWarehouseId = await this.resolveWarehouseId(ctx, tx, defaultBranch.id);
+        const defaultFY = await this.resolveFinancialYear(ctx, tx);
 
-      // Group rows if invoice (to group items under the same invoice number)
-      if (cleanModule === ImportModuleType.SALES_INVOICES) {
-        await this.executeSalesInvoicesImport(
-          ctx,
-          tx,
-          previews,
-          mode,
-          defaultBranch.id,
-          defaultFY.id,
-          createdIds,
-          executionErrors,
-        );
-      } else if (cleanModule === ImportModuleType.PURCHASE_INVOICES) {
-        await this.executePurchaseInvoicesImport(
-          ctx,
-          tx,
-          previews,
-          mode,
-          defaultBranch.id,
-          defaultFY.id,
-          createdIds,
-          executionErrors,
-        );
-      } else {
+        // Group rows if invoice (to group items under the same invoice number)
+        if (cleanModule === ImportModuleType.SALES_INVOICES) {
+          await this.executeSalesInvoicesImport(
+            ctx,
+            tx,
+            previews,
+            mode,
+            defaultBranch.id,
+            defaultFY.id,
+            createdIds,
+            executionErrors,
+          );
+        } else if (cleanModule === ImportModuleType.PURCHASE_INVOICES) {
+          await this.executePurchaseInvoicesImport(
+            ctx,
+            tx,
+            previews,
+            mode,
+            defaultBranch.id,
+            defaultFY.id,
+            createdIds,
+            executionErrors,
+          );
+        } else if (cleanModule === ImportModuleType.HSN_MASTERS) {
+          const counts = await this.executeHsnMastersImport(
+            ctx,
+            tx,
+            previews,
+            createdIds,
+            updatedIds,
+            executionErrors,
+            errorPolicy,
+          );
+          importedCount = counts.importedCount;
+          updatedCount = counts.updatedCount;
+          skippedCount = counts.skippedCount;
+          failedCount = counts.failedCount;
+        } else {
         // Individual row execution
         for (const preview of previews) {
           if (preview.action === "FAIL" || preview.status === "INVALID") {
@@ -133,10 +150,6 @@ export class ImportExecutorService {
 
               case ImportModuleType.ITEM_BATCHES:
                 await this.importBatchRow(ctx, tx, preview, createdIds, updatedIds);
-                break;
-
-              case ImportModuleType.HSN_MASTERS:
-                await this.importHsnRow(ctx, tx, preview, createdIds, updatedIds);
                 break;
 
               case ImportModuleType.LEDGER_GROUPS:
@@ -202,7 +215,7 @@ export class ImportExecutorService {
           },
         });
       }
-    });
+    }, { maxWait: 60000, timeout: 300000 });
 
     const durationMs = Date.now() - startTime;
 
@@ -674,6 +687,168 @@ export class ImportExecutorService {
     createdIds.push(created.id);
   }
 
+  private async executeHsnMastersImport(
+    ctx: TenantContext,
+    tx: any,
+    previews: ImportRowPreview[],
+    createdIds: string[],
+    updatedIds: string[],
+    executionErrors: ImportErrorRow[],
+    errorPolicy: ImportErrorPolicy,
+  ): Promise<{ importedCount: number; updatedCount: number; skippedCount: number; failedCount: number }> {
+    let importedCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+
+    // 1. Separate valid rows from failed/skipped rows
+    const validRows: ImportRowPreview[] = [];
+    for (const preview of previews) {
+      if (preview.action === "FAIL" || preview.status === "INVALID") {
+        failedCount++;
+        continue;
+      }
+      if (preview.action === "SKIP") {
+        skippedCount++;
+        continue;
+      }
+      validRows.push(preview);
+    }
+
+    if (validRows.length === 0) {
+      return { importedCount, updatedCount, skippedCount, failedCount };
+    }
+
+    // 2. Extract and sanitize records, deduplicating within the incoming batch by code
+    const codeToRowMap = new Map<string, ImportRowPreview>();
+    for (const row of validRows) {
+      const code = String(row.data.code || "").trim().slice(0, 10);
+      if (code) {
+        if (!codeToRowMap.has(code)) {
+          codeToRowMap.set(code, row);
+        }
+      }
+    }
+
+    skippedCount += (validRows.length - codeToRowMap.size);
+    const uniqueCodes = Array.from(codeToRowMap.keys());
+
+    // 3. Query existing HsnMasters in bulk (chunks of 2000)
+    const existingMap = new Map<string, { id: string; code: string; chapter: string | null }>();
+    const CHUNK_QUERY_SIZE = 2000;
+    for (let i = 0; i < uniqueCodes.length; i += CHUNK_QUERY_SIZE) {
+      const chunkCodes = uniqueCodes.slice(i, i + CHUNK_QUERY_SIZE);
+      const found = await tx.hsnMaster.findMany({
+        where: {
+          OR: [
+            { companyId: ctx.companyId, code: { in: chunkCodes } },
+            { companyId: null, code: { in: chunkCodes } },
+          ],
+        },
+        select: { id: true, code: true, chapter: true },
+      });
+      for (const f of found) {
+        existingMap.set(f.code, f);
+      }
+    }
+
+    // 4. Partition into toCreate and toUpdate
+    const toCreate: any[] = [];
+    const toUpdate: { id: string; data: any }[] = [];
+
+    for (const [code, row] of codeToRowMap.entries()) {
+      const description = String(row.data.description || code).trim().slice(0, 255);
+      const chapter = (code.length >= 2 ? code.slice(0, 2) : undefined) || undefined;
+      const gstRate = new Prisma.Decimal(this.fileParser.parseNumberValue(row.data.gstRate, 18));
+      const type = String(row.data.type || "").toUpperCase() === "SAC" || code.startsWith("99") ? "SAC" : "HSN";
+
+      const existing = existingMap.get(code);
+      const now = new Date();
+      if (existing) {
+        toUpdate.push({
+          id: existing.id,
+          data: {
+            companyId: ctx.companyId,
+            description,
+            chapter: chapter || existing.chapter,
+            gstRate,
+            type,
+            isSystem: false,
+            isActive: true,
+            updatedAt: now,
+          },
+        });
+      } else {
+        const id = randomUUID();
+        toCreate.push({
+          id,
+          organizationId: ctx.organizationId,
+          companyId: ctx.companyId,
+          code,
+          description,
+          chapter,
+          type,
+          gstRate,
+          cessRate: new Prisma.Decimal(0),
+          isSystem: false,
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        });
+        createdIds.push(id);
+      }
+    }
+
+    // 5. Bulk insert toCreate in chunks of 1000
+    const BULK_INSERT_SIZE = 1000;
+    for (let i = 0; i < toCreate.length; i += BULK_INSERT_SIZE) {
+      const chunk = toCreate.slice(i, i + BULK_INSERT_SIZE);
+      try {
+        await tx.hsnMaster.createMany({
+          data: chunk,
+          skipDuplicates: true,
+        });
+        importedCount += chunk.length;
+      } catch (err: any) {
+        this.logger.error(`Failed to bulk insert HSN chunk [${i}..${i + chunk.length}]: ${err.message}`);
+        failedCount += chunk.length;
+        executionErrors.push({
+          rowNumber: i + 1,
+          errorCode: "BULK_INSERT_FAILED",
+          errorMessage: `Bulk insert batch failed: ${err.message}`,
+          isBlocking: errorPolicy === ImportErrorPolicy.ABORT_ON_ERROR,
+          actionTaken: "FAILED",
+        });
+        if (errorPolicy === ImportErrorPolicy.ABORT_ON_ERROR) {
+          throw err;
+        }
+      }
+    }
+
+    // 6. Update existing records in parallel chunks of 50
+    const UPDATE_BATCH_SIZE = 50;
+    for (let i = 0; i < toUpdate.length; i += UPDATE_BATCH_SIZE) {
+      const chunk = toUpdate.slice(i, i + UPDATE_BATCH_SIZE);
+      try {
+        await Promise.all(
+          chunk.map((item) =>
+            tx.hsnMaster.update({
+              where: { id: item.id },
+              data: item.data,
+            }),
+          ),
+        );
+        chunk.forEach((item) => updatedIds.push(item.id));
+        updatedCount += chunk.length;
+      } catch (err: any) {
+        this.logger.warn(`Failed updating HSN batch: ${err.message}`);
+        failedCount += chunk.length;
+      }
+    }
+
+    return { importedCount, updatedCount, skippedCount, failedCount };
+  }
+
   private async importHsnRow(
     ctx: TenantContext,
     tx: any,
@@ -681,19 +856,33 @@ export class ImportExecutorService {
     createdIds: string[],
     updatedIds: string[],
   ) {
-    const code = String(preview.data.code || "").trim();
-    const description = String(preview.data.description || code).trim();
+    const code = String(preview.data.code || "").trim().slice(0, 10);
+    const description = String(preview.data.description || code).trim().slice(0, 255);
+    const chapter = code.length >= 2 ? code.slice(0, 2) : undefined;
     const gstRate = new Prisma.Decimal(this.fileParser.parseNumberValue(preview.data.gstRate, 18));
-    const type = String(preview.data.type || "").toUpperCase() === "SAC" ? "SAC" : "HSN";
+    const type = String(preview.data.type || "").toUpperCase() === "SAC" || code.startsWith("99") ? "SAC" : "HSN";
 
     const existing = await tx.hsnMaster.findFirst({
-      where: { companyId: ctx.companyId, code },
+      where: {
+        OR: [
+          { companyId: ctx.companyId, code },
+          { companyId: null, code },
+        ],
+      },
     });
 
     if (existing) {
       const updated = await tx.hsnMaster.update({
         where: { id: existing.id },
-        data: { description, gstRate, type: type as any },
+        data: {
+          companyId: ctx.companyId,
+          description,
+          chapter: chapter || existing.chapter,
+          gstRate,
+          type: type as any,
+          isSystem: false,
+          isActive: true,
+        },
       });
       updatedIds.push(updated.id);
       return;
@@ -705,6 +894,7 @@ export class ImportExecutorService {
         companyId: ctx.companyId,
         code,
         description,
+        chapter,
         type: type as any,
         gstRate,
         isSystem: false,

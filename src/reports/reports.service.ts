@@ -461,6 +461,8 @@ export class ReportsService {
       let igst = new Decimal(0);
       let utgst = new Decimal(0);
       let grand = new Decimal(0);
+      let totalPaid = new Decimal(0);
+      let totalBalance = new Decimal(0);
       const items = invoices.map((invoice) => {
         taxable = taxable.plus(toMoney(invoice.taxableAmount));
         cgst = cgst.plus(toMoney(invoice.cgstAmount));
@@ -468,6 +470,8 @@ export class ReportsService {
         igst = igst.plus(toMoney(invoice.igstAmount));
         utgst = utgst.plus(toMoney(invoice.utgstAmount));
         grand = grand.plus(toMoney(invoice.grandTotal));
+        totalPaid = totalPaid.plus(toMoney(invoice.paidAmount));
+        totalBalance = totalBalance.plus(toMoney(invoice.balanceAmount));
         return {
           id: invoice.id,
           documentType: "PURCHASE_INVOICE",
@@ -482,6 +486,8 @@ export class ReportsService {
           igstAmount: toMoney(invoice.igstAmount).toFixed(2),
           cessAmount: toMoney(invoice.cessAmount).toFixed(2),
           grandTotal: toMoney(invoice.grandTotal).toFixed(2),
+          paidAmount: toMoney(invoice.paidAmount).toFixed(2),
+          balanceAmount: toMoney(invoice.balanceAmount).toFixed(2),
           itcEligibility: invoice.itcEligibility,
           itcClaimed: false,
         };
@@ -509,6 +515,8 @@ export class ReportsService {
           igstAmount: toMoney(purchaseReturn.igstAmount).negated().toFixed(2),
           cessAmount: "0.00",
           grandTotal: toMoney(purchaseReturn.grandTotal).negated().toFixed(2),
+          paidAmount: "0.00",
+          balanceAmount: "0.00",
           itcEligibility: "REVERSAL",
           itcClaimed: false,
         });
@@ -527,6 +535,8 @@ export class ReportsService {
           totalUtgst: utgst.toFixed(2),
           totalIgst: igst.toFixed(2),
           totalGrandTotal: grand.toFixed(2),
+          totalPaid: totalPaid.toFixed(2),
+          totalBalance: totalBalance.toFixed(2),
         },
       };
     });
@@ -1788,6 +1798,7 @@ export class ReportsService {
           voucher: {
             companyId: tenant.companyId,
             voucherDate: { lt: fromDate },
+            isCancelled: false,
           },
         },
         select: {
@@ -1814,16 +1825,27 @@ export class ReportsService {
           voucher: {
             companyId: tenant.companyId,
             voucherDate: { gte: fromDate, lte: toDate },
+            isCancelled: false,
           },
         },
         include: {
           voucher: {
             select: {
+              id: true,
               voucherNumber: true,
               voucherType: true,
               voucherDate: true,
               referenceNo: true,
               narration: true,
+              sourceDocument: true,
+              sourceEntityId: true,
+              isCancelled: true,
+              allocations: {
+                select: {
+                  invoiceId: true,
+                  purchaseInvoiceId: true,
+                },
+              },
             },
           },
         },
@@ -1847,8 +1869,22 @@ export class ReportsService {
 
         runningBalance = runningBalance.plus(dr).minus(cr);
 
+        const invoiceId =
+          (e.voucher.sourceDocument === "SALES_INVOICE" ? e.voucher.sourceEntityId : null) ||
+          e.voucher.allocations?.[0]?.invoiceId ||
+          null;
+        const purchaseInvoiceId =
+          (e.voucher.sourceDocument === "PURCHASE_INVOICE" ? e.voucher.sourceEntityId : null) ||
+          e.voucher.allocations?.[0]?.purchaseInvoiceId ||
+          null;
+
         return {
           id: e.id,
+          voucherId: e.voucher.id,
+          sourceDocument: e.voucher.sourceDocument,
+          sourceEntityId: e.voucher.sourceEntityId,
+          invoiceId,
+          purchaseInvoiceId,
           date: e.voucher.voucherDate.toISOString().split("T")[0],
           voucherNumber: e.voucher.voucherNumber,
           voucherType: e.voucher.voucherType,

@@ -55,7 +55,7 @@ export class HsnService {
     }
 
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
-      const [total, items] = await Promise.all([
+      const [total, items, hsnCount, sacCount, activeCount] = await Promise.all([
         tx.hsnMaster.count({ where }),
         tx.hsnMaster.findMany({
           where,
@@ -63,6 +63,9 @@ export class HsnService {
           skip,
           take: limit,
         }),
+        tx.hsnMaster.count({ where: { ...where, type: "HSN" } }),
+        tx.hsnMaster.count({ where: { ...where, type: "SAC" } }),
+        tx.hsnMaster.count({ where: { ...where, isActive: true } }),
       ]);
 
       return {
@@ -71,6 +74,12 @@ export class HsnService {
         page,
         limit,
         totalPages: Math.ceil(total / limit),
+        counts: {
+          total,
+          hsn: hsnCount,
+          sac: sacCount,
+          active: activeCount,
+        },
       };
     });
   }
@@ -257,15 +266,7 @@ export class HsnService {
         });
       }
 
-      if (existing.isSystem && existing.companyId === null) {
-        throw new BadRequestException({
-          statusCode: 400,
-          message: "Standard system HSN codes cannot be edited directly. You can create a company custom override instead.",
-          messageGujarati: "પ્રમાણભૂત સિસ્ટમ HSN કોડ સીધા સુધારી શકાતા નથી.",
-        });
-      }
-
-      if (existing.companyId !== ctx.companyId) {
+      if (existing.companyId !== null && existing.companyId !== ctx.companyId) {
         throw new NotFoundException({
           statusCode: 404,
           message: "HSN/SAC master record not found in current company.",
@@ -364,15 +365,7 @@ export class HsnService {
         throw new NotFoundException("HSN/SAC record not found.");
       }
 
-      if (existing.isSystem || existing.companyId === null) {
-        throw new BadRequestException({
-          statusCode: 400,
-          message: "Standard system HSN codes cannot be deleted.",
-          messageGujarati: "પ્રમાણભૂત સિસ્ટમ HSN કોડ કાઢી શકાતા નથી.",
-        });
-      }
-
-      if (existing.companyId !== ctx.companyId) {
+      if (existing.companyId !== null && existing.companyId !== ctx.companyId) {
         throw new NotFoundException("HSN/SAC record not found in current company.");
       }
 
@@ -384,8 +377,8 @@ export class HsnService {
       if (itemCount > 0) {
         throw new BadRequestException({
           statusCode: 400,
-          message: `Cannot delete HSN code because it is linked to ${itemCount} item(s) in your catalog. Please deactivate it instead.`,
-          messageGujarati: `આ HSN કોડ તમારી કેટલોગમાં ${itemCount} વસ્તુ(ઓ) સાથે જોડાયેલ છે, તેથી તેને કાઢી શકાતો નથી. કૃપા કરીને તેને નિષ્ક્રિય કરો.`,
+          message: `Cannot delete HSN code '${existing.code}' because it is linked to ${itemCount} item(s) in your catalog. Please unlink the items or deactivate this HSN code instead.`,
+          messageGujarati: `આ HSN કોડ તમારી કેટલોગમાં ${itemCount} વસ્તુ(ઓ) સાથે જોડાયેલ હોવાથી ડિલીટ કરી શકાતો નથી. કૃપા કરીને તેને નિષ્ક્રિય કરો.`,
         });
       }
 
@@ -407,6 +400,40 @@ export class HsnService {
       );
 
       return { success: true, message: "HSN code deleted successfully." };
+    });
+  }
+
+  async bulkDelete(ctx: TenantContext, ids: string[]) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException("No HSN IDs provided for deletion.");
+    }
+
+    return this.prisma.executeInTenantContext(ctx, async (tx) => {
+      // Find items linked to any of these HSN codes
+      const linked = await tx.item.findMany({
+        where: { hsnMasterId: { in: ids } },
+        select: { hsnMasterId: true },
+      });
+      const linkedIds = new Set(linked.map((l) => l.hsnMasterId).filter(Boolean));
+      const deletableIds = ids.filter((id) => !linkedIds.has(id));
+
+      if (deletableIds.length === 0) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: "All selected HSN codes are linked to items in your catalog and cannot be deleted.",
+          messageGujarati: "પસંદ કરેલા તમામ HSN કોડ કેટલોગની વસ્તુઓ સાથે જોડાયેલ હોવાથી ડિલીટ કરી શકાય તેમ નથી.",
+        });
+      }
+
+      const res = await tx.hsnMaster.deleteMany({
+        where: { id: { in: deletableIds } },
+      });
+
+      return {
+        success: true,
+        deletedCount: res.count,
+        skippedCount: linkedIds.size,
+      };
     });
   }
 }

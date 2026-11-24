@@ -79,6 +79,16 @@ export class HsnController {
   }
 
   @Roles(UserRole.COMPANY_ADMIN)
+  @Post("bulk-delete")
+  @HttpCode(HttpStatus.OK)
+  async bulkDelete(
+    @CurrentTenant() ctx: TenantContext,
+    @Body("ids") ids: string[],
+  ) {
+    return this.hsnService.bulkDelete(ctx, ids);
+  }
+
+  @Roles(UserRole.COMPANY_ADMIN)
   @Delete(":id")
   async delete(
     @CurrentTenant() ctx: TenantContext,

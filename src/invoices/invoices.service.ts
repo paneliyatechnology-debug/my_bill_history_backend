@@ -1467,113 +1467,128 @@ export class InvoicesService {
    */
   async getSalesInvoiceById(id: string, tenant: TenantContext): Promise<any> {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
-      const invoice = await tx.salesInvoice.findFirst({
-        where: { id, companyId: tenant.companyId },
-        include: {
-          party: true,
-          branch: true,
-          financialYear: true,
-          eWayBillRecord: true,
-          eInvoiceRecord: true,
-          convertedInvoice: {
-            select: {
-              id: true,
-              invoiceNumber: true,
-              invoiceDate: true,
-              grandTotal: true,
-              status: true,
-            },
-          },
-          sourceQuotationForInvoice: {
-            select: {
-              id: true,
-              invoiceNumber: true,
-              invoiceDate: true,
-              grandTotal: true,
-              status: true,
-            },
-          },
-          items: {
-            include: {
-              item: true,
-            },
+      const invoiceInclude = {
+        party: true,
+        branch: true,
+        financialYear: true,
+        eWayBillRecord: true,
+        eInvoiceRecord: true,
+        convertedInvoice: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            invoiceDate: true,
+            grandTotal: true,
+            status: true,
           },
         },
+        sourceQuotationForInvoice: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            invoiceDate: true,
+            grandTotal: true,
+            status: true,
+          },
+        },
+        items: {
+          include: {
+            item: true,
+          },
+        },
+      };
+
+      let invoice = await tx.salesInvoice.findFirst({
+        where: { id, companyId: tenant.companyId },
+        include: invoiceInclude,
       });
 
+      // 1. Fallback: Search by invoiceNumber directly
+      if (!invoice) {
+        invoice = await tx.salesInvoice.findFirst({
+          where: { invoiceNumber: id, companyId: tenant.companyId },
+          include: invoiceInclude,
+        });
+      }
+
+      // 2. Fallback: Check if id is a Voucher ID / voucher number / referenceNo
       if (!invoice) {
         const voucher = await tx.voucher.findFirst({
           where: {
             companyId: tenant.companyId,
-            sourceEntityId: id,
+            OR: [
+              { id },
+              { voucherNumber: id },
+              { referenceNo: id },
+              { sourceEntityId: id },
+            ],
           },
-          include: {
-            journalEntries: {
-              include: { account: true },
-            },
-          },
+          include: { allocations: true },
         });
+
         if (voucher) {
-          const stockTxs = await tx.stockTransaction.findMany({
-            where: {
-              companyId: tenant.companyId,
-              referenceDocId: id,
-            },
-            include: { item: true },
-          });
-          const branch = await tx.branch.findFirst({
-            where: { companyId: tenant.companyId },
-          });
-          const finYear = await tx.financialYear.findFirst({
-            where: { id: voucher.financialYearId },
-          });
-          const partyName = voucher.narration?.replace(/^Sales Bill No\.\s+[^\s]+\s+to\s+/i, "") || "Walk-in Retail Cash Customer";
-          return {
-            id,
-            companyId: tenant.companyId,
-            invoiceNumber: voucher.referenceNo || voucher.voucherNumber,
-            invoiceDate: voucher.voucherDate.toISOString(),
-            status: "PAID",
-            paymentMode: voucher.paymentMode || "CASH",
-            placeOfSupply: "24",
-            isB2B: false,
-            taxableAmount: Number(voucher.totalAmount),
-            cgstAmount: 0,
-            sgstAmount: 0,
-            igstAmount: 0,
-            roundOff: 0,
-            grandTotal: Number(voucher.totalAmount),
-            paidAmount: Number(voucher.totalAmount),
-            balanceAmount: 0,
-            outstandingBalance: 0,
-            branch,
-            financialYear: finYear,
-            party: {
-              id: "historical-party",
-              name: partyName,
-              stateCode: "24",
-            },
-            items: stockTxs.map((st) => ({
-              id: st.id,
-              invoiceId: id,
-              itemId: st.itemId,
-              description: st.item?.name || "Product",
-              hsnCode: st.item?.hsnCode || "9999",
-              quantity: Math.abs(Number(st.quantity)),
-              unitPrice: Number(st.valuationRate),
-              taxRate: 0,
-              taxableAmount: Number(st.totalValuation),
-              cgstAmount: 0,
-              sgstAmount: 0,
-              igstAmount: 0,
-              totalAmount: Number(st.totalValuation),
-              item: st.item,
-            })),
-            voucher,
-            ...buildInvoiceUrls(id),
-          };
+          if (voucher.sourceDocument === "SALES_INVOICE" && voucher.sourceEntityId) {
+            invoice = await tx.salesInvoice.findFirst({
+              where: { id: voucher.sourceEntityId, companyId: tenant.companyId },
+              include: invoiceInclude,
+            });
+          }
+          if (!invoice && voucher.referenceNo) {
+            invoice = await tx.salesInvoice.findFirst({
+              where: { invoiceNumber: voucher.referenceNo, companyId: tenant.companyId },
+              include: invoiceInclude,
+            });
+          }
+          if (!invoice && voucher.allocations && voucher.allocations.length > 0) {
+            const alloc = voucher.allocations.find((a: any) => a.invoiceId);
+            if (alloc?.invoiceId) {
+              invoice = await tx.salesInvoice.findFirst({
+                where: { id: alloc.invoiceId, companyId: tenant.companyId },
+                include: invoiceInclude,
+              });
+            }
+          }
         }
-        throw new NotFoundException(`Sales invoice ${id} not found.`);
+      }
+
+      // 3. Fallback: Check if id is a JournalEntry ID
+      if (!invoice) {
+        const je = await tx.journalEntry.findFirst({
+          where: { id },
+          include: { voucher: { include: { allocations: true } } },
+        });
+        if (je?.voucher && je.voucher.companyId === tenant.companyId) {
+          const v = je.voucher;
+          if (v.sourceDocument === "SALES_INVOICE" && v.sourceEntityId) {
+            invoice = await tx.salesInvoice.findFirst({
+              where: { id: v.sourceEntityId, companyId: tenant.companyId },
+              include: invoiceInclude,
+            });
+          }
+          if (!invoice && v.referenceNo) {
+            invoice = await tx.salesInvoice.findFirst({
+              where: { invoiceNumber: v.referenceNo, companyId: tenant.companyId },
+              include: invoiceInclude,
+            });
+          }
+          if (!invoice && v.allocations && v.allocations.length > 0) {
+            const alloc = v.allocations.find((a: any) => a.invoiceId);
+            if (alloc?.invoiceId) {
+              invoice = await tx.salesInvoice.findFirst({
+                where: { id: alloc.invoiceId, companyId: tenant.companyId },
+                include: invoiceInclude,
+              });
+            }
+          }
+        }
+      }
+
+      if (!invoice) {
+        throw new NotFoundException({
+          statusCode: 404,
+          message: `Sales invoice '${id}' not found. The invoice may have been deleted or removed.`,
+          messageGujarati: `વેચાણ બિલ મળેલ નથી. બિલ કાઢી નાખેલ હોઈ શકે છે.`,
+        });
       }
 
       const voucher = await tx.voucher.findFirst({
@@ -6070,7 +6085,15 @@ export class InvoicesService {
         });
       }
 
-      // 3. Remove payment allocations
+      // 3. Find and remove linked payment allocations and dedicated payment vouchers
+      const linkedAllocations = await tx.paymentAllocation.findMany({
+        where: { invoiceId: id },
+        select: { voucherId: true },
+      });
+      const allocatedVoucherIds = linkedAllocations
+        .map((a: any) => a.voucherId)
+        .filter(Boolean);
+
       await tx.paymentAllocation.deleteMany({
         where: { invoiceId: id },
       });
@@ -6109,18 +6132,29 @@ export class InvoicesService {
         },
       });
 
-      // 9. Revert & delete vouchers created for this sales invoice
+      // 9. Revert & delete vouchers created for this sales invoice and dedicated payment vouchers
       const invoiceVouchers = await tx.voucher.findMany({
         where: {
           companyId: tenant.companyId,
           OR: [
             { sourceDocument: "SALES_INVOICE", sourceEntityId: id },
             { referenceNo: existing.invoiceNumber },
-          ],
+            allocatedVoucherIds.length > 0
+              ? { id: { in: allocatedVoucherIds } }
+              : null,
+          ].filter(Boolean) as any,
         },
-        include: { journalEntries: true },
+        include: { journalEntries: true, allocations: true },
       });
-      await this.reverseAndDeleteVouchers(tx, invoiceVouchers);
+
+      const vouchersToDelete = invoiceVouchers.filter((v: any) => {
+        if (v.sourceDocument === "SALES_INVOICE" && v.sourceEntityId === id) return true;
+        if (v.referenceNo === existing.invoiceNumber) return true;
+        if (!v.allocations || v.allocations.length <= 1) return true;
+        return false;
+      });
+
+      await this.reverseAndDeleteVouchers(tx, vouchersToDelete);
 
       // 10. Remove items
       await tx.salesInvoiceItem.deleteMany({

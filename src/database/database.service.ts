@@ -402,50 +402,57 @@ export class DatabaseService
   async executeInTenantContext<T>(
     ctx: TenantContext,
     callback: (tx: Prisma.TransactionClient) => Promise<T>,
+    options?: { maxWait?: number; timeout?: number },
   ): Promise<T> {
     const caps = await this.detectRoleCapabilities();
 
-    return this.$transaction(async (tx) => {
-      try {
-        if (ctx.isSystemBypass) {
-          await tx.$executeRaw`SELECT set_config('app.bypass_rls', 'on', true)`;
-        } else {
-          await tx.$executeRaw`SELECT set_config('app.bypass_rls', 'off', true)`;
+    return this.$transaction(
+      async (tx) => {
+        try {
+          if (ctx.isSystemBypass) {
+            await tx.$executeRaw`SELECT set_config('app.bypass_rls', 'on', true)`;
+          } else {
+            await tx.$executeRaw`SELECT set_config('app.bypass_rls', 'off', true)`;
 
-          // Only superusers need to downgrade role to test RLS policies.
-          // Non-superusers are already subject to FORCE ROW LEVEL SECURITY.
-          // Executing SET LOCAL ROLE as a non-superuser throws 42501 which aborts PostgreSQL transactions.
-          if (caps.isSuperuser && caps.hasAppRole) {
-            await tx.$executeRawUnsafe(`
-              DO $$
-              BEGIN
-                SET LOCAL ROLE billing_app;
-              EXCEPTION WHEN OTHERS THEN
-                NULL;
-              END $$;
-            `);
+            // Only superusers need to downgrade role to test RLS policies.
+            // Non-superusers are already subject to FORCE ROW LEVEL SECURITY.
+            // Executing SET LOCAL ROLE as a non-superuser throws 42501 which aborts PostgreSQL transactions.
+            if (caps.isSuperuser && caps.hasAppRole) {
+              await tx.$executeRawUnsafe(`
+                DO $$
+                BEGIN
+                  SET LOCAL ROLE billing_app;
+                EXCEPTION WHEN OTHERS THEN
+                  NULL;
+                END $$;
+              `);
+            }
+
+            if (ctx.organizationId) {
+              await tx.$executeRaw`SELECT set_config('app.current_organization_id', ${ctx.organizationId}, true)`;
+            }
+            if (ctx.companyId) {
+              await tx.$executeRaw`SELECT set_config('app.current_company_id', ${ctx.companyId}, true)`;
+            }
           }
 
-          if (ctx.organizationId) {
-            await tx.$executeRaw`SELECT set_config('app.current_organization_id', ${ctx.organizationId}, true)`;
-          }
-          if (ctx.companyId) {
-            await tx.$executeRaw`SELECT set_config('app.current_company_id', ${ctx.companyId}, true)`;
-          }
+          return await callback(tx);
+        } catch (err: any) {
+          const errorCode = err?.code || err?.meta?.code || "UNKNOWN";
+          const errorMsg = err?.message
+            ? err.message.split("\n")[0]
+            : "Database operation failed";
+          this.logger.error(
+            `Tenant transaction failure [errorCode=${errorCode}]: ${errorMsg}`,
+          );
+          throw err;
         }
-
-        return await callback(tx);
-      } catch (err: any) {
-        const errorCode = err?.code || err?.meta?.code || "UNKNOWN";
-        const errorMsg = err?.message
-          ? err.message.split("\n")[0]
-          : "Database operation failed";
-        this.logger.error(
-          `Tenant transaction failure [errorCode=${errorCode}]: ${errorMsg}`,
-        );
-        throw err;
-      }
-    });
+      },
+      {
+        maxWait: options?.maxWait ?? 15000,
+        timeout: options?.timeout ?? 120000, // 2 minutes default timeout (increased from 5s)
+      },
+    );
   }
 
   /**

@@ -1465,10 +1465,99 @@ export class PurchasesService implements OnModuleInit {
       }
 
       if (!invoice) {
+        // Fallback 1: search by vendorInvoiceNumber directly
+        invoice = await tx.purchaseInvoice.findFirst({
+          where: {
+            vendorInvoiceNumber: id,
+            companyId: tenant.companyId,
+          },
+          include: {
+            party: true,
+            items: {
+              include: {
+                item: true,
+              },
+            },
+            branch: true,
+            returns: {
+              include: {
+                items: {
+                  include: { item: true },
+                },
+              },
+            },
+          },
+        });
+      }
+
+      if (!invoice) {
+        // Fallback 2: check if id is a voucher ID, voucherNumber or referenceNo
         const voucher = await tx.voucher.findFirst({
           where: {
             companyId: tenant.companyId,
-            sourceEntityId: id,
+            OR: [
+              { id },
+              { voucherNumber: id },
+              { referenceNo: id },
+              { sourceEntityId: id },
+            ],
+          },
+          include: {
+            allocations: true,
+            journalEntries: {
+              include: { account: true },
+            },
+          },
+        });
+
+        if (voucher) {
+          if (voucher.sourceDocument === "PURCHASE_INVOICE" && voucher.sourceEntityId) {
+            invoice = await tx.purchaseInvoice.findFirst({
+              where: { id: voucher.sourceEntityId, companyId: tenant.companyId },
+              include: {
+                party: true,
+                items: { include: { item: true } },
+                branch: true,
+                returns: { include: { items: { include: { item: true } } } },
+              },
+            });
+          }
+          if (!invoice && voucher.referenceNo) {
+            invoice = await tx.purchaseInvoice.findFirst({
+              where: { vendorInvoiceNumber: voucher.referenceNo, companyId: tenant.companyId },
+              include: {
+                party: true,
+                items: { include: { item: true } },
+                branch: true,
+                returns: { include: { items: { include: { item: true } } } },
+              },
+            });
+          }
+          if (!invoice && voucher.allocations && voucher.allocations.length > 0) {
+            const alloc = voucher.allocations.find((a: any) => a.purchaseInvoiceId);
+            if (alloc?.purchaseInvoiceId) {
+              invoice = await tx.purchaseInvoice.findFirst({
+                where: { id: alloc.purchaseInvoiceId, companyId: tenant.companyId },
+                include: {
+                  party: true,
+                  items: { include: { item: true } },
+                  branch: true,
+                  returns: { include: { items: { include: { item: true } } } },
+                },
+              });
+            }
+          }
+        }
+      }
+
+      if (!invoice) {
+        const voucher = await tx.voucher.findFirst({
+          where: {
+            companyId: tenant.companyId,
+            OR: [
+              { id },
+              { sourceEntityId: id },
+            ],
           },
           include: {
             journalEntries: {
@@ -3034,7 +3123,15 @@ export class PurchasesService implements OnModuleInit {
         },
       });
 
-      // 2. Delete payment allocations
+      // 2. Find and delete payment allocations and dedicated payment vouchers
+      const linkedAllocations = await tx.paymentAllocation.findMany({
+        where: { purchaseInvoiceId: id },
+        select: { voucherId: true },
+      });
+      const allocatedVoucherIds = linkedAllocations
+        .map((a: any) => a.voucherId)
+        .filter(Boolean);
+
       await tx.paymentAllocation.deleteMany({
         where: { purchaseInvoiceId: id },
       });
@@ -3089,18 +3186,25 @@ export class PurchasesService implements OnModuleInit {
         where: { purchaseInvoiceId: id },
       });
 
-      // 5. Revert & delete vouchers for this purchase invoice
+      // 5. Revert & delete vouchers for this purchase invoice and dedicated payment vouchers
       const invoiceVouchers = await tx.voucher.findMany({
         where: {
           companyId: tenant.companyId,
           OR: [
             { sourceDocument: "PURCHASE_INVOICE", sourceEntityId: id },
-            existing.vendorInvoiceNumber ? { referenceNo: existing.vendorInvoiceNumber } : {},
-          ].filter((cond) => Object.keys(cond).length > 0) as any,
+            existing.vendorInvoiceNumber ? { referenceNo: existing.vendorInvoiceNumber } : null,
+            allocatedVoucherIds.length > 0 ? { id: { in: allocatedVoucherIds } } : null,
+          ].filter(Boolean) as any,
         },
-        include: { journalEntries: true },
+        include: { journalEntries: true, allocations: true },
       });
-      for (const voucher of invoiceVouchers) {
+      const vouchersToDelete = invoiceVouchers.filter((v: any) => {
+        if (v.sourceDocument === "PURCHASE_INVOICE" && v.sourceEntityId === id) return true;
+        if (existing.vendorInvoiceNumber && v.referenceNo === existing.vendorInvoiceNumber) return true;
+        if (!v.allocations || v.allocations.length <= 1) return true;
+        return false;
+      });
+      for (const voucher of vouchersToDelete) {
         for (const entry of voucher.journalEntries) {
           const acc = await tx.ledgerAccount.findUnique({
             where: { id: entry.accountId },

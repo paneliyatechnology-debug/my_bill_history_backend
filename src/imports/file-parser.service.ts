@@ -13,8 +13,8 @@ export interface ParsedSheetData {
 @Injectable()
 export class FileParserService {
   private readonly logger = new Logger(FileParserService.name);
-  private readonly maxRows = 5000;
-  private readonly maxFileSize = 15 * 1024 * 1024; // 15MB
+  private readonly maxRows = 50000;
+  private readonly maxFileSize = 50 * 1024 * 1024; // 50MB
 
   /**
    * Parse uploaded file buffer (XLSX, XLS, CSV) into normalized sheet data

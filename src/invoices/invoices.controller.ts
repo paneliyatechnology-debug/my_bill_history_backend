@@ -471,10 +471,10 @@ export class InvoicesController {
     @Param("id") id: string,
     @CurrentTenant() tenant: TenantContext,
   ) {
-    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    if (!id || typeof id !== "string" || id.trim() === "" || id === "undefined" || id === "null") {
       throw new NotFoundException(`Sales invoice ${id} not found.`);
     }
-    return await this.invoicesService.getSalesInvoiceById(id, tenant);
+    return await this.invoicesService.getSalesInvoiceById(id.trim(), tenant);
   }
 
   @RequirePermissions({ module: "sales_invoices", action: "edit" })
