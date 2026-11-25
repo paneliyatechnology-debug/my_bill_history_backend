@@ -1349,6 +1349,7 @@ export class InvoicesService {
             category: true,
             status: true,
             isB2B: true,
+            createdById: true,
             paymentMode: true,
             grandTotal: true,
             paidAmount: true,

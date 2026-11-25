@@ -753,9 +753,18 @@ export class VouchersService {
         ];
       }
 
-      const receiptInclude = {
+      const receiptSelect = {
+        id: true,
+        voucherNumber: true,
+        voucherDate: true,
+        paymentMode: true,
+        narration: true,
+        referenceNo: true,
+        isCancelled: true,
         journalEntries: {
-          include: {
+          select: {
+            debitAmount: true,
+            creditAmount: true,
             account: {
               select: {
                 id: true,
@@ -770,13 +779,18 @@ export class VouchersService {
           },
           orderBy: { sequenceOrder: "asc" as const },
         },
-        allocations: true,
+        allocations: {
+          select: {
+            allocatedAmount: true,
+            cashDiscount: true,
+          },
+        },
       };
 
       const [rows, total] = await Promise.all([
         tx.voucher.findMany({
           where,
-          include: receiptInclude,
+          select: receiptSelect,
           orderBy: [{ voucherDate: "desc" }, { createdAt: "desc" }],
           skip,
           take: limit,
@@ -877,9 +891,18 @@ export class VouchersService {
         ];
       }
 
-      const paymentInclude = {
+      const paymentSelect = {
+        id: true,
+        voucherNumber: true,
+        voucherDate: true,
+        paymentMode: true,
+        narration: true,
+        referenceNo: true,
+        isCancelled: true,
         journalEntries: {
-          include: {
+          select: {
+            debitAmount: true,
+            creditAmount: true,
             account: {
               select: {
                 id: true,
@@ -895,18 +918,9 @@ export class VouchersService {
           orderBy: { sequenceOrder: "asc" as const },
         },
         allocations: {
-          include: {
-            purchaseInvoice: {
-              select: {
-                id: true,
-                vendorInvoiceNumber: true,
-                invoiceDate: true,
-                grandTotal: true,
-                balanceAmount: true,
-                paidAmount: true,
-                partyId: true,
-              },
-            },
+          select: {
+            allocatedAmount: true,
+            cashDiscount: true,
           },
         },
       };
@@ -914,7 +928,7 @@ export class VouchersService {
       const [rows, total] = await Promise.all([
         tx.voucher.findMany({
           where,
-          include: paymentInclude,
+          select: paymentSelect,
           orderBy: [{ voucherDate: "desc" }, { createdAt: "desc" }],
           skip,
           take: limit,

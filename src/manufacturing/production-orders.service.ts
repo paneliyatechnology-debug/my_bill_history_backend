@@ -112,14 +112,54 @@ export class ProductionOrdersService {
           status: ProductionStatus.PLANNED,
           startDate,
         },
-        include: {
+        select: {
+          id: true,
+          companyId: true,
+          bomId: true,
+          orderNumber: true,
+          targetQuantity: true,
+          status: true,
+          startDate: true,
+          completedDate: true,
+          createdAt: true,
           bom: {
-            include: {
-              finishedItem: true,
-              items: { include: { rawItem: true } },
+            select: {
+              id: true,
+              bomName: true,
+              batchYieldQty: true,
+              laborCostEst: true,
+              overheadCostEst: true,
+              finishedItem: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true,
+                  primaryUom: { select: { name: true, symbol: true } },
+                },
+              },
+              items: {
+                select: {
+                  id: true,
+                  quantity: true,
+                  wastagePercent: true,
+                  rawItem: { select: { id: true, name: true, sku: true } },
+                },
+              },
             },
           },
-          batches: true,
+          batches: {
+            select: {
+              id: true,
+              batchNumber: true,
+              actualProducedQty: true,
+              scrapQuantity: true,
+              rawMaterialCost: true,
+              actualLaborCost: true,
+              actualOverheadCost: true,
+              unitCost: true,
+              completedAt: true,
+            },
+          },
         },
       });
 
@@ -146,6 +186,56 @@ export class ProductionOrdersService {
     });
   }
 
+  private readonly orderResponseSelect = {
+    id: true,
+    companyId: true,
+    bomId: true,
+    orderNumber: true,
+    targetQuantity: true,
+    status: true,
+    startDate: true,
+    completedDate: true,
+    createdAt: true,
+    bom: {
+      select: {
+        id: true,
+        bomName: true,
+        batchYieldQty: true,
+        laborCostEst: true,
+        overheadCostEst: true,
+        finishedItem: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            primaryUom: { select: { name: true, symbol: true } },
+          },
+        },
+        items: {
+          select: {
+            id: true,
+            quantity: true,
+            wastagePercent: true,
+            rawItem: { select: { id: true, name: true, sku: true } },
+          },
+        },
+      },
+    },
+    batches: {
+      select: {
+        id: true,
+        batchNumber: true,
+        actualProducedQty: true,
+        scrapQuantity: true,
+        rawMaterialCost: true,
+        actualLaborCost: true,
+        actualOverheadCost: true,
+        unitCost: true,
+        completedAt: true,
+      },
+    },
+  };
+
   /**
    * List all Production Orders for current tenant
    */
@@ -153,15 +243,7 @@ export class ProductionOrdersService {
     return await this.prisma.executeInTenantContext(ctx, async (tx) => {
       return await tx.productionOrder.findMany({
         where: { companyId: ctx.companyId },
-        include: {
-          bom: {
-            include: {
-              finishedItem: true,
-              items: { include: { rawItem: true } },
-            },
-          },
-          batches: true,
-        },
+        select: this.orderResponseSelect,
         orderBy: { createdAt: "desc" },
       });
     });
@@ -174,15 +256,7 @@ export class ProductionOrdersService {
     return await this.prisma.executeInTenantContext(ctx, async (tx) => {
       const order = await tx.productionOrder.findFirst({
         where: { id, companyId: ctx.companyId },
-        include: {
-          bom: {
-            include: {
-              finishedItem: true,
-              items: { include: { rawItem: true } },
-            },
-          },
-          batches: true,
-        },
+        select: this.orderResponseSelect,
       });
       if (!order) {
         throw new NotFoundException(`Production order ${id} not found.`);

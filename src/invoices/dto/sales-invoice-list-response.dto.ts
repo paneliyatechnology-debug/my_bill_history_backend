@@ -32,6 +32,7 @@ export interface SalesInvoiceListItemDto {
   category: string;
   status: string;
   isB2B: boolean;
+  createdById?: string | null;
   grandTotal: number;
   paidAmount: number;
   balanceAmount: number;
@@ -141,6 +142,7 @@ export function mapSalesInvoiceListItem(
     category: inv.category,
     status: inv.status,
     isB2B: Boolean(inv.isB2B),
+    ...(inv.createdById !== undefined ? { createdById: inv.createdById } : {}),
     grandTotal: grandTotalNum,
     paidAmount: toNumber(inv.paidAmount),
     balanceAmount,

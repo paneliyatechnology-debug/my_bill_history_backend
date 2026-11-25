@@ -475,10 +475,6 @@ export class ItemsService {
               take: 1,
               select: { unitPrice: true },
             },
-            stockTransactions: {
-              where: { companyId: ctx.companyId },
-              select: { quantity: true, transactionType: true, valuationRate: true },
-            },
           },
           orderBy: { name: "asc" },
           skip,
@@ -487,24 +483,56 @@ export class ItemsService {
         tx.item.count({ where }),
       ]);
 
+      const itemIds = items.map((it) => it.id);
+      const stockSums =
+        itemIds.length > 0
+          ? await tx.stockTransaction.groupBy({
+              by: ["itemId"],
+              where: { companyId: ctx.companyId, itemId: { in: itemIds } },
+              _sum: { quantity: true },
+            })
+          : [];
+      const stockMap = new Map<string, number>(
+        stockSums.map((s) => [s.itemId, Number(s._sum.quantity || 0)]),
+      );
+
+      // Only query PURCHASE_RECEIPT valuationRate for items that have no purchaseRate and no purchaseInvoiceItems
+      const fallbackItemIds = items
+        .filter(
+          (it) =>
+            Number(it.purchaseRate || 0) === 0 &&
+            (!(it as any).purchaseInvoiceItems || (it as any).purchaseInvoiceItems.length === 0),
+        )
+        .map((it) => it.id);
+
+      const receiptRateMap = new Map<string, number>();
+      if (fallbackItemIds.length > 0) {
+        const receiptTxs = await tx.stockTransaction.findMany({
+          where: {
+            companyId: ctx.companyId,
+            itemId: { in: fallbackItemIds },
+            transactionType: "PURCHASE_RECEIPT",
+            valuationRate: { gt: 0 },
+          },
+          distinct: ["itemId"],
+          orderBy: { createdAt: "desc" },
+          select: { itemId: true, valuationRate: true },
+        });
+        for (const rt of receiptTxs) {
+          receiptRateMap.set(rt.itemId, Number(rt.valuationRate || 0));
+        }
+      }
+
       const itemsWithStock = items.map((it) => {
-        const currentStock = (it.stockTransactions || []).reduce(
-          (sum, st) => sum + Number(st.quantity),
-          0,
-        );
+        const currentStock = stockMap.get(it.id) ?? 0;
 
         const salesPrice = Number(it.retailPrice || 0);
         let purchasePrice = Number(it.purchaseRate || 0);
         if (purchasePrice === 0 && (it as any).purchaseInvoiceItems && (it as any).purchaseInvoiceItems.length > 0) {
           purchasePrice = Number((it as any).purchaseInvoiceItems[0].unitPrice || 0);
         }
-        if (purchasePrice === 0 && it.stockTransactions) {
-          const receiptTx = it.stockTransactions.find(
-            (st: any) => st.transactionType === "PURCHASE_RECEIPT" && Number(st.valuationRate) > 0,
-          );
-          if (receiptTx) {
-            purchasePrice = Number(receiptTx.valuationRate);
-          }
+        if (purchasePrice === 0) {
+          purchasePrice = receiptRateMap.get(it.id) ?? 0;
         }
         const unit = it.primaryUom?.symbol || it.primaryUom?.name || "BOX";
 

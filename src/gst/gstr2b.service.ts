@@ -149,10 +149,49 @@ export class Gstr2bService {
             ? { itcDecision: query.itcDecision as ItcReviewDecision }
             : {}),
         },
-        include: {
-          purchaseInvoice: { include: { party: true } },
-          purchaseReturn: { include: { party: true } },
-          gstr2bLine: true,
+        select: {
+          id: true,
+          status: true,
+          systemStatus: true,
+          itcDecision: true,
+          userOverridden: true,
+          explanation: true,
+          purchaseInvoice: {
+            select: {
+              vendorInvoiceNumber: true,
+              invoiceDate: true,
+              taxableAmount: true,
+              cgstAmount: true,
+              sgstAmount: true,
+              utgstAmount: true,
+              igstAmount: true,
+              party: { select: { gstin: true } },
+            },
+          },
+          purchaseReturn: {
+            select: {
+              returnNumber: true,
+              returnDate: true,
+              taxableAmount: true,
+              cgstAmount: true,
+              sgstAmount: true,
+              utgstAmount: true,
+              igstAmount: true,
+              party: { select: { gstin: true } },
+            },
+          },
+          gstr2bLine: {
+            select: {
+              supplierGstin: true,
+              invoiceNumber: true,
+              invoiceDate: true,
+              taxableValue: true,
+              cgstAmount: true,
+              sgstAmount: true,
+              igstAmount: true,
+              portalItcFlag: true,
+            },
+          },
         },
         orderBy: { matchKey: "asc" },
       });

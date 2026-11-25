@@ -1411,11 +1411,15 @@ export class TenantsService {
     }
     const logs = await this.prisma.auditLog.findMany({
       where: { organizationId: ctx.organizationId },
-      include: {
+      select: {
+        id: true,
+        action: true,
+        entityName: true,
+        entityId: true,
+        createdAt: true,
         user: {
           select: {
             fullName: true,
-            phone: true,
             role: true,
           },
         },
@@ -1442,11 +1446,31 @@ export class TenantsService {
     const org = await this.prisma.executeBypassRls(async (tx) => {
       return tx.organization.findUnique({
         where: { id: ctx.organizationId },
-        include: {
-          tenant: true,
+        select: {
+          id: true,
+          name: true,
+          tenant: {
+            select: {
+              id: true,
+              subscriptionEnds: true,
+              subscriptionTier: true,
+              isActive: true,
+              primaryPhone: true,
+              primaryEmail: true,
+              createdAt: true,
+            },
+          },
           companies: {
             where: ctx.companyId ? { id: ctx.companyId } : undefined,
             take: 1,
+            select: {
+              id: true,
+              tradeName: true,
+              legalName: true,
+              gstin: true,
+              phone: true,
+              email: true,
+            },
           },
         },
       });

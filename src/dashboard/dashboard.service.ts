@@ -265,24 +265,24 @@ export class DashboardService {
         },
       });
 
+      const salesByDate = new Map<string, number>();
+      for (const inv of invoices) {
+        if (!inv.invoiceDate) continue;
+        const iso = new Date(inv.invoiceDate).toISOString().slice(0, 10);
+        salesByDate.set(iso, (salesByDate.get(iso) ?? 0) + Number(inv.grandTotal || 0));
+      }
+
       const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       const chartDays: { dayLabel: string; dateIso: string; sales: number }[] = [];
       let sevenDaysSales = 0;
-      let invoicesCount = invoices.length;
+      const invoicesCount = invoices.length;
 
       for (let i = days - 1; i >= 0; i--) {
         const d = new Date(anchorDate);
         d.setDate(anchorDate.getDate() - i);
         const dayLabel = dayNames[d.getDay()];
         const dateIso = d.toISOString().slice(0, 10);
-
-        const dayInvoices = invoices.filter((inv) =>
-          inv.invoiceDate ? new Date(inv.invoiceDate).toISOString().startsWith(dateIso) : false,
-        );
-        const daySum = dayInvoices.reduce(
-          (acc, cur) => acc + Number(cur.grandTotal || 0),
-          0,
-        );
+        const daySum = salesByDate.get(dateIso) ?? 0;
 
         sevenDaysSales += daySum;
 

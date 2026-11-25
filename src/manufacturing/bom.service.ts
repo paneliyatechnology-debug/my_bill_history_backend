@@ -65,6 +65,7 @@ export class BomService {
       // 1. Verify finished item ownership and type
       const finishedItem = await tx.item.findFirst({
         where: { id: dto.finishedItemId, companyId: ctx.companyId },
+        select: { id: true, name: true, type: true },
       });
       if (!finishedItem) {
         throw new NotFoundException(`Finished item ${dto.finishedItemId} not found in this company.`);
@@ -76,6 +77,7 @@ export class BomService {
       // 2. Verify all raw materials exist and belong to the tenant company
       const rawItems = await tx.item.findMany({
         where: { id: { in: rawItemIds }, companyId: ctx.companyId },
+        select: { id: true },
       });
       if (rawItems.length !== rawItemIds.length) {
         throw new BadRequestException("One or more referenced raw material items do not exist in this company.");
@@ -88,7 +90,10 @@ export class BomService {
           companyId: ctx.companyId,
           finishedItemId: { in: rawItemIds },
         },
-        include: { items: true },
+        select: {
+          bomName: true,
+          items: { select: { rawItemId: true } },
+        },
       });
       for (const nb of nestedBoms) {
         if (nb.items.some((i) => i.rawItemId === dto.finishedItemId)) {
@@ -116,10 +121,38 @@ export class BomService {
             })),
           },
         },
-        include: {
-          finishedItem: true,
+        select: {
+          id: true,
+          companyId: true,
+          finishedItemId: true,
+          bomName: true,
+          batchYieldQty: true,
+          laborCostEst: true,
+          overheadCostEst: true,
+          createdAt: true,
+          finishedItem: {
+            select: {
+              id: true,
+              name: true,
+              sku: true,
+              primaryUom: { select: { name: true, symbol: true } },
+            },
+          },
           items: {
-            include: { rawItem: true },
+            select: {
+              id: true,
+              rawItemId: true,
+              quantity: true,
+              wastagePercent: true,
+              rawItem: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true,
+                  primaryUom: { select: { name: true, symbol: true } },
+                },
+              },
+            },
           },
         },
       });
@@ -147,6 +180,41 @@ export class BomService {
     });
   }
 
+  private readonly bomResponseSelect = {
+    id: true,
+    companyId: true,
+    finishedItemId: true,
+    bomName: true,
+    batchYieldQty: true,
+    laborCostEst: true,
+    overheadCostEst: true,
+    createdAt: true,
+    finishedItem: {
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        primaryUom: { select: { name: true, symbol: true } },
+      },
+    },
+    items: {
+      select: {
+        id: true,
+        rawItemId: true,
+        quantity: true,
+        wastagePercent: true,
+        rawItem: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            primaryUom: { select: { name: true, symbol: true } },
+          },
+        },
+      },
+    },
+  };
+
   /**
    * List all Bills of Materials for current tenant
    */
@@ -154,12 +222,7 @@ export class BomService {
     return await this.prisma.executeInTenantContext(ctx, async (tx) => {
       return await tx.billOfMaterial.findMany({
         where: { companyId: ctx.companyId },
-        include: {
-          finishedItem: true,
-          items: {
-            include: { rawItem: true },
-          },
-        },
+        select: this.bomResponseSelect,
         orderBy: { createdAt: "desc" },
       });
     });
@@ -172,12 +235,7 @@ export class BomService {
     return await this.prisma.executeInTenantContext(ctx, async (tx) => {
       const bom = await tx.billOfMaterial.findFirst({
         where: { id, companyId: ctx.companyId },
-        include: {
-          finishedItem: true,
-          items: {
-            include: { rawItem: true },
-          },
-        },
+        select: this.bomResponseSelect,
       });
       if (!bom) {
         throw new NotFoundException(`Bill of Materials ${id} not found.`);
@@ -271,10 +329,38 @@ export class BomService {
               ? toDecimal(dto.overheadCostEst).toNumber()
               : undefined,
         },
-        include: {
-          finishedItem: true,
+        select: {
+          id: true,
+          companyId: true,
+          finishedItemId: true,
+          bomName: true,
+          batchYieldQty: true,
+          laborCostEst: true,
+          overheadCostEst: true,
+          createdAt: true,
+          finishedItem: {
+            select: {
+              id: true,
+              name: true,
+              sku: true,
+              primaryUom: { select: { name: true, symbol: true } },
+            },
+          },
           items: {
-            include: { rawItem: true },
+            select: {
+              id: true,
+              rawItemId: true,
+              quantity: true,
+              wastagePercent: true,
+              rawItem: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true,
+                  primaryUom: { select: { name: true, symbol: true } },
+                },
+              },
+            },
           },
         },
       });

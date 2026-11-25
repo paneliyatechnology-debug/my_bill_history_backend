@@ -439,23 +439,51 @@ export class ReportsService {
         invoiceDate.gte = parseStartOfDay(query.fromDate);
       if (query.toDate)
         invoiceDate.lte = parseEndOfDay(query.toDate);
-      const invoices = await tx.purchaseInvoice.findMany({
-        where: {
-          companyId: tenant.companyId,
-          ...(query.fromDate || query.toDate ? { invoiceDate } : {}),
-        },
-        include: { party: true, items: true },
-        orderBy: { invoiceDate: "asc" },
-      });
-      const returns = await tx.purchaseReturn.findMany({
-        where: {
-          companyId: tenant.companyId,
-          ...(query.fromDate || query.toDate
-            ? { returnDate: invoiceDate }
-            : {}),
-        },
-        include: { party: true },
-      });
+      const [invoices, returns] = await Promise.all([
+        tx.purchaseInvoice.findMany({
+          where: {
+            companyId: tenant.companyId,
+            ...(query.fromDate || query.toDate ? { invoiceDate } : {}),
+          },
+          select: {
+            id: true,
+            vendorInvoiceNumber: true,
+            invoiceDate: true,
+            taxableAmount: true,
+            cgstAmount: true,
+            sgstAmount: true,
+            utgstAmount: true,
+            igstAmount: true,
+            cessAmount: true,
+            grandTotal: true,
+            paidAmount: true,
+            balanceAmount: true,
+            itcEligibility: true,
+            party: { select: { name: true, gstin: true } },
+          },
+          orderBy: { invoiceDate: "asc" },
+        }),
+        tx.purchaseReturn.findMany({
+          where: {
+            companyId: tenant.companyId,
+            ...(query.fromDate || query.toDate
+              ? { returnDate: invoiceDate }
+              : {}),
+          },
+          select: {
+            id: true,
+            returnNumber: true,
+            returnDate: true,
+            taxableAmount: true,
+            cgstAmount: true,
+            sgstAmount: true,
+            utgstAmount: true,
+            igstAmount: true,
+            grandTotal: true,
+            party: { select: { name: true, gstin: true } },
+          },
+        }),
+      ]);
       let taxable = new Decimal(0);
       let cgst = new Decimal(0);
       let sgst = new Decimal(0);
@@ -561,13 +589,31 @@ export class ReportsService {
           companyId: tenant.companyId,
           ...(query.fromDate || query.toDate ? { invoiceDate } : {}),
         },
-        include: {
-          party: true,
+        select: {
+          id: true,
+          vendorInvoiceNumber: true,
+          invoiceDate: true,
+          grandTotal: true,
+          sgstAmount: true,
+          cgstAmount: true,
+          igstAmount: true,
+          party: { select: { gstin: true, name: true } },
           items: {
-            include: {
+            select: {
+              id: true,
+              hsnCode: true,
+              quantity: true,
+              unitPrice: true,
+              taxRate: true,
+              sgstAmount: true,
+              cgstAmount: true,
+              igstAmount: true,
+              totalAmount: true,
               item: {
-                include: {
-                  primaryUom: true,
+                select: {
+                  name: true,
+                  hsnCode: true,
+                  primaryUom: { select: { symbol: true, name: true } },
                 },
               },
             },
@@ -689,13 +735,32 @@ export class ReportsService {
           },
           ...(query.fromDate || query.toDate ? { invoiceDate } : {}),
         },
-        include: {
-          party: true,
+        select: {
+          id: true,
+          invoiceNumber: true,
+          invoiceDate: true,
+          grandTotal: true,
+          sgstAmount: true,
+          cgstAmount: true,
+          igstAmount: true,
+          party: { select: { gstin: true, name: true } },
           items: {
-            include: {
+            select: {
+              id: true,
+              description: true,
+              hsnCode: true,
+              quantity: true,
+              unitPrice: true,
+              taxRate: true,
+              sgstAmount: true,
+              cgstAmount: true,
+              igstAmount: true,
+              totalAmount: true,
               item: {
-                include: {
-                  primaryUom: true,
+                select: {
+                  name: true,
+                  hsnCode: true,
+                  primaryUom: { select: { symbol: true, name: true } },
                 },
               },
             },
@@ -823,12 +888,22 @@ export class ReportsService {
       const limit = Number(query.limit) || 50;
       const skip = (page - 1) * limit;
 
-      const [vouchers, totalCount, allVouchers] = await Promise.all([
+      const [vouchers, totalCount, groupedTotals] = await Promise.all([
         tx.voucher.findMany({
           where,
-          include: {
+          select: {
+            id: true,
+            voucherNumber: true,
+            voucherType: true,
+            voucherDate: true,
+            referenceNo: true,
+            totalAmount: true,
+            narration: true,
+            narrationGujarati: true,
             allocations: {
-              include: {
+              select: {
+                allocatedAmount: true,
+                cashDiscount: true,
                 salesInvoice: {
                   select: {
                     invoiceNumber: true,
@@ -837,11 +912,10 @@ export class ReportsService {
               },
             },
             journalEntries: {
-              include: {
+              select: {
                 account: {
                   select: {
                     name: true,
-                    nameGujarati: true,
                     isBankLedger: true,
                     isCashLedger: true,
                     isPartyLedger: true,
@@ -856,12 +930,10 @@ export class ReportsService {
           take: limit,
         }),
         tx.voucher.count({ where }),
-        tx.voucher.findMany({
+        tx.voucher.groupBy({
+          by: ["voucherType"],
           where,
-          select: {
-            voucherType: true,
-            totalAmount: true,
-          },
+          _sum: { totalAmount: true },
         }),
       ]);
 
@@ -869,13 +941,13 @@ export class ReportsService {
       let totalPayments = new Decimal(0);
       let totalContra = new Decimal(0);
 
-      for (const v of allVouchers) {
-        const amt = toMoney(v.totalAmount);
-        if (v.voucherType === VoucherType.RECEIPT) {
+      for (const g of groupedTotals) {
+        const amt = toMoney(g._sum.totalAmount || 0);
+        if (g.voucherType === VoucherType.RECEIPT) {
           totalReceipts = totalReceipts.plus(amt);
-        } else if (v.voucherType === VoucherType.PAYMENT) {
+        } else if (g.voucherType === VoucherType.PAYMENT) {
           totalPayments = totalPayments.plus(amt);
-        } else if (v.voucherType === VoucherType.CONTRA) {
+        } else if (g.voucherType === VoucherType.CONTRA) {
           totalContra = totalContra.plus(amt);
         }
       }

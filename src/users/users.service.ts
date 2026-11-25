@@ -1272,12 +1272,22 @@ export class UsersService {
           companyId: ctx.companyId,
           ...(query?.status ? { status: query.status } : {}),
         },
-        include: {
+        select: {
+          id: true,
+          documentType: true,
+          documentId: true,
+          documentNumber: true,
+          amount: true,
+          reason: true,
+          status: true,
+          reviewedAt: true,
+          comments: true,
+          createdAt: true,
           requestedBy: {
-            select: { id: true, fullName: true, phone: true, role: true },
+            select: { fullName: true, role: true },
           },
           reviewedBy: {
-            select: { id: true, fullName: true },
+            select: { fullName: true },
           },
         },
         orderBy: { createdAt: "desc" },

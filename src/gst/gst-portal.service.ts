@@ -112,7 +112,17 @@ export class GstPortalService {
           category: "TAX_INVOICE",
           invoiceDate: dateFilter,
         },
-        include: { party: true, eInvoiceRecord: true, eWayBillRecord: true },
+        select: {
+          taxableAmount: true,
+          cgstAmount: true,
+          sgstAmount: true,
+          utgstAmount: true,
+          igstAmount: true,
+          cessAmount: true,
+          party: { select: { gstin: true } },
+          eInvoiceRecord: { select: { irn: true } },
+          eWayBillRecord: { select: { ewbNumber: true } },
+        },
       });
 
       // 4. Sales Returns (Credit Notes)
@@ -122,6 +132,13 @@ export class GstPortalService {
           status: "ISSUED",
           returnDate: dateFilter,
         },
+        select: {
+          taxableAmount: true,
+          cgstAmount: true,
+          sgstAmount: true,
+          utgstAmount: true,
+          igstAmount: true,
+        },
       });
 
       // 5. Outward Debit Notes
@@ -129,6 +146,13 @@ export class GstPortalService {
         where: {
           companyId: tenant.companyId,
           noteDate: dateFilter,
+        },
+        select: {
+          taxableAmount: true,
+          cgstAmount: true,
+          sgstAmount: true,
+          utgstAmount: true,
+          igstAmount: true,
         },
       });
 
@@ -138,6 +162,15 @@ export class GstPortalService {
           companyId: tenant.companyId,
           invoiceDate: dateFilter,
         },
+        select: {
+          taxableAmount: true,
+          cgstAmount: true,
+          sgstAmount: true,
+          utgstAmount: true,
+          igstAmount: true,
+          cessAmount: true,
+          itcEligibility: true,
+        },
       });
 
       // 7. Purchase Returns (Inward Debit Notes / ITC Reversal)
@@ -145,6 +178,12 @@ export class GstPortalService {
         where: {
           companyId: tenant.companyId,
           returnDate: dateFilter,
+        },
+        select: {
+          cgstAmount: true,
+          sgstAmount: true,
+          utgstAmount: true,
+          igstAmount: true,
         },
       });
 
@@ -154,7 +193,18 @@ export class GstPortalService {
           companyId: tenant.companyId,
           returnPeriod: returnPeriodStr,
         },
-        include: { gstr2bLine: true },
+        select: {
+          status: true,
+          itcDecision: true,
+          gstr2bLine: {
+            select: {
+              cgstAmount: true,
+              sgstAmount: true,
+              igstAmount: true,
+              cessAmount: true,
+            },
+          },
+        },
       });
 
       // 9. Integer Aggregations (in Paise)
