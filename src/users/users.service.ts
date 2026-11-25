@@ -44,12 +44,28 @@ export class UsersService {
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
       const users = await tx.user.findMany({
         where: { organizationId: ctx.organizationId },
-        include: {
+        select: {
+          id: true,
+          fullName: true,
+          phone: true,
+          email: true,
+          username: true,
+          role: true,
+          customRoleId: true,
+          isActive: true,
+          joiningDate: true,
+          lastLoginAt: true,
+          dataScope: true,
+          maxInvoiceAmount: true,
+          maxDiscountPercent: true,
+          canOverridePrice: true,
+          createdAt: true,
           customRole: {
             select: { id: true, name: true },
           },
           branchAssignments: {
-            include: {
+            select: {
+              isDefault: true,
               branch: {
                 select: { id: true, name: true, code: true, isMainBranch: true },
               },

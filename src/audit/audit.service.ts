@@ -570,8 +570,6 @@ export class AuditService {
           entityName: l.entityName,
           documentId: l.entityId,
           entityId: l.entityId,
-          previousState: l.previousState,
-          newState: l.newState,
           changes,
           changesCount: changes.length,
           ipAddress: l.ipAddress || "-",

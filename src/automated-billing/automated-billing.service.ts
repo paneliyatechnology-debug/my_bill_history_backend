@@ -6,6 +6,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { TenantContext, InvoiceCategory, PaymentMode } from "@billing/shared-types";
+import { buildPaginatedResponse } from "../common/dto/pagination-response.dto";
 import { DatabaseService } from "../database/database.service";
 import { InvoicesService } from "../invoices/invoices.service";
 import { CreateSalesInvoiceDto } from "../invoices/dto/create-sales-invoice.dto";
@@ -107,7 +108,23 @@ export class AutomatedBillingService {
       const [items, total] = await Promise.all([
         tx.automatedBillingSchedule.findMany({
           where,
-          include: {
+          select: {
+            id: true,
+            scheduleName: true,
+            frequency: true,
+            interval: true,
+            status: true,
+            startDate: true,
+            endDate: true,
+            nextRunAt: true,
+            lastRunAt: true,
+            lastRunStatus: true,
+            paymentTerms: true,
+            dueDays: true,
+            estimatedTotal: true,
+            totalRunsCount: true,
+            successfulRunsCount: true,
+            failedRunsCount: true,
             party: {
               select: {
                 id: true,
@@ -115,7 +132,6 @@ export class AutomatedBillingService {
                 nameGujarati: true,
                 phone: true,
                 gstin: true,
-                billingAddress: true,
                 stateCode: true,
               },
             },
@@ -130,14 +146,7 @@ export class AutomatedBillingService {
         tx.automatedBillingSchedule.count({ where }),
       ]);
 
-      return {
-        items,
-        data: items,
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      };
+      return buildPaginatedResponse(items, total, page, limit);
     });
   }
 

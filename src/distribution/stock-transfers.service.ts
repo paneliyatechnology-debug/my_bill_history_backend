@@ -315,10 +315,26 @@ export class StockTransfersService {
     return await this.prisma.executeInTenantContext(ctx, async (tx) => {
       return await tx.stockTransfer.findMany({
         where: { companyId: ctx.companyId },
-        include: {
-          fromWarehouse: true,
-          toWarehouse: true,
-          items: { include: { item: true, batch: true } },
+        select: {
+          id: true,
+          transferNumber: true,
+          transferDate: true,
+          status: true,
+          challanNumber: true,
+          notes: true,
+          fromWarehouse: { select: { id: true, name: true } },
+          toWarehouse: { select: { id: true, name: true } },
+          items: {
+            select: {
+              id: true,
+              itemId: true,
+              quantity: true,
+              receivedQuantity: true,
+              unitCost: true,
+              totalCost: true,
+              item: { select: { id: true, name: true, sku: true } },
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
       });
@@ -332,10 +348,38 @@ export class StockTransfersService {
     return await this.prisma.executeInTenantContext(ctx, async (tx) => {
       const transfer = await tx.stockTransfer.findFirst({
         where: { id, companyId: ctx.companyId },
-        include: {
-          fromWarehouse: true,
-          toWarehouse: true,
-          items: { include: { item: true, batch: true } },
+        select: {
+          id: true,
+          transferNumber: true,
+          transferDate: true,
+          status: true,
+          challanNumber: true,
+          notes: true,
+          dispatchedAt: true,
+          receivedAt: true,
+          fromWarehouse: { select: { id: true, name: true, address: true } },
+          toWarehouse: { select: { id: true, name: true, address: true } },
+          items: {
+            select: {
+              id: true,
+              itemId: true,
+              batchId: true,
+              quantity: true,
+              receivedQuantity: true,
+              unitCost: true,
+              totalCost: true,
+              item: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true,
+                  hsnCode: true,
+                  primaryUom: { select: { symbol: true, name: true } },
+                },
+              },
+              batch: { select: { id: true, batchNumber: true, expiryDate: true } },
+            },
+          },
         },
       });
       if (!transfer) {

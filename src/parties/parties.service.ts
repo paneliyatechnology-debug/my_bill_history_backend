@@ -25,6 +25,8 @@ import {
   calculateGstinChecksum,
   INDIAN_STATES,
 } from "../common/validators/gstin.validator";
+import { buildPaginatedResponse } from "../common/dto/pagination-response.dto";
+import { mapPartyListItem, mapPartyDetail } from "./dto/party-response.dto";
 
 @Injectable()
 export class PartiesService {
@@ -360,7 +362,17 @@ export class PartiesService {
       const [items, total] = await Promise.all([
         tx.party.findMany({
           where,
-          include: {
+          select: {
+            id: true,
+            name: true,
+            nameGujarati: true,
+            type: true,
+            phone: true,
+            gstin: true,
+            gstType: true,
+            stateCode: true,
+            isActive: true,
+            billingAddress: true,
             salesInvoices: salesInvoicesInclude,
             purchaseInvoices: purchaseInvoicesInclude,
           },
@@ -461,38 +473,31 @@ export class PartiesService {
           ? countReturnablePurchaseInvoices(p.purchaseInvoices)
           : undefined;
 
-        const { salesInvoices, purchaseInvoices, ...cleanParty } = p;
-        return {
-          ...cleanParty,
-          balance,
-          returnableInvoicesCount: isReturnPurchaseOnly
-            ? returnablePurchaseCount
-            : returnableSalesCount,
-        };
+        const returnableInvoicesCount = isReturnPurchaseOnly
+          ? returnablePurchaseCount
+          : returnableSalesCount;
+
+        return mapPartyListItem(p, balance, returnableInvoicesCount);
       });
 
       if (isFilteringReturnEligible) {
         itemsWithBalance = itemsWithBalance.filter(
           (p: any) => (p.returnableInvoicesCount || 0) > 0,
         );
-        return {
-          items: itemsWithBalance,
-          data: itemsWithBalance,
-          total: itemsWithBalance.length,
-          page: 1,
-          limit: effectiveLimit,
-          totalPages: 1,
-        };
+        return buildPaginatedResponse(
+          itemsWithBalance,
+          itemsWithBalance.length,
+          1,
+          effectiveLimit,
+        );
       }
 
-      return {
-        items: itemsWithBalance,
-        data: itemsWithBalance,
+      return buildPaginatedResponse(
+        itemsWithBalance,
         total,
         page,
-        limit: effectiveLimit,
-        totalPages: Math.ceil(total / effectiveLimit),
-      };
+        effectiveLimit,
+      );
     });
   }
 
@@ -500,7 +505,23 @@ export class PartiesService {
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
       const party = await tx.party.findFirst({
         where: { id, companyId: ctx.companyId },
-        include: {
+        select: {
+          id: true,
+          name: true,
+          nameGujarati: true,
+          type: true,
+          phone: true,
+          email: true,
+          contactPerson: true,
+          gstin: true,
+          gstType: true,
+          pan: true,
+          stateCode: true,
+          creditLimit: true,
+          creditDays: true,
+          isActive: true,
+          billingAddress: true,
+          shippingAddress: true,
           salesInvoices: {
             where: {
               status: {
@@ -523,9 +544,22 @@ export class PartiesService {
             select: { grandTotal: true, paidAmount: true },
           },
           notes: {
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              createdAt: true,
+            },
             orderBy: { createdAt: "desc" },
           },
           appointments: {
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              date: true,
+              status: true,
+            },
             orderBy: { date: "asc" },
           },
         },
@@ -566,22 +600,7 @@ export class PartiesService {
         balance = rec >= pay ? rec - pay : pay - rec;
       }
 
-      const { salesInvoices, purchaseInvoices, notes, appointments, ...cleanParty } = party;
-      const mappedNotes = (notes || []).map((n: any) => ({
-        ...n,
-        descriptions: n.description,
-      }));
-      const mappedAppointments = (appointments || []).map((a: any) => ({
-        ...a,
-        descriptions: a.description,
-      }));
-
-      return {
-        ...cleanParty,
-        balance,
-        notes: mappedNotes,
-        appointments: mappedAppointments,
-      };
+      return mapPartyDetail(party, balance, party.notes || [], party.appointments || []);
     });
   }
 

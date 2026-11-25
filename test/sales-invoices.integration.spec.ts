@@ -2102,8 +2102,12 @@ describe("Phase 5: Sales Billing, POS Engine & Stock Ledger (Integration)", () =
       const data = JSON.parse(res.body);
       expect(Array.isArray(data.items)).toBe(true);
       expect(data.items.length).toBe(0);
-      expect(Array.isArray(data.data)).toBe(true);
-      expect(data.data.length).toBe(0);
+      expect(data.pagination).toEqual({
+        total: 0,
+        page: 1,
+        limit: 100,
+        totalPages: 0,
+      });
       expect(data.total).toBe(0);
       expect(data.page).toBe(1);
       expect(data.limit).toBe(100);

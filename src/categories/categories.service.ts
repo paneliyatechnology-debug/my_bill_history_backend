@@ -73,6 +73,11 @@ export class CategoriesService {
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
       return tx.itemCategory.findMany({
         where: { companyId: ctx.companyId },
+        select: {
+          id: true,
+          name: true,
+          nameGujarati: true,
+        },
         orderBy: { name: "asc" },
       });
     });
@@ -82,6 +87,11 @@ export class CategoriesService {
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
       const category = await tx.itemCategory.findFirst({
         where: { id, companyId: ctx.companyId },
+        select: {
+          id: true,
+          name: true,
+          nameGujarati: true,
+        },
       });
 
       if (!category) {

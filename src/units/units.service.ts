@@ -98,13 +98,20 @@ export class UnitsService {
 
   async findAll(ctx: TenantContext) {
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
+      const uomSelect = {
+        id: true,
+        name: true,
+        symbol: true,
+        uqcCode: true,
+        decimalPlaces: true,
+        _count: {
+          select: { itemsPrimary: true, itemsSecondary: true },
+        },
+      };
+
       let list = await tx.unitOfMeasure.findMany({
         where: { companyId: ctx.companyId },
-        include: {
-          _count: {
-            select: { itemsPrimary: true, itemsSecondary: true },
-          },
-        },
+        select: uomSelect,
         orderBy: { symbol: "asc" },
       });
 
@@ -137,17 +144,17 @@ export class UnitsService {
 
         list = await tx.unitOfMeasure.findMany({
           where: { companyId: ctx.companyId },
-          include: {
-            _count: {
-              select: { itemsPrimary: true, itemsSecondary: true },
-            },
-          },
+          select: uomSelect,
           orderBy: { symbol: "asc" },
         });
       }
 
       return list.map((u) => ({
-        ...u,
+        id: u.id,
+        name: u.name,
+        symbol: u.symbol,
+        uqcCode: u.uqcCode,
+        decimalPlaces: u.decimalPlaces,
         code: u.symbol,
         itemCount: (u._count?.itemsPrimary || 0) + (u._count?.itemsSecondary || 0),
       }));

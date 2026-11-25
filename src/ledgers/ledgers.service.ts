@@ -155,7 +155,13 @@ export class LedgersService {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
       return await tx.ledgerGroup.findMany({
         where: { companyId: tenant.companyId },
-        include: {
+        select: {
+          id: true,
+          name: true,
+          nameGujarati: true,
+          nature: true,
+          isSystem: true,
+          parentId: true,
           parent: { select: { id: true, name: true, nature: true } },
           children: { select: { id: true, name: true, nature: true } },
         },
@@ -273,7 +279,20 @@ export class LedgersService {
       const [data, total] = await Promise.all([
         tx.ledgerAccount.findMany({
           where,
-          include: {
+          select: {
+            id: true,
+            name: true,
+            nameGujarati: true,
+            code: true,
+            groupId: true,
+            partyId: true,
+            openingBalance: true,
+            openingType: true,
+            currentBalance: true,
+            isActive: true,
+            isPartyLedger: true,
+            isCashLedger: true,
+            isBankLedger: true,
             group: { select: { id: true, name: true, nature: true } },
           },
           orderBy: [{ group: { nature: "asc" } }, { name: "asc" }],
@@ -300,8 +319,21 @@ export class LedgersService {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
       const account = await tx.ledgerAccount.findFirst({
         where: { id, companyId: tenant.companyId },
-        include: {
-          group: true,
+        select: {
+          id: true,
+          name: true,
+          nameGujarati: true,
+          code: true,
+          groupId: true,
+          partyId: true,
+          openingBalance: true,
+          openingType: true,
+          currentBalance: true,
+          isActive: true,
+          isPartyLedger: true,
+          isCashLedger: true,
+          isBankLedger: true,
+          group: { select: { id: true, name: true, nature: true } },
           party: { select: { id: true, name: true, gstin: true, phone: true } },
         },
       });

@@ -33,6 +33,12 @@ import { CreatePurchaseReturnDto } from "./dto/create-purchase-return.dto";
 import { QueryPurchaseReturnsDto } from "./dto/query-purchase-returns.dto";
 import { RecordPurchasePaymentDto } from "./dto/record-purchase-payment.dto";
 import { isValidGstinChecksum } from "../common/validators/gstin.validator";
+import { buildPaginatedResponse } from "../common/dto/pagination-response.dto";
+import {
+  computePurchaseReturnSummary,
+  mapPurchaseInvoiceListItem,
+} from "./dto/purchase-invoice-list-response.dto";
+import { mapPurchaseInvoiceDetail } from "./dto/purchase-invoice-detail-response.dto";
 
 function parseStartOfDay(dateStr?: string): Date | undefined {
   if (!dateStr) return undefined;
@@ -1247,42 +1253,68 @@ export class PurchasesService implements OnModuleInit {
         (dto as any).includeItems === true
       );
 
+      const purchaseListSelect = {
+        id: true,
+        vendorInvoiceNumber: true,
+        invoiceDate: true,
+        dueDate: true,
+        itcEligibility: true,
+        taxableAmount: true,
+        cgstAmount: true,
+        sgstAmount: true,
+        igstAmount: true,
+        roundOff: true,
+        grandTotal: true,
+        paidAmount: true,
+        balanceAmount: true,
+        party: {
+          select: {
+            id: true,
+            name: true,
+            nameGujarati: true,
+            gstin: true,
+            phone: true,
+          },
+        },
+        ...(needReturnDetails
+          ? {
+              items: {
+                select: {
+                  id: true,
+                  itemId: true,
+                  hsnCode: true,
+                  quantity: true,
+                  unitPrice: true,
+                  taxRate: true,
+                  taxableAmount: true,
+                  cgstAmount: true,
+                  sgstAmount: true,
+                  igstAmount: true,
+                  totalAmount: true,
+                  item: {
+                    select: { id: true, name: true, nameGujarati: true },
+                  },
+                  returnItems: { select: { quantity: true } },
+                },
+              },
+            }
+          : {}),
+        returns: {
+          select: {
+            id: true,
+            returnNumber: true,
+            grandTotal: true,
+          },
+        },
+      };
+
       let invoices: any[];
       let total: number;
       try {
         [invoices, total] = await Promise.all([
           tx.purchaseInvoice.findMany({
             where,
-            include: {
-              party: {
-                select: {
-                  id: true,
-                  name: true,
-                  nameGujarati: true,
-                  gstin: true,
-                  phone: true,
-                },
-              },
-              ...(needReturnDetails
-                ? {
-                    items: {
-                      include: {
-                        item: { select: { id: true, name: true, nameGujarati: true } },
-                        returnItems: true,
-                      },
-                    },
-                  }
-                : {}),
-              returns: {
-                select: {
-                  id: true,
-                  returnNumber: true,
-                  grandTotal: true,
-                  createdAt: true,
-                  ...(needReturnDetails ? { items: true } : {}),
-                },
-              },
-            },
+            select: purchaseListSelect,
             orderBy: { invoiceDate: "desc" },
             take: (dto as any).availableForReturnOnly
               ? undefined
@@ -1303,36 +1335,7 @@ export class PurchasesService implements OnModuleInit {
           [invoices, total] = await Promise.all([
             tx.purchaseInvoice.findMany({
               where,
-              include: {
-                party: {
-                  select: {
-                    id: true,
-                    name: true,
-                    nameGujarati: true,
-                    gstin: true,
-                    phone: true,
-                  },
-                },
-                ...(needReturnDetails
-                  ? {
-                      items: {
-                        include: {
-                          item: { select: { id: true, name: true, nameGujarati: true } },
-                          returnItems: true,
-                        },
-                      },
-                    }
-                  : {}),
-                returns: {
-                  select: {
-                    id: true,
-                    returnNumber: true,
-                    grandTotal: true,
-                    createdAt: true,
-                    ...(needReturnDetails ? { items: true } : {}),
-                  },
-                },
-              },
+              select: purchaseListSelect,
               orderBy: { invoiceDate: "desc" },
               take: (dto as any).availableForReturnOnly
                 ? undefined
@@ -1352,69 +1355,32 @@ export class PurchasesService implements OnModuleInit {
         }
       }
 
-      let mappedInvoices = invoices.map((inv: any) => {
-        const returnedAmount = (inv.returns || [])
-          .filter((r: any) => r.status !== "CANCELLED")
-          .reduce((sum: number, r: any) => sum + Number(r.grandTotal || 0), 0);
-
-        let totalOriginalQty = 0;
-        let totalReturnedQty = 0;
-
-        const itemsWithReturnStatus = (inv.items || []).map((line: any) => {
-          const originalQty = Number(line.quantity || 0);
-          const returnedQty = (line.returnItems || []).reduce(
-            (sum: number, retItem: any) => sum + Number(retItem.quantity || 0),
-            0,
-          );
-          const remainingQty = Math.max(0, originalQty - returnedQty);
-          totalOriginalQty += originalQty;
-          totalReturnedQty += returnedQty;
-
-          return {
-            ...line,
-            returnedQuantity: returnedQty,
-            remainingQuantity: remainingQty,
-            isFullyReturned: remainingQty <= 0.0001,
-          };
-        });
-
-        const totalRemainingQty = Math.max(0, totalOriginalQty - totalReturnedQty);
-        const grandTotalNum = Number(inv.grandTotal || 0);
-        const isFullyReturned =
-          (totalOriginalQty > 0 && totalRemainingQty <= 0.0001) ||
-          returnedAmount >= grandTotalNum - 0.01;
-
-        const outstandingBalance = Math.max(0, Number(inv.balanceAmount || 0));
-        const netGrandTotal = Math.max(0, grandTotalNum - returnedAmount);
-
-        return {
-          ...inv,
-          items: itemsWithReturnStatus,
-          returnedAmount,
-          netGrandTotal,
-          outstandingBalance,
-          isFullyReturned,
-          totalRemainingQty,
-        };
-      });
-
-      if (
+      const isAvailableForReturnOnly =
         (dto as any).availableForReturnOnly === "true" ||
-        (dto as any).availableForReturnOnly === true
-      ) {
-        mappedInvoices = mappedInvoices.filter(
-          (inv: any) => !inv.isFullyReturned && inv.totalRemainingQty > 0.0001,
-        );
-      }
+        (dto as any).availableForReturnOnly === true;
+
+      const filteredRaw = isAvailableForReturnOnly
+        ? invoices.filter((inv: any) => {
+            const { isFullyReturned, totalRemainingQty } =
+              computePurchaseReturnSummary(inv);
+            return !isFullyReturned && totalRemainingQty > 0.0001;
+          })
+        : invoices;
+
+      const mappedInvoices = filteredRaw.map((inv: any) =>
+        mapPurchaseInvoiceListItem(inv, { includeItems: needReturnDetails }),
+      );
+
+      const limit = dto.limit ? Number(dto.limit) : 50;
+      const offset = dto.offset ? Number(dto.offset) : 0;
+      const page = Math.floor(offset / Math.max(1, limit)) + 1;
+      const effectiveTotal = isAvailableForReturnOnly
+        ? mappedInvoices.length
+        : total;
 
       return {
-        items: mappedInvoices,
-        data: mappedInvoices,
-        total: (dto as any).availableForReturnOnly
-          ? mappedInvoices.length
-          : total,
-        limit: dto.limit ? Number(dto.limit) : 50,
-        offset: dto.offset ? Number(dto.offset) : 0,
+        ...buildPaginatedResponse(mappedInvoices, effectiveTotal, page, limit),
+        offset,
       };
     });
   }
@@ -1424,6 +1390,81 @@ export class PurchasesService implements OnModuleInit {
    */
   async getPurchaseInvoiceById(id: string, tenant: TenantContext) {
     return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const purchaseDetailSelect = {
+        id: true,
+        vendorInvoiceNumber: true,
+        invoiceDate: true,
+        dueDate: true,
+        placeOfSupply: true,
+        itcEligibility: true,
+        notes: true,
+        taxableAmount: true,
+        cgstAmount: true,
+        sgstAmount: true,
+        igstAmount: true,
+        roundOff: true,
+        grandTotal: true,
+        paidAmount: true,
+        balanceAmount: true,
+        party: {
+          select: {
+            id: true,
+            name: true,
+            nameGujarati: true,
+            phone: true,
+            email: true,
+            gstin: true,
+            gstType: true,
+            stateCode: true,
+            type: true,
+            billingAddress: true,
+            shippingAddress: true,
+          },
+        },
+        items: {
+          select: {
+            id: true,
+            itemId: true,
+            hsnCode: true,
+            quantity: true,
+            unitPrice: true,
+            taxRate: true,
+            taxableAmount: true,
+            cgstAmount: true,
+            sgstAmount: true,
+            igstAmount: true,
+            totalAmount: true,
+            item: {
+              select: {
+                id: true,
+                name: true,
+                nameGujarati: true,
+                sku: true,
+                hsnCode: true,
+                primaryUom: { select: { symbol: true, name: true } },
+              },
+            },
+          },
+        },
+        returns: {
+          select: {
+            id: true,
+            returnNumber: true,
+            returnDate: true,
+            grandTotal: true,
+            items: {
+              select: {
+                id: true,
+                itemId: true,
+                quantity: true,
+                totalAmount: true,
+                item: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+      };
+
       let invoice: any;
       try {
         invoice = await tx.purchaseInvoice.findFirst({
@@ -1431,22 +1472,7 @@ export class PurchasesService implements OnModuleInit {
             id,
             companyId: tenant.companyId,
           },
-          include: {
-            party: true,
-            items: {
-              include: {
-                item: true,
-              },
-            },
-            branch: true,
-            returns: {
-              include: {
-                items: {
-                  include: { item: true },
-                },
-              },
-            },
-          },
+          select: purchaseDetailSelect,
         });
       } catch (findErr: any) {
         if (findErr?.message && (findErr.message.includes("round_off") || findErr.message.includes("column"))) {
@@ -1456,22 +1482,7 @@ export class PurchasesService implements OnModuleInit {
               id,
               companyId: tenant.companyId,
             },
-            include: {
-              party: true,
-              items: {
-                include: {
-                  item: true,
-                },
-              },
-              branch: true,
-              returns: {
-                include: {
-                  items: {
-                    include: { item: true },
-                  },
-                },
-              },
-            },
+            select: purchaseDetailSelect,
           });
         } else {
           throw findErr;
@@ -1485,22 +1496,7 @@ export class PurchasesService implements OnModuleInit {
             vendorInvoiceNumber: id,
             companyId: tenant.companyId,
           },
-          include: {
-            party: true,
-            items: {
-              include: {
-                item: true,
-              },
-            },
-            branch: true,
-            returns: {
-              include: {
-                items: {
-                  include: { item: true },
-                },
-              },
-            },
-          },
+          select: purchaseDetailSelect,
         });
       }
 
@@ -1516,11 +1512,11 @@ export class PurchasesService implements OnModuleInit {
               { sourceEntityId: id },
             ],
           },
-          include: {
-            allocations: true,
-            journalEntries: {
-              include: { account: true },
-            },
+          select: {
+            sourceDocument: true,
+            sourceEntityId: true,
+            referenceNo: true,
+            allocations: { select: { purchaseInvoiceId: true } },
           },
         });
 
@@ -1528,23 +1524,13 @@ export class PurchasesService implements OnModuleInit {
           if (voucher.sourceDocument === "PURCHASE_INVOICE" && voucher.sourceEntityId) {
             invoice = await tx.purchaseInvoice.findFirst({
               where: { id: voucher.sourceEntityId, companyId: tenant.companyId },
-              include: {
-                party: true,
-                items: { include: { item: true } },
-                branch: true,
-                returns: { include: { items: { include: { item: true } } } },
-              },
+              select: purchaseDetailSelect,
             });
           }
           if (!invoice && voucher.referenceNo) {
             invoice = await tx.purchaseInvoice.findFirst({
               where: { vendorInvoiceNumber: voucher.referenceNo, companyId: tenant.companyId },
-              include: {
-                party: true,
-                items: { include: { item: true } },
-                branch: true,
-                returns: { include: { items: { include: { item: true } } } },
-              },
+              select: purchaseDetailSelect,
             });
           }
           if (!invoice && voucher.allocations && voucher.allocations.length > 0) {
@@ -1552,12 +1538,7 @@ export class PurchasesService implements OnModuleInit {
             if (alloc?.purchaseInvoiceId) {
               invoice = await tx.purchaseInvoice.findFirst({
                 where: { id: alloc.purchaseInvoiceId, companyId: tenant.companyId },
-                include: {
-                  party: true,
-                  items: { include: { item: true } },
-                  branch: true,
-                  returns: { include: { items: { include: { item: true } } } },
-                },
+                select: purchaseDetailSelect,
               });
             }
           }
@@ -1659,7 +1640,7 @@ export class PurchasesService implements OnModuleInit {
         }
       }
 
-      return invoice;
+      return mapPurchaseInvoiceDetail(invoice);
     });
   }
 
@@ -2468,16 +2449,20 @@ export class PurchasesService implements OnModuleInit {
         }
       }
 
-      const [items, total] = await Promise.all([
+      const [rows, total] = await Promise.all([
         tx.purchaseReturn.findMany({
           where,
-          include: {
+          select: {
+            id: true,
+            returnNumber: true,
+            returnDate: true,
+            reason: true,
+            taxableAmount: true,
+            grandTotal: true,
             party: {
               select: {
                 id: true,
                 name: true,
-                nameGujarati: true,
-                gstin: true,
                 phone: true,
               },
             },
@@ -2485,14 +2470,6 @@ export class PurchasesService implements OnModuleInit {
               select: {
                 id: true,
                 vendorInvoiceNumber: true,
-                invoiceDate: true,
-                grandTotal: true,
-                balanceAmount: true,
-              },
-            },
-            items: {
-              include: {
-                item: { select: { id: true, name: true, nameGujarati: true } },
               },
             },
           },
@@ -2503,11 +2480,30 @@ export class PurchasesService implements OnModuleInit {
         tx.purchaseReturn.count({ where }),
       ]);
 
+      const items = rows.map((r: any) => ({
+        id: r.id,
+        returnNumber: r.returnNumber,
+        returnDate: r.returnDate,
+        ...(r.reason ? { reason: r.reason } : {}),
+        taxableAmount: Number(r.taxableAmount || 0),
+        grandTotal: Number(r.grandTotal || 0),
+        party: r.party
+          ? {
+              id: r.party.id,
+              name: r.party.name,
+              ...(r.party.phone ? { phone: r.party.phone } : {}),
+            }
+          : null,
+        purchaseInvoice: r.purchaseInvoice ?? null,
+      }));
+
+      const limit = dto.limit ? Number(dto.limit) : 50;
+      const offset = dto.offset ? Number(dto.offset) : 0;
+      const page = Math.floor(offset / Math.max(1, limit)) + 1;
+
       return {
-        items,
-        total,
-        limit: dto.limit ? Number(dto.limit) : 50,
-        offset: dto.offset ? Number(dto.offset) : 0,
+        ...buildPaginatedResponse(items, total, page, limit),
+        offset,
       };
     });
   }
@@ -2522,20 +2518,64 @@ export class PurchasesService implements OnModuleInit {
           id,
           companyId: tenant.companyId,
         },
-        include: {
-          party: true,
+        select: {
+          id: true,
+          returnNumber: true,
+          returnDate: true,
+          reason: true,
+          taxableAmount: true,
+          cgstAmount: true,
+          sgstAmount: true,
+          igstAmount: true,
+          grandTotal: true,
+          purchaseInvoiceId: true,
+          party: {
+            select: {
+              id: true,
+              name: true,
+              nameGujarati: true,
+              phone: true,
+              email: true,
+              gstin: true,
+              gstType: true,
+              stateCode: true,
+              billingAddress: true,
+            },
+          },
           purchaseInvoice: {
-            include: {
-              items: { include: { item: true } },
+            select: {
+              id: true,
+              vendorInvoiceNumber: true,
+              invoiceDate: true,
+              grandTotal: true,
+              balanceAmount: true,
             },
           },
           items: {
-            include: {
-              item: true,
-              purchaseItem: true,
+            select: {
+              id: true,
+              itemId: true,
+              purchaseItemId: true,
+              quantity: true,
+              unitPrice: true,
+              taxRate: true,
+              taxableAmount: true,
+              cgstAmount: true,
+              sgstAmount: true,
+              igstAmount: true,
+              totalAmount: true,
+              item: {
+                select: {
+                  id: true,
+                  name: true,
+                  nameGujarati: true,
+                  sku: true,
+                  hsnCode: true,
+                  primaryUom: { select: { symbol: true, name: true } },
+                },
+              },
             },
           },
-          branch: true,
         },
       });
 

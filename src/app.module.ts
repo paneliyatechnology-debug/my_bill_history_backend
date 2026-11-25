@@ -12,6 +12,7 @@ import { RolesGuard } from "./common/guards/roles.guard";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
 import { CorrelationIdInterceptor } from "./common/interceptors/correlation-id.interceptor";
 import { TenantContextInterceptor } from "./common/interceptors/tenant-context.interceptor";
+import { ResponseTransformInterceptor } from "./common/interceptors/response-transform.interceptor";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 
 import { UnitsModule } from "./units/units.module";
@@ -120,6 +121,10 @@ import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
     {
       provide: APP_INTERCEPTOR,
       useClass: TenantContextInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ResponseTransformInterceptor,
     },
     {
       provide: APP_FILTER,

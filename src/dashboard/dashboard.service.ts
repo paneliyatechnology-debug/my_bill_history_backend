@@ -78,9 +78,13 @@ export class DashboardService {
 
       const salesInvoices = await tx.salesInvoice.findMany({
         where: salesWhere,
-        include: {
+        select: {
+          id: true,
+          invoiceNumber: true,
+          dueDate: true,
+          balanceAmount: true,
           party: {
-            select: { id: true, name: true, phone: true },
+            select: { id: true, name: true },
           },
         },
         orderBy: [{ dueDate: "asc" }, { invoiceDate: "asc" }],
@@ -93,36 +97,21 @@ export class DashboardService {
         const diffDays = Math.round((dueUtc.getTime() - todayUtc.getTime()) / (1000 * 60 * 60 * 24));
         const dueDateStr = rawDue.toISOString().split("T")[0];
 
-        let urgencyStatus: "OVERDUE" | "DUE_TODAY" | "DUE_SOON";
         if (diffDays < 0) {
-          urgencyStatus = "OVERDUE";
           totalOverdueAmount += Number(inv.balanceAmount);
-        } else if (diffDays === 0) {
-          urgencyStatus = "DUE_TODAY";
-          totalDueSoonAmount += Number(inv.balanceAmount);
         } else {
-          urgencyStatus = "DUE_SOON";
           totalDueSoonAmount += Number(inv.balanceAmount);
         }
 
         dues.push({
           id: inv.id,
+          type: "SALES_INVOICE",
           invoiceNumber: inv.invoiceNumber,
-          invoiceDate: inv.invoiceDate.toISOString().split("T")[0],
-          dueDate: dueDateStr,
-          hasExplicitDueDate: true,
-          daysRemaining: diffDays,
-          urgencyStatus,
           partyId: inv.party?.id,
           partyName: inv.party?.name || "Customer",
-          partyPhone: inv.party?.phone || "",
-          grandTotal: Number(inv.grandTotal),
-          paidAmount: Number(inv.paidAmount),
+          dueDate: dueDateStr,
+          daysRemaining: diffDays,
           balanceAmount: Number(inv.balanceAmount),
-          type: "SALES_INVOICE",
-          deepLink: `/sales/invoices/${inv.id}`,
-          actionLink: `/sales/payment-in/new?partyId=${inv.party?.id || ""}&invoiceId=${inv.id}&amount=${inv.balanceAmount}`,
-          actionLabel: "Collect Payment",
         });
       }
 
@@ -141,9 +130,13 @@ export class DashboardService {
 
       const purchaseInvoices = await tx.purchaseInvoice.findMany({
         where: purchaseWhere,
-        include: {
+        select: {
+          id: true,
+          vendorInvoiceNumber: true,
+          dueDate: true,
+          balanceAmount: true,
           party: {
-            select: { id: true, name: true, phone: true },
+            select: { id: true, name: true },
           },
         },
         orderBy: [{ dueDate: "asc" }, { invoiceDate: "asc" }],
@@ -156,36 +149,21 @@ export class DashboardService {
         const diffDays = Math.round((dueUtc.getTime() - todayUtc.getTime()) / (1000 * 60 * 60 * 24));
         const dueDateStr = rawDue.toISOString().split("T")[0];
 
-        let urgencyStatus: "OVERDUE" | "DUE_TODAY" | "DUE_SOON";
         if (diffDays < 0) {
-          urgencyStatus = "OVERDUE";
           totalOverdueAmount += Number(bill.balanceAmount);
-        } else if (diffDays === 0) {
-          urgencyStatus = "DUE_TODAY";
-          totalDueSoonAmount += Number(bill.balanceAmount);
         } else {
-          urgencyStatus = "DUE_SOON";
           totalDueSoonAmount += Number(bill.balanceAmount);
         }
 
         dues.push({
           id: bill.id,
+          type: "PURCHASE_INVOICE",
           invoiceNumber: bill.vendorInvoiceNumber || "Bill",
-          invoiceDate: bill.invoiceDate.toISOString().split("T")[0],
-          dueDate: dueDateStr,
-          hasExplicitDueDate: true,
-          daysRemaining: diffDays,
-          urgencyStatus,
           partyId: bill.party?.id,
           partyName: bill.party?.name || "Supplier",
-          partyPhone: bill.party?.phone || "",
-          grandTotal: Number(bill.grandTotal),
-          paidAmount: Number(bill.paidAmount),
+          dueDate: dueDateStr,
+          daysRemaining: diffDays,
           balanceAmount: Number(bill.balanceAmount),
-          type: "PURCHASE_INVOICE",
-          deepLink: `/purchases/${bill.id}`,
-          actionLink: `/purchases/payment-out/new?partyId=${bill.party?.id || ""}&billId=${bill.id}&amount=${bill.balanceAmount}`,
-          actionLabel: "Pay Bill",
         });
       }
 

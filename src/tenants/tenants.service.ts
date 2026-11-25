@@ -1114,7 +1114,6 @@ export class TenantsService {
           isDefault: true,
           address: true,
           branchId: true,
-          createdAt: true,
         },
         orderBy: { createdAt: "asc" },
       });

@@ -59,6 +59,18 @@ export class HsnService {
         tx.hsnMaster.count({ where }),
         tx.hsnMaster.findMany({
           where,
+          select: {
+            id: true,
+            code: true,
+            type: true,
+            description: true,
+            descriptionGujarati: true,
+            gstRate: true,
+            cessRate: true,
+            chapter: true,
+            isActive: true,
+            isSystem: true,
+          },
           orderBy: [{ code: "asc" }],
           skip,
           take: limit,
@@ -109,6 +121,18 @@ export class HsnService {
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
       return tx.hsnMaster.findMany({
         where,
+        select: {
+          id: true,
+          code: true,
+          type: true,
+          description: true,
+          descriptionGujarati: true,
+          gstRate: true,
+          cessRate: true,
+          chapter: true,
+          isActive: true,
+          isSystem: true,
+        },
         orderBy: [{ code: "asc" }],
         take,
       });
@@ -274,6 +298,15 @@ export class HsnService {
         });
       }
 
+      // Prevent editing global system codes
+      if (existing.isSystem) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: "Global system HSN/SAC codes cannot be edited. Create a company-specific override instead.",
+          messageGujarati: "ગ્લોબલ સિસ્ટમ HSN/SAC કોડ એડિટ કરી શકાતા નથી. કૃપા કરીને કંપની-સ્પેસિફિક ઓવરરાઈડ બનાવો.",
+        });
+      }
+
       const dataToUpdate: Prisma.HsnMasterUpdateInput = {};
 
       if (dto.description !== undefined) {
@@ -367,6 +400,15 @@ export class HsnService {
 
       if (existing.companyId !== null && existing.companyId !== ctx.companyId) {
         throw new NotFoundException("HSN/SAC record not found in current company.");
+      }
+
+      // Prevent deleting global system codes
+      if (existing.isSystem) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: "Global system HSN/SAC codes cannot be deleted.",
+          messageGujarati: "ગ્લોબલ સિસ્ટમ HSN/SAC કોડ ડિલીટ કરી શકાતા નથી.",
+        });
       }
 
       // Check if referenced by items

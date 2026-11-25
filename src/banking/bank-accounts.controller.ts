@@ -47,7 +47,16 @@ export class BankAccountsController {
             },
           ],
         },
-        include: {
+        select: {
+          id: true,
+          name: true,
+          nameGujarati: true,
+          code: true,
+          currentBalance: true,
+          openingBalance: true,
+          openingType: true,
+          isBankLedger: true,
+          isCashLedger: true,
           group: { select: { id: true, name: true, nature: true } },
         },
         orderBy: [{ isBankLedger: "desc" }, { name: "asc" }],

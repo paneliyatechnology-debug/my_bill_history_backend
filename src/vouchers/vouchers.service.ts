@@ -527,13 +527,29 @@ export class VouchersService {
         ];
       }
 
-      const [data, total] = await Promise.all([
+      const [rows, total] = await Promise.all([
         tx.voucher.findMany({
           where,
-          include: {
+          select: {
+            id: true,
+            voucherNumber: true,
+            voucherDate: true,
+            voucherType: true,
+            narration: true,
+            referenceNo: true,
+            paymentMode: true,
+            totalAmount: true,
+            isCancelled: true,
+            sourceDocument: true,
+            sourceEntityId: true,
             financialYear: { select: { id: true, name: true } },
             journalEntries: {
-              include: {
+              select: {
+                id: true,
+                accountId: true,
+                debitAmount: true,
+                creditAmount: true,
+                lineNarration: true,
                 account: { select: { id: true, name: true, code: true } },
               },
               orderBy: { sequenceOrder: "asc" },
@@ -547,10 +563,32 @@ export class VouchersService {
       ]);
 
       return {
-        data: data.map((v) => ({
-          ...v,
-          lines: v.journalEntries,
-        })),
+        data: rows.map((v) => {
+          const entries = v.journalEntries.map((j) => ({
+            id: j.id,
+            accountId: j.accountId,
+            debitAmount: Number(j.debitAmount || 0),
+            creditAmount: Number(j.creditAmount || 0),
+            lineNarration: j.lineNarration ?? null,
+            account: j.account ?? null,
+          }));
+          return {
+            id: v.id,
+            voucherNumber: v.voucherNumber,
+            voucherDate: v.voucherDate,
+            voucherType: v.voucherType,
+            narration: v.narration ?? null,
+            referenceNo: v.referenceNo ?? null,
+            paymentMode: v.paymentMode ?? null,
+            totalAmount: Number(v.totalAmount || 0),
+            isCancelled: v.isCancelled,
+            sourceDocument: v.sourceDocument ?? null,
+            sourceEntityId: v.sourceEntityId ?? null,
+            financialYear: v.financialYear ?? null,
+            journalEntries: entries,
+            lines: entries,
+          };
+        }),
         total,
         page,
         limit,
@@ -566,13 +604,37 @@ export class VouchersService {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
       const voucher = await tx.voucher.findFirst({
         where: { id, companyId: tenant.companyId },
-        include: {
-          financialYear: true,
+        select: {
+          id: true,
+          voucherNumber: true,
+          voucherDate: true,
+          voucherType: true,
+          narration: true,
+          referenceNo: true,
+          paymentMode: true,
+          totalAmount: true,
+          isCancelled: true,
+          sourceDocument: true,
+          sourceEntityId: true,
+          financialYear: { select: { id: true, name: true } },
           journalEntries: {
-            include: {
+            select: {
+              id: true,
+              accountId: true,
+              debitAmount: true,
+              creditAmount: true,
+              lineNarration: true,
+              sequenceOrder: true,
               account: {
-                include: {
-                  group: true,
+                select: {
+                  id: true,
+                  name: true,
+                  code: true,
+                  partyId: true,
+                  isPartyLedger: true,
+                  isCashLedger: true,
+                  isBankLedger: true,
+                  group: { select: { id: true, name: true, nature: true } },
                   party: { select: { id: true, name: true } },
                 },
               },
@@ -580,7 +642,12 @@ export class VouchersService {
             orderBy: { sequenceOrder: "asc" },
           },
           allocations: {
-            include: {
+            select: {
+              id: true,
+              invoiceId: true,
+              purchaseInvoiceId: true,
+              allocatedAmount: true,
+              cashDiscount: true,
               salesInvoice: {
                 select: {
                   id: true,
@@ -615,13 +682,13 @@ export class VouchersService {
       if (voucher.voucherType === "PAYMENT") {
         return {
           ...voucher,
-          ...shapePaymentOut(voucher),
+          ...shapePaymentOut(voucher, true),
         };
       }
 
       return {
         ...voucher,
-        ...shapeReceipt(voucher),
+        ...shapeReceipt(voucher, true),
       };
     });
   }
@@ -3865,7 +3932,7 @@ function moneyNumber(value: any): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function shapeReceipt(voucher: any) {
+function shapeReceipt(voucher: any, includeDetails = false) {
   const entries = voucher.journalEntries || [];
   const partyEntry = entries.find(
     (entry: any) =>
@@ -3923,7 +3990,6 @@ function shapeReceipt(voucher: any) {
     paymentNumber: voucher.voucherNumber,
     voucherNumber: voucher.voucherNumber,
     paymentDate: voucher.voucherDate,
-    voucherDate: voucher.voucherDate,
     partyId: partyEntry?.account?.partyId || partyEntry?.account?.party?.id || null,
     partyName: partyEntry?.account?.party?.name || partyEntry?.account?.name || "—",
     totalSettled,
@@ -3931,10 +3997,15 @@ function shapeReceipt(voucher: any) {
     discount,
     paymentMode,
     paymentModeLabel: paymentModeLabel(paymentMode),
-    narration: voucher.narration,
-    referenceNo: voucher.referenceNo,
+    ...(voucher.narration ? { narration: voucher.narration } : {}),
+    ...(voucher.referenceNo ? { referenceNo: voucher.referenceNo } : {}),
     isCancelled: voucher.isCancelled,
-    createdAt: voucher.createdAt,
+    ...(includeDetails
+      ? {
+          voucherDate: voucher.voucherDate,
+          createdAt: voucher.createdAt,
+        }
+      : {}),
   };
 }
 
@@ -3958,7 +4029,7 @@ function maxNumericPaymentNumber(rows: Array<{ voucherNumber: string }>): number
   return max;
 }
 
-function shapePaymentOut(voucher: any) {
+function shapePaymentOut(voucher: any, includeDetails = false) {
   const entries = voucher.journalEntries || [];
   const partyEntry = entries.find(
     (entry: any) =>
@@ -4016,17 +4087,21 @@ function shapePaymentOut(voucher: any) {
     paymentDate: voucher.voucherDate,
     partyId: partyEntry?.account?.partyId || partyEntry?.account?.party?.id || null,
     partyName: partyEntry?.account?.party?.name || partyEntry?.account?.name || "—",
-    party: partyEntry?.account?.party || null,
     totalSettled,
     amountPaid,
     discount,
     paymentMode,
     paymentModeLabel: paymentModeLabel(paymentMode),
-    narration: voucher.narration,
-    referenceNo: voucher.referenceNo,
+    ...(voucher.narration ? { narration: voucher.narration } : {}),
+    ...(voucher.referenceNo ? { referenceNo: voucher.referenceNo } : {}),
     isCancelled: voucher.isCancelled,
-    createdAt: voucher.createdAt,
-    allocations: voucher.allocations || [],
-    journalEntries: voucher.journalEntries || [],
+    ...(includeDetails
+      ? {
+          party: partyEntry?.account?.party || null,
+          createdAt: voucher.createdAt,
+          allocations: voucher.allocations || [],
+          journalEntries: voucher.journalEntries || [],
+        }
+      : {}),
   };
 }

@@ -267,10 +267,28 @@ export class DeliveryChallansService {
     return await this.prisma.executeInTenantContext(ctx, async (tx) => {
       return await tx.deliveryChallan.findMany({
         where: { companyId: ctx.companyId },
-        include: {
-          warehouse: true,
-          party: true,
-          items: { include: { item: true, batch: true } },
+        select: {
+          id: true,
+          challanNumber: true,
+          challanDate: true,
+          challanType: true,
+          status: true,
+          eWayBillNumber: true,
+          placeOfSupply: true,
+          totalAmount: true,
+          warehouse: { select: { id: true, name: true } },
+          party: { select: { id: true, name: true, phone: true, gstin: true } },
+          items: {
+            select: {
+              id: true,
+              itemId: true,
+              quantity: true,
+              unitPrice: true,
+              taxableAmount: true,
+              totalAmount: true,
+              item: { select: { id: true, name: true, hsnCode: true } },
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
       });
@@ -284,10 +302,58 @@ export class DeliveryChallansService {
     return await this.prisma.executeInTenantContext(ctx, async (tx) => {
       const challan = await tx.deliveryChallan.findFirst({
         where: { id, companyId: ctx.companyId },
-        include: {
-          warehouse: true,
-          party: true,
-          items: { include: { item: true, batch: true } },
+        select: {
+          id: true,
+          challanNumber: true,
+          challanDate: true,
+          challanType: true,
+          status: true,
+          eWayBillNumber: true,
+          placeOfSupply: true,
+          notes: true,
+          taxableAmount: true,
+          cgstAmount: true,
+          sgstAmount: true,
+          igstAmount: true,
+          totalAmount: true,
+          convertedInvoiceId: true,
+          warehouse: { select: { id: true, name: true, address: true } },
+          party: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              gstin: true,
+              stateCode: true,
+              billingAddress: true,
+              shippingAddress: true,
+            },
+          },
+          items: {
+            select: {
+              id: true,
+              itemId: true,
+              batchId: true,
+              quantity: true,
+              unitPrice: true,
+              taxRate: true,
+              taxableAmount: true,
+              cgstAmount: true,
+              sgstAmount: true,
+              igstAmount: true,
+              totalAmount: true,
+              item: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true,
+                  hsnCode: true,
+                  primaryUom: { select: { symbol: true, name: true } },
+                },
+              },
+              batch: { select: { id: true, batchNumber: true, expiryDate: true } },
+            },
+          },
         },
       });
       if (!challan) {

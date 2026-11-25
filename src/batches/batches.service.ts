@@ -194,7 +194,26 @@ export class BatchesService {
 
       return tx.itemBatch.findMany({
         where,
-        include: { item: true },
+        select: {
+          id: true,
+          itemId: true,
+          batchNumber: true,
+          mfgDate: true,
+          expiryDate: true,
+          purchaseRate: true,
+          mrp: true,
+          salePrice: true,
+          barcode: true,
+          item: {
+            select: {
+              id: true,
+              name: true,
+              nameGujarati: true,
+              sku: true,
+              hsnCode: true,
+            },
+          },
+        },
         orderBy: { createdAt: "desc" },
       });
     });
@@ -207,7 +226,26 @@ export class BatchesService {
           id,
           item: { companyId: ctx.companyId },
         },
-        include: { item: true },
+        select: {
+          id: true,
+          itemId: true,
+          batchNumber: true,
+          mfgDate: true,
+          expiryDate: true,
+          purchaseRate: true,
+          mrp: true,
+          salePrice: true,
+          barcode: true,
+          item: {
+            select: {
+              id: true,
+              name: true,
+              nameGujarati: true,
+              sku: true,
+              hsnCode: true,
+            },
+          },
+        },
       });
 
       if (!batch) {

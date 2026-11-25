@@ -14,6 +14,8 @@ import {
 } from "@billing/shared-types";
 import { CreateItemDto } from "./dto/create-item.dto";
 import { UpdateItemDto, QueryItemsDto, AdjustStockDto } from "./dto/update-item.dto";
+import { buildPaginatedResponse } from "../common/dto/pagination-response.dto";
+import { mapItemListDto, mapItemDetailDto } from "./dto/item-response.dto";
 
 @Injectable()
 export class ItemsService {
@@ -451,14 +453,22 @@ export class ItemsService {
       const [items, total] = await Promise.all([
         tx.item.findMany({
           where,
-          include: {
-            primaryUom: true,
-            secondaryUom: true,
-            category: true,
-            hsnMaster: true,
-            batches: {
-              orderBy: { createdAt: "desc" },
-              take: 1,
+          select: {
+            id: true,
+            name: true,
+            nameGujarati: true,
+            type: true,
+            sku: true,
+            barcode: true,
+            hsnCode: true,
+            isActive: true,
+            minStockLevel: true,
+            taxRate: true,
+            retailPrice: true,
+            purchaseRate: true,
+            categoryId: true,
+            primaryUom: {
+              select: { name: true, symbol: true },
             },
             purchaseInvoiceItems: {
               orderBy: { id: "desc" },
@@ -482,16 +492,11 @@ export class ItemsService {
           (sum, st) => sum + Number(st.quantity),
           0,
         );
-        const { stockTransactions, ...rest } = it;
-        const firstBatch = it.batches?.[0];
 
         const salesPrice = Number(it.retailPrice || 0);
         let purchasePrice = Number(it.purchaseRate || 0);
         if (purchasePrice === 0 && (it as any).purchaseInvoiceItems && (it as any).purchaseInvoiceItems.length > 0) {
           purchasePrice = Number((it as any).purchaseInvoiceItems[0].unitPrice || 0);
-        }
-        if (purchasePrice === 0 && it.batches && it.batches.length > 0 && Number(it.batches[0].purchaseRate) > 0) {
-          purchasePrice = Number(it.batches[0].purchaseRate);
         }
         if (purchasePrice === 0 && it.stockTransactions) {
           const receiptTx = it.stockTransactions.find(
@@ -502,37 +507,16 @@ export class ItemsService {
           }
         }
         const unit = it.primaryUom?.symbol || it.primaryUom?.name || "BOX";
-        const unitName = it.primaryUom?.name || it.primaryUom?.symbol || "BOX";
-        const categoryName = it.category?.name || null;
-        const description = it.description || null;
 
-        return {
-          ...rest,
-          description,
+        return mapItemListDto(it, {
           currentStock,
-          stock: currentStock,
-          stockQuantity: currentStock,
           salesPrice,
-          salePrice: salesPrice,
           purchasePrice,
-          purchaseRate: purchasePrice,
-          retailPrice: salesPrice,
           unit,
-          unitName,
-          categoryName,
-          openingBatchNumber: firstBatch?.batchNumber || null,
-          openingMfgDate: firstBatch?.mfgDate || null,
-          openingExpiryDate: firstBatch?.expiryDate || null,
-        };
+        });
       });
 
-      return {
-        items: itemsWithStock,
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      };
+      return buildPaginatedResponse(itemsWithStock, total, page, limit);
     });
   }
 
@@ -540,12 +524,41 @@ export class ItemsService {
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
       const item = await tx.item.findFirst({
         where: { id, companyId: ctx.companyId },
-        include: {
-          primaryUom: true,
-          secondaryUom: true,
-          category: true,
-          batches: true,
-          hsnMaster: true,
+        select: {
+          id: true,
+          name: true,
+          nameGujarati: true,
+          type: true,
+          sku: true,
+          barcode: true,
+          hsnCode: true,
+          description: true,
+          isActive: true,
+          trackBatches: true,
+          minStockLevel: true,
+          taxRate: true,
+          retailPrice: true,
+          wholesalePrice: true,
+          purchaseRate: true,
+          mrp: true,
+          primaryUomId: true,
+          secondaryUomId: true,
+          conversionFactor: true,
+          categoryId: true,
+          primaryUom: { select: { id: true, name: true, symbol: true } },
+          secondaryUom: { select: { id: true, name: true, symbol: true } },
+          category: { select: { id: true, name: true } },
+          batches: {
+            select: {
+              id: true,
+              batchNumber: true,
+              mfgDate: true,
+              expiryDate: true,
+              mrp: true,
+              purchaseRate: true,
+              salePrice: true,
+            },
+          },
           purchaseInvoiceItems: {
             orderBy: { id: "desc" },
             take: 1,
@@ -590,23 +603,15 @@ export class ItemsService {
       const unit = item.primaryUom?.symbol || item.primaryUom?.name || "BOX";
       const unitName = item.primaryUom?.name || item.primaryUom?.symbol || "BOX";
       const categoryName = item.category?.name || null;
-      const description = item.description || null;
 
-      return {
-        ...rest,
-        description,
+      return mapItemDetailDto(item, {
         currentStock,
-        stock: currentStock,
-        stockQuantity: currentStock,
         salesPrice,
-        salePrice: salesPrice,
         purchasePrice,
-        purchaseRate: purchasePrice,
-        retailPrice: salesPrice,
         unit,
         unitName,
         categoryName,
-      };
+      });
     });
   }
 

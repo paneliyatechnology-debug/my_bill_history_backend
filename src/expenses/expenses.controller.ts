@@ -60,10 +60,22 @@ export class ExpensesController {
       const [vouchers, total] = await Promise.all([
         tx.voucher.findMany({
           where,
-          include: {
-            financialYear: { select: { id: true, name: true } },
+          select: {
+            id: true,
+            voucherNumber: true,
+            voucherDate: true,
+            totalAmount: true,
+            narration: true,
+            referenceNo: true,
+            paymentMode: true,
+            isCancelled: true,
             journalEntries: {
-              include: {
+              select: {
+                id: true,
+                accountId: true,
+                debitAmount: true,
+                creditAmount: true,
+                lineNarration: true,
                 account: {
                   select: {
                     id: true,
@@ -94,24 +106,26 @@ export class ExpensesController {
         return {
           id: v.id,
           voucherNumber: v.voucherNumber,
-          expenseNumber: v.voucherNumber,
           voucherDate: v.voucherDate,
-          expenseDate: v.voucherDate,
-          createdAt: v.createdAt,
           totalAmount: Number(v.totalAmount),
-          amount: Number(v.totalAmount),
-          narration: v.narration,
-          referenceNo: v.referenceNo,
+          ...(v.narration ? { narration: v.narration } : {}),
+          ...(v.referenceNo ? { referenceNo: v.referenceNo } : {}),
           paymentMode,
           party: { name: expenseAccName },
-          partyName: expenseAccName,
           category: {
             id: debitLine?.account?.group?.id || null,
             name: debitLine?.account?.group?.name || "Business Expenses",
           },
           expenseAccount: debitLine?.account || null,
           paidFromAccount: creditLine?.account || null,
-          journalEntries: v.journalEntries,
+          journalEntries: v.journalEntries.map((j) => ({
+            id: j.id,
+            accountId: j.accountId,
+            debitAmount: Number(j.debitAmount),
+            creditAmount: Number(j.creditAmount),
+            ...(j.lineNarration ? { lineNarration: j.lineNarration } : {}),
+            account: j.account ?? null,
+          })),
           isCancelled: v.isCancelled,
         };
       });

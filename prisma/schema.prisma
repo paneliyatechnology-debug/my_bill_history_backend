@@ -1049,32 +1049,32 @@ model SalesInvoice {
   paidAmount    Decimal @default(0.00) @map("paid_amount") @db.Decimal(15, 2)
   balanceAmount Decimal @map("balance_amount") @db.Decimal(15, 2)
 
-  termsAndConditions        String?  @map("terms_and_conditions") @db.Text
-  notes                     String?  @db.Text
-  clientOfflineUuid         String?  @unique @map("client_offline_uuid") @db.VarChar(100)
-  provisionalCostReconciled Boolean  @default(true) @map("provisional_cost_reconciled")
-  convertedInvoiceId        String?         @unique @map("converted_invoice_id") @db.Uuid
-  quotationId               String?         @map("quotation_id") @db.Uuid
-  deliveryChallanId         String?         @map("delivery_challan_id") @db.Uuid
-  createdById               String?         @map("created_by_id") @db.Uuid
-  approvalStatus            ApprovalStatus  @default(APPROVED) @map("approval_status")
-  createdAt                 DateTime        @default(now()) @map("created_at")
-  updatedAt                 DateTime        @updatedAt @map("updated_at")
+  termsAndConditions        String?        @map("terms_and_conditions") @db.Text
+  notes                     String?        @db.Text
+  clientOfflineUuid         String?        @unique @map("client_offline_uuid") @db.VarChar(100)
+  provisionalCostReconciled Boolean        @default(true) @map("provisional_cost_reconciled")
+  convertedInvoiceId        String?        @unique @map("converted_invoice_id") @db.Uuid
+  quotationId               String?        @map("quotation_id") @db.Uuid
+  deliveryChallanId         String?        @map("delivery_challan_id") @db.Uuid
+  createdById               String?        @map("created_by_id") @db.Uuid
+  approvalStatus            ApprovalStatus @default(APPROVED) @map("approval_status")
+  createdAt                 DateTime       @default(now()) @map("created_at")
+  updatedAt                 DateTime       @updatedAt @map("updated_at")
 
-  company                 Company                  @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  branch                  Branch                   @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  financialYear           FinancialYear            @relation(fields: [financialYearId], references: [id], onDelete: Restrict)
-  party                   Party                    @relation(fields: [partyId], references: [id], onDelete: Restrict)
-  createdBy               User?                    @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  items                   SalesInvoiceItem[]
-  returns                 SalesReturn[]
-  outwardDebitNotes       OutwardDebitNote[]
-  allocations             PaymentAllocation[]
-  eInvoiceRecord          EInvoiceRecord?
-  eWayBillRecord          EWayBillRecord?
-  automatedBillingRuns    AutomatedBillingRun[]
-  aiCollectionCalls       AiCollectionCall[]
-  aiCollectionCommitments AiCollectionCommitment[]
+  company                   Company                  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  branch                    Branch                   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  financialYear             FinancialYear            @relation(fields: [financialYearId], references: [id], onDelete: Restrict)
+  party                     Party                    @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  createdBy                 User?                    @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items                     SalesInvoiceItem[]
+  returns                   SalesReturn[]
+  outwardDebitNotes         OutwardDebitNote[]
+  allocations               PaymentAllocation[]
+  eInvoiceRecord            EInvoiceRecord?
+  eWayBillRecord            EWayBillRecord?
+  automatedBillingRuns      AutomatedBillingRun[]
+  aiCollectionCalls         AiCollectionCall[]
+  aiCollectionCommitments   AiCollectionCommitment[]
   convertedInvoice          SalesInvoice?            @relation("QuotationConversion", fields: [convertedInvoiceId], references: [id], onDelete: SetNull)
   sourceQuotationForInvoice SalesInvoice?            @relation("QuotationConversion")
   deliveryChallan           DeliveryChallan?         @relation("ChallanSalesInvoices", fields: [deliveryChallanId], references: [id], onDelete: SetNull)

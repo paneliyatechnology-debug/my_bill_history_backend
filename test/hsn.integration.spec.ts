@@ -63,6 +63,83 @@ describe("HSN/SAC Centralized Master Integration Suite", () => {
     // Clean up any stale test records from previous aborted runs
     await cleanup();
 
+    // Seed global system HSN/SAC codes required by tests (upsert to avoid duplicates)
+    await prisma.executeBypassRls(async (tx) => {
+      const globalHsnCodes = [
+        { code: "1001", description: "Wheat and meslin", type: "HSN", gstRate: 0 },
+        { code: "1006", description: "Rice", type: "HSN", gstRate: 5 },
+        { code: "1701", description: "Cane sugar", type: "HSN", gstRate: 5 },
+        { code: "2201", description: "Waters, natural or artificial mineral waters", type: "HSN", gstRate: 12 },
+        { code: "3004", description: "Medicaments", type: "HSN", gstRate: 12 },
+        { code: "3301", description: "Essential oils", type: "HSN", gstRate: 18 },
+        { code: "4901", description: "Printed books", type: "HSN", gstRate: 0 },
+        { code: "5208", description: "Woven fabrics of cotton", type: "HSN", gstRate: 5 },
+        { code: "6109", description: "T-shirts, singlets and other vests", type: "HSN", gstRate: 12 },
+        { code: "6204", description: "Women suits, ensembles", type: "HSN", gstRate: 12 },
+        { code: "7208", description: "Flat-rolled products of iron or non-alloy steel", type: "HSN", gstRate: 18 },
+        { code: "7214", description: "Other bars and rods of iron or non-alloy steel", type: "HSN", gstRate: 18 },
+        { code: "7216", description: "Angles, shapes and sections of iron or non-alloy steel", type: "HSN", gstRate: 18 },
+        { code: "7301", description: "Sheet piling of iron or steel", type: "HSN", gstRate: 18 },
+        { code: "8415", description: "Air conditioning machines", type: "HSN", gstRate: 28 },
+        { code: "8471", description: "Automatic data processing machines", type: "HSN", gstRate: 18 },
+        { code: "8517", description: "Telephone sets including smartphones", type: "HSN", gstRate: 18 },
+        { code: "8703", description: "Motor cars and vehicles for transport of persons", type: "HSN", gstRate: 28 },
+        { code: "9403", description: "Other furniture and parts thereof", type: "HSN", gstRate: 18 },
+        { code: "9999", description: "Others", type: "HSN", gstRate: 18 },
+        { code: "2106", description: "Food preparations not elsewhere specified", type: "HSN", gstRate: 18 },
+        { code: "2710", description: "Petroleum oils", type: "HSN", gstRate: 18 },
+        { code: "3401", description: "Soap, organic surface-active products", type: "HSN", gstRate: 18 },
+        { code: "3808", description: "Insecticides, rodenticides, fungicides", type: "HSN", gstRate: 18 },
+        { code: "4820", description: "Registers, account books, notebooks", type: "HSN", gstRate: 12 },
+        { code: "6305", description: "Sacks and bags for packing of goods", type: "HSN", gstRate: 12 },
+        { code: "7010", description: "Carboys, bottles, flasks, jars", type: "HSN", gstRate: 18 },
+        { code: "8422", description: "Dish washing machines, machinery for cleaning", type: "HSN", gstRate: 28 },
+        { code: "8528", description: "Monitors and projectors", type: "HSN", gstRate: 28 },
+        { code: "9602", description: "Worked vegetable, mineral or animal carving material", type: "HSN", gstRate: 12 },
+        // SAC codes for services
+        { code: "9954", description: "Construction services", type: "SAC", gstRate: 18 },
+        { code: "9961", description: "Services in wholesale trade", type: "SAC", gstRate: 18 },
+        { code: "9962", description: "Services in retail trade", type: "SAC", gstRate: 18 },
+        { code: "9971", description: "Financial and related services", type: "SAC", gstRate: 18 },
+        { code: "9972", description: "Real estate services", type: "SAC", gstRate: 18 },
+        { code: "9981", description: "Research and development services", type: "SAC", gstRate: 18 },
+        { code: "9983", description: "Other professional, technical and business services", type: "SAC", gstRate: 18 },
+        { code: "9984", description: "Telecommunications, broadcasting and information supply", type: "SAC", gstRate: 18 },
+        { code: "9985", description: "Support services", type: "SAC", gstRate: 18 },
+        { code: "9987", description: "Maintenance, repair and installation services", type: "SAC", gstRate: 18 },
+        { code: "9991", description: "Public administration and other services provided to the community", type: "SAC", gstRate: 0 },
+        { code: "9997", description: "Other services", type: "SAC", gstRate: 18 },
+        { code: "998311", description: "Management accounting and financial management consulting services", type: "SAC", gstRate: 18 },
+        { code: "998312", description: "Taxation advisory and representation services", type: "SAC", gstRate: 18 },
+        { code: "998313", description: "Insolvency and receivership advisory services", type: "SAC", gstRate: 18 },
+        { code: "998319", description: "Other accounting and bookkeeping services", type: "SAC", gstRate: 18 },
+      ];
+      for (const hsn of globalHsnCodes) {
+        const existing = await tx.hsnMaster.findFirst({
+          where: { code: hsn.code, companyId: null },
+        });
+        if (!existing) {
+          await tx.hsnMaster.create({
+            data: {
+              code: hsn.code,
+              description: hsn.description,
+              type: hsn.type as any,
+              gstRate: hsn.gstRate,
+              cessRate: 0,
+              isSystem: true,
+              isActive: true,
+              companyId: null,
+            },
+          });
+        } else {
+          await tx.hsnMaster.update({
+            where: { id: existing.id },
+            data: { description: hsn.description, isSystem: true, isActive: true },
+          });
+        }
+      }
+    });
+
     // Register Tenant A
     const resA = await app.inject({
       method: "POST",

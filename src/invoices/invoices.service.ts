@@ -43,6 +43,12 @@ import { CancelInvoiceDto } from "./dto/cancel-invoice.dto";
 import { QueryInvoicesDto } from "./dto/query-invoices.dto";
 import { RecordInvoicePaymentDto } from "./dto/record-payment.dto";
 import { QueryStockTransactionsDto } from "./dto/query-stock.dto";
+import { buildPaginatedResponse } from "../common/dto/pagination-response.dto";
+import {
+  computeSalesInvoiceReturnSummary,
+  mapSalesInvoiceListItem,
+} from "./dto/sales-invoice-list-response.dto";
+import { mapSalesInvoiceDetail } from "./dto/sales-invoice-detail-response.dto";
 import { CreateSalesReturnDto } from "./dto/create-sales-return.dto";
 import { QuerySalesReturnsDto } from "./dto/query-sales-returns.dto";
 import { buildInvoiceUrls } from "../invoice-print/invoice-url.helper";
@@ -1269,14 +1275,7 @@ export class InvoicesService {
           rawPartyId === "undefined" ||
           !uuidRegex.test(rawPartyId)
         ) {
-          return {
-            items: [],
-            data: [],
-            total: 0,
-            page,
-            limit,
-            totalPages: 0,
-          };
+          return buildPaginatedResponse([], 0, page, limit);
         }
 
         // Proactively verify party existence for the tenant company.
@@ -1290,14 +1289,7 @@ export class InvoicesService {
         });
 
         if (!partyExists) {
-          return {
-            items: [],
-            data: [],
-            total: 0,
-            page,
-            limit,
-            totalPages: 0,
-          };
+          return buildPaginatedResponse([], 0, page, limit);
         }
 
         where.partyId = rawPartyId;
@@ -1349,7 +1341,19 @@ export class InvoicesService {
       const [items, total] = await Promise.all([
         tx.salesInvoice.findMany({
           where,
-          include: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            invoiceDate: true,
+            dueDate: true,
+            category: true,
+            status: true,
+            isB2B: true,
+            paymentMode: true,
+            grandTotal: true,
+            paidAmount: true,
+            balanceAmount: true,
+            quotationId: true,
             party: {
               select: { id: true, name: true, gstin: true, phone: true },
             },
@@ -1374,9 +1378,30 @@ export class InvoicesService {
             ...(needReturnDetails
               ? {
                   items: {
-                    include: {
-                      item: true,
-                      returnItems: true,
+                    select: {
+                      id: true,
+                      itemId: true,
+                      hsnCode: true,
+                      description: true,
+                      quantity: true,
+                      unitPrice: true,
+                      taxRate: true,
+                      taxableAmount: true,
+                      cgstAmount: true,
+                      sgstAmount: true,
+                      igstAmount: true,
+                      totalAmount: true,
+                      item: {
+                        select: {
+                          id: true,
+                          name: true,
+                          hsnCode: true,
+                          primaryUom: { select: { symbol: true, name: true } },
+                        },
+                      },
+                      returnItems: {
+                        select: { quantity: true },
+                      },
                     },
                   },
                 }
@@ -1387,8 +1412,6 @@ export class InvoicesService {
                 returnNumber: true,
                 grandTotal: true,
                 status: true,
-                createdAt: true,
-                ...(needReturnDetails ? { items: true } : {}),
               },
             },
           },
@@ -1399,76 +1422,38 @@ export class InvoicesService {
         tx.salesInvoice.count({ where }),
       ]);
 
-      let mappedItems = items.map((inv: any) => {
-        const returnedAmount = (inv.returns || [])
-          .filter((r: any) => r.status !== "CANCELLED")
-          .reduce((sum: number, r: any) => sum + Number(r.grandTotal || 0), 0);
-
-        let totalOriginalQty = 0;
-        let totalReturnedQty = 0;
-
-        const itemsWithReturnStatus = (inv.items || []).map((line: any) => {
-          const originalQty = Number(line.quantity || 0);
-          const returnedQty = (line.returnItems || []).reduce(
-            (sum: number, retItem: any) => sum + Number(retItem.quantity || 0),
-            0,
-          );
-          const remainingQty = Math.max(0, originalQty - returnedQty);
-          totalOriginalQty += originalQty;
-          totalReturnedQty += returnedQty;
-
-          return {
-            ...line,
-            returnedQuantity: returnedQty,
-            remainingQuantity: remainingQty,
-            isFullyReturned: remainingQty <= 0.0001,
-          };
-        });
-
-        const totalRemainingQty = Math.max(0, totalOriginalQty - totalReturnedQty);
-        const grandTotalNum = Number(inv.grandTotal || 0);
-        const isFullyReturned =
-          (totalOriginalQty > 0 && totalRemainingQty <= 0.0001) ||
-          returnedAmount >= grandTotalNum - 0.01;
-
-        const outstandingBalance = Math.max(0, Number(inv.balanceAmount || 0));
-        const netGrandTotal = Math.max(0, grandTotalNum - returnedAmount);
-
-        return {
-          ...inv,
-          items: itemsWithReturnStatus,
-          returnedAmount,
-          netGrandTotal,
-          outstandingBalance,
-          isFullyReturned,
-          totalRemainingQty,
-          sourceQuotation: inv.sourceQuotationForInvoice,
-          quotationNumber: inv.sourceQuotationForInvoice?.invoiceNumber || null,
-          quotationId:
-            inv.sourceQuotationForInvoice?.id || (inv as any).quotationId || null,
-          ...buildInvoiceUrls(inv.id),
-        };
-      });
-
-      if (
+      const isAvailableForReturnOnly =
         (query as any).availableForReturnOnly === "true" ||
-        (query as any).availableForReturnOnly === true
-      ) {
-        mappedItems = mappedItems.filter(
-          (inv: any) => !inv.isFullyReturned && inv.totalRemainingQty > 0.0001,
-        );
-      }
+        (query as any).availableForReturnOnly === true;
 
-      return {
-        items: mappedItems,
-        data: mappedItems,
-        total: (query as any).availableForReturnOnly ? mappedItems.length : total,
+      const filteredRaw = isAvailableForReturnOnly
+        ? items.filter((inv: any) => {
+            const { isFullyReturned, totalRemainingQty } =
+              computeSalesInvoiceReturnSummary(inv);
+            return !isFullyReturned && totalRemainingQty > 0.0001;
+          })
+        : items;
+
+      const mappedItems = filteredRaw.map((inv: any) =>
+        mapSalesInvoiceListItem(inv, {
+          includeItems: needReturnDetails,
+          includeReturns: needReturnDetails,
+        }),
+      );
+
+      const effectiveTotal = isAvailableForReturnOnly
+        ? mappedItems.length
+        : total;
+      const effectiveLimit = isAvailableForReturnOnly
+        ? Math.max(1, mappedItems.length)
+        : limit;
+
+      return buildPaginatedResponse(
+        mappedItems,
+        effectiveTotal,
         page,
-        limit,
-        totalPages: (query as any).availableForReturnOnly
-          ? 1
-          : Math.ceil(total / limit),
-      };
+        effectiveLimit,
+      );
     });
   }
 
@@ -1477,12 +1462,68 @@ export class InvoicesService {
    */
   async getSalesInvoiceById(id: string, tenant: TenantContext): Promise<any> {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
-      const invoiceInclude = {
-        party: true,
-        branch: true,
-        financialYear: true,
-        eWayBillRecord: true,
-        eInvoiceRecord: true,
+      const invoiceSelect = {
+        id: true,
+        invoiceNumber: true,
+        invoiceDate: true,
+        dueDate: true,
+        category: true,
+        status: true,
+        isB2B: true,
+        placeOfSupply: true,
+        paymentMode: true,
+        taxableAmount: true,
+        discountTotal: true,
+        cgstAmount: true,
+        sgstAmount: true,
+        igstAmount: true,
+        utgstAmount: true,
+        cessAmount: true,
+        roundOff: true,
+        grandTotal: true,
+        paidAmount: true,
+        balanceAmount: true,
+        notes: true,
+        termsAndConditions: true,
+        billingAddress: true,
+        shippingAddress: true,
+        quotationId: true,
+        party: {
+          select: {
+            id: true,
+            name: true,
+            nameGujarati: true,
+            phone: true,
+            email: true,
+            gstin: true,
+            gstType: true,
+            stateCode: true,
+            type: true,
+            billingAddress: true,
+            shippingAddress: true,
+          },
+        },
+        eWayBillRecord: {
+          select: {
+            id: true,
+            ewbNumber: true,
+            ewbDate: true,
+            validUpto: true,
+            status: true,
+            transporterName: true,
+            vehicleNumber: true,
+          },
+        },
+        eInvoiceRecord: {
+          select: {
+            id: true,
+            irn: true,
+            ackNo: true,
+            ackDate: true,
+            status: true,
+            signedQrCode: true,
+          },
+        },
         convertedInvoice: {
           select: {
             id: true,
@@ -1502,22 +1543,48 @@ export class InvoicesService {
           },
         },
         items: {
-          include: {
-            item: true,
+          select: {
+            id: true,
+            itemId: true,
+            hsnCode: true,
+            description: true,
+            quantity: true,
+            unitPrice: true,
+            discountPercent: true,
+            discountAmount: true,
+            taxRate: true,
+            taxableAmount: true,
+            cgstAmount: true,
+            sgstAmount: true,
+            igstAmount: true,
+            utgstAmount: true,
+            cessAmount: true,
+            totalAmount: true,
+            batchId: true,
+            item: {
+              select: {
+                id: true,
+                name: true,
+                nameGujarati: true,
+                sku: true,
+                hsnCode: true,
+                primaryUom: { select: { symbol: true, name: true } },
+              },
+            },
           },
         },
       };
 
-      let invoice = await tx.salesInvoice.findFirst({
+      let invoice: any = await tx.salesInvoice.findFirst({
         where: { id, companyId: tenant.companyId },
-        include: invoiceInclude,
+        select: invoiceSelect,
       });
 
       // 1. Fallback: Search by invoiceNumber directly
       if (!invoice) {
         invoice = await tx.salesInvoice.findFirst({
           where: { invoiceNumber: id, companyId: tenant.companyId },
-          include: invoiceInclude,
+          select: invoiceSelect,
         });
       }
 
@@ -1533,20 +1600,25 @@ export class InvoicesService {
               { sourceEntityId: id },
             ],
           },
-          include: { allocations: true },
+          select: {
+            sourceDocument: true,
+            sourceEntityId: true,
+            referenceNo: true,
+            allocations: { select: { invoiceId: true } },
+          },
         });
 
         if (voucher) {
           if (voucher.sourceDocument === "SALES_INVOICE" && voucher.sourceEntityId) {
             invoice = await tx.salesInvoice.findFirst({
               where: { id: voucher.sourceEntityId, companyId: tenant.companyId },
-              include: invoiceInclude,
+              select: invoiceSelect,
             });
           }
           if (!invoice && voucher.referenceNo) {
             invoice = await tx.salesInvoice.findFirst({
               where: { invoiceNumber: voucher.referenceNo, companyId: tenant.companyId },
-              include: invoiceInclude,
+              select: invoiceSelect,
             });
           }
           if (!invoice && voucher.allocations && voucher.allocations.length > 0) {
@@ -1554,7 +1626,7 @@ export class InvoicesService {
             if (alloc?.invoiceId) {
               invoice = await tx.salesInvoice.findFirst({
                 where: { id: alloc.invoiceId, companyId: tenant.companyId },
-                include: invoiceInclude,
+                select: invoiceSelect,
               });
             }
           }
@@ -1565,20 +1637,30 @@ export class InvoicesService {
       if (!invoice) {
         const je = await tx.journalEntry.findFirst({
           where: { id },
-          include: { voucher: { include: { allocations: true } } },
+          select: {
+            voucher: {
+              select: {
+                companyId: true,
+                sourceDocument: true,
+                sourceEntityId: true,
+                referenceNo: true,
+                allocations: { select: { invoiceId: true } },
+              },
+            },
+          },
         });
         if (je?.voucher && je.voucher.companyId === tenant.companyId) {
           const v = je.voucher;
           if (v.sourceDocument === "SALES_INVOICE" && v.sourceEntityId) {
             invoice = await tx.salesInvoice.findFirst({
               where: { id: v.sourceEntityId, companyId: tenant.companyId },
-              include: invoiceInclude,
+              select: invoiceSelect,
             });
           }
           if (!invoice && v.referenceNo) {
             invoice = await tx.salesInvoice.findFirst({
               where: { invoiceNumber: v.referenceNo, companyId: tenant.companyId },
-              include: invoiceInclude,
+              select: invoiceSelect,
             });
           }
           if (!invoice && v.allocations && v.allocations.length > 0) {
@@ -1586,7 +1668,7 @@ export class InvoicesService {
             if (alloc?.invoiceId) {
               invoice = await tx.salesInvoice.findFirst({
                 where: { id: alloc.invoiceId, companyId: tenant.companyId },
-                include: invoiceInclude,
+                select: invoiceSelect,
               });
             }
           }
@@ -1607,9 +1689,19 @@ export class InvoicesService {
           sourceDocument: "SALES_INVOICE",
           sourceEntityId: invoice.id,
         },
-        include: {
+        select: {
+          id: true,
+          voucherNumber: true,
+          voucherType: true,
           journalEntries: {
-            include: { account: true },
+            select: {
+              id: true,
+              accountId: true,
+              debitAmount: true,
+              creditAmount: true,
+              account: { select: { id: true, name: true, code: true } },
+            },
+            orderBy: { sequenceOrder: "asc" },
           },
         },
       });
@@ -1634,18 +1726,13 @@ export class InvoicesService {
       const diffFreight = Math.max(0, Number(invoice.grandTotal || 0) - (Number(invoice.taxableAmount || 0) + invoiceTaxTotal + Number(invoice.roundOff || 0)));
       const finalFreight = explicitFreight > 0 ? explicitFreight : (diffFreight > 0.01 ? Math.round(diffFreight * 100) / 100 : 0);
 
-      return {
-        ...invoice,
-        discountTotal: Number(invoice.discountTotal || 0),
-        freightAmount: finalFreight,
-        freight: finalFreight,
+      const urls = buildInvoiceUrls(invoice.id);
+      return mapSalesInvoiceDetail(invoice, {
+        finalFreight,
         sourceQuotation,
-        quotationNumber: sourceQuotation?.invoiceNumber || null,
-        quotationId: sourceQuotation?.id || (invoice as any).quotationId || null,
-        outstandingBalance: Number(invoice.balanceAmount),
         voucher,
-        ...buildInvoiceUrls(invoice.id),
-      };
+        ...urls,
+      });
     });
   }
 
@@ -5274,16 +5361,36 @@ export class InvoicesService {
         ];
       }
 
-      const [data, total] = await Promise.all([
+      const isCreditNote = dto.docType === "CREDIT_NOTE";
+      const [rows, total] = await Promise.all([
         tx.salesReturn.findMany({
           where,
-          include: {
+          select: {
+            id: true,
+            returnNumber: true,
+            returnDate: true,
+            docType: true,
+            status: true,
+            settlementMode: true,
+            disposition: true,
+            reason: true,
+            grandTotal: true,
+            linkedReturnId: true,
+            ...(isCreditNote
+              ? {
+                  gstCategory: true,
+                  creditNoteType: true,
+                  taxableAmount: true,
+                  cgstAmount: true,
+                  sgstAmount: true,
+                  igstAmount: true,
+                  remainingCredit: true,
+                }
+              : {}),
             party: {
               select: {
                 id: true,
                 name: true,
-                nameGujarati: true,
-                gstin: true,
                 phone: true,
               },
             },
@@ -5291,26 +5398,10 @@ export class InvoicesService {
               select: {
                 id: true,
                 invoiceNumber: true,
-                invoiceDate: true,
-                grandTotal: true,
-                status: true,
               },
-            },
-            branch: {
-              select: { id: true, name: true },
-            },
-            financialYear: {
-              select: { id: true, name: true },
             },
             warehouse: {
               select: { id: true, name: true },
-            },
-            items: {
-              include: {
-                item: {
-                  select: { id: true, name: true, sku: true, hsnCode: true },
-                },
-              },
             },
           },
           orderBy: { returnDate: "desc" },
@@ -5319,6 +5410,39 @@ export class InvoicesService {
         }),
         tx.salesReturn.count({ where }),
       ]);
+
+      const data = rows.map((r: any) => ({
+        id: r.id,
+        returnNumber: r.returnNumber,
+        returnDate: r.returnDate,
+        docType: r.docType,
+        status: r.status,
+        settlementMode: r.settlementMode,
+        disposition: r.disposition,
+        ...(r.reason ? { reason: r.reason } : {}),
+        ...(isCreditNote
+          ? {
+              gstCategory: r.gstCategory,
+              ...(r.creditNoteType ? { creditNoteType: r.creditNoteType } : {}),
+              taxableAmount: Number(r.taxableAmount || 0),
+              cgstAmount: Number(r.cgstAmount || 0),
+              sgstAmount: Number(r.sgstAmount || 0),
+              igstAmount: Number(r.igstAmount || 0),
+              remainingCredit: Number(r.remainingCredit || 0),
+            }
+          : {}),
+        grandTotal: Number(r.grandTotal || 0),
+        ...(r.linkedReturnId ? { linkedReturnId: r.linkedReturnId } : {}),
+        party: r.party
+          ? {
+              id: r.party.id,
+              name: r.party.name,
+              ...(r.party.phone ? { phone: r.party.phone } : {}),
+            }
+          : null,
+        salesInvoice: r.salesInvoice ?? null,
+        warehouse: r.warehouse ?? null,
+      }));
 
       // Calculate next available sequence return number
       const docType = dto.docType || "SALES_RETURN";
@@ -5363,26 +5487,74 @@ export class InvoicesService {
     return this.prisma.executeInTenantContext(tenant, async (tx) => {
       const salesReturn = await tx.salesReturn.findFirst({
         where: { id, companyId: tenant.companyId },
-        include: {
-          party: true,
-          salesInvoice: {
-            include: {
-              items: {
-                include: { item: true },
-              },
+        select: {
+          id: true,
+          returnNumber: true,
+          returnDate: true,
+          docType: true,
+          status: true,
+          settlementMode: true,
+          gstCategory: true,
+          disposition: true,
+          reason: true,
+          notes: true,
+          taxableAmount: true,
+          cgstAmount: true,
+          sgstAmount: true,
+          igstAmount: true,
+          grandTotal: true,
+          salesInvoiceId: true,
+          linkedReturnId: true,
+          party: {
+            select: {
+              id: true,
+              name: true,
+              nameGujarati: true,
+              phone: true,
+              email: true,
+              gstin: true,
+              gstType: true,
+              stateCode: true,
+              billingAddress: true,
             },
+          },
+          salesInvoice: {
+            select: {
+              id: true,
+              invoiceNumber: true,
+              invoiceDate: true,
+              grandTotal: true,
+              status: true,
+            },
+          },
+          warehouse: {
+            select: { id: true, name: true },
           },
           items: {
-            include: {
+            select: {
+              id: true,
+              itemId: true,
+              salesItemId: true,
+              quantity: true,
+              unitPrice: true,
+              taxRate: true,
+              taxableAmount: true,
+              cgstAmount: true,
+              sgstAmount: true,
+              igstAmount: true,
+              totalAmount: true,
               item: {
-                include: { primaryUom: true },
+                select: {
+                  id: true,
+                  name: true,
+                  nameGujarati: true,
+                  sku: true,
+                  hsnCode: true,
+                  primaryUom: { select: { symbol: true, name: true } },
+                },
               },
-              salesItem: true,
             },
           },
-          branch: true,
-          financialYear: true,
-          warehouse: true,
         },
       });
 
@@ -5390,7 +5562,41 @@ export class InvoicesService {
         throw new NotFoundException(`Sales return with ID ${id} not found.`);
       }
 
-      return salesReturn;
+      return {
+        ...salesReturn,
+        taxableAmount: Number(salesReturn.taxableAmount || 0),
+        cgstAmount: Number(salesReturn.cgstAmount || 0),
+        sgstAmount: Number(salesReturn.sgstAmount || 0),
+        igstAmount: Number(salesReturn.igstAmount || 0),
+        grandTotal: Number(salesReturn.grandTotal || 0),
+        items: (salesReturn.items || []).map((line: any) => ({
+          id: line.id,
+          itemId: line.itemId,
+          salesItemId: line.salesItemId ?? null,
+          name: line.item?.name || "",
+          hsnCode: line.item?.hsnCode ?? null,
+          unit:
+            line.item?.primaryUom?.symbol ||
+            line.item?.primaryUom?.name ||
+            null,
+          quantity: Number(line.quantity || 0),
+          rate: Number(line.unitPrice || 0),
+          taxRate: Number(line.taxRate || 0),
+          taxableAmount: Number(line.taxableAmount || 0),
+          cgstAmount: Number(line.cgstAmount || 0),
+          sgstAmount: Number(line.sgstAmount || 0),
+          igstAmount: Number(line.igstAmount || 0),
+          totalAmount: Number(line.totalAmount || 0),
+          item: line.item
+            ? {
+                id: line.item.id,
+                name: line.item.name,
+                sku: line.item.sku ?? null,
+                hsnCode: line.item.hsnCode ?? null,
+              }
+            : null,
+        })),
+      };
     });
   }
 
