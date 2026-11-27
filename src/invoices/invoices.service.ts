@@ -486,37 +486,14 @@ export class InvoicesService {
           party.stateCode?.trim() ||
           company.stateCode;
 
-        const freightTaxRate =
-          Number(
-            (dto as any).freightTaxRate ??
-              (dto as any).freightGstRate ??
-              (dto as any).shippingAddress?.freightTaxRate ??
-              0,
-          ) || 0;
-        const normalizedAddCharges: any[] = [];
-        if (Array.isArray(dto.additionalCharges)) {
-          normalizedAddCharges.push(
-            ...dto.additionalCharges.map((c: any) => ({
-              ...c,
-              taxRate: c?.taxRate ?? (c?.name === "Freight" ? freightTaxRate : 0),
-            })),
-          );
-        } else if (dto.additionalCharges && Number(dto.additionalCharges) > 0) {
-          normalizedAddCharges.push({
-            name: "Freight",
-            amount: Number(dto.additionalCharges),
-            taxRate: freightTaxRate,
-          });
-        }
-        if ((dto as any).freightAmount && Number((dto as any).freightAmount) > 0) {
-          if (!normalizedAddCharges.some((c) => c.name === "Freight")) {
-            normalizedAddCharges.push({
-              name: "Freight",
-              amount: Number((dto as any).freightAmount),
-              taxRate: freightTaxRate,
-            });
-          }
-        }
+        const maxItemTaxRate = dto.items.reduce(
+          (max, i) => Math.max(max, Number(i.taxRate) || 0),
+          0,
+        );
+        const normalizedAddCharges = this.normalizeAdditionalChargesWithFreightTax(
+          dto,
+          maxItemTaxRate,
+        );
 
         const taxCalc = calculateSalesInvoiceTaxes(
           company.stateCode,
@@ -4249,6 +4226,55 @@ export class InvoicesService {
     return acc;
   }
 
+  /**
+   * Normalizes additionalCharges & freightAmount and defaults Freight GST rate
+   * to the composite supply rate (highest item taxRate) when not explicitly set.
+   */
+  private normalizeAdditionalChargesWithFreightTax(
+    dto: any,
+    compositeTaxRate: number,
+  ): any[] {
+    const explicitRate =
+      dto?.freightTaxRate ??
+      dto?.freightGstRate ??
+      dto?.shippingAddress?.freightTaxRate;
+    const freightTaxRate =
+      explicitRate !== undefined && explicitRate !== null && explicitRate !== ""
+        ? Number(explicitRate) || 0
+        : compositeTaxRate;
+
+    const normalized: any[] = [];
+    if (Array.isArray(dto?.additionalCharges)) {
+      normalized.push(
+        ...dto.additionalCharges.map((c: any) => ({
+          ...c,
+          taxRate:
+            c?.taxRate !== undefined && c?.taxRate !== null
+              ? Number(c.taxRate) || 0
+              : c?.name === "Freight"
+                ? freightTaxRate
+                : 0,
+        })),
+      );
+    } else if (dto?.additionalCharges && Number(dto.additionalCharges) > 0) {
+      normalized.push({
+        name: "Freight",
+        amount: Number(dto.additionalCharges),
+        taxRate: freightTaxRate,
+      });
+    }
+    if (dto?.freightAmount && Number(dto.freightAmount) > 0) {
+      if (!normalized.some((c) => c.name === "Freight")) {
+        normalized.push({
+          name: "Freight",
+          amount: Number(dto.freightAmount),
+          taxRate: freightTaxRate,
+        });
+      }
+    }
+    return normalized;
+  }
+
   private async calculateMovingAverageDispatch(
     tx: any,
     tenant: TenantContext,
@@ -6019,37 +6045,14 @@ export class InvoicesService {
         party?.stateCode?.trim() ||
         company.stateCode;
 
-      const freightTaxRate =
-        Number(
-          (dto as any).freightTaxRate ??
-            (dto as any).freightGstRate ??
-            (dto as any).shippingAddress?.freightTaxRate ??
-            0,
-        ) || 0;
-      const normalizedAddCharges: any[] = [];
-      if (Array.isArray(dto.additionalCharges)) {
-        normalizedAddCharges.push(
-          ...dto.additionalCharges.map((c: any) => ({
-            ...c,
-            taxRate: c?.taxRate ?? (c?.name === "Freight" ? freightTaxRate : 0),
-          })),
-        );
-      } else if (dto.additionalCharges && Number(dto.additionalCharges) > 0) {
-        normalizedAddCharges.push({
-          name: "Freight",
-          amount: Number(dto.additionalCharges),
-          taxRate: freightTaxRate,
-        });
-      }
-      if ((dto as any).freightAmount && Number((dto as any).freightAmount) > 0) {
-        if (!normalizedAddCharges.some((c) => c.name === "Freight")) {
-          normalizedAddCharges.push({
-            name: "Freight",
-            amount: Number((dto as any).freightAmount),
-            taxRate: freightTaxRate,
-          });
-        }
-      }
+      const maxItemTaxRate = dto.items.reduce(
+        (max, i) => Math.max(max, Number(i.taxRate) || 0),
+        0,
+      );
+      const normalizedAddCharges = this.normalizeAdditionalChargesWithFreightTax(
+        dto,
+        maxItemTaxRate,
+      );
 
       const taxCalc = calculateSalesInvoiceTaxes(
         company.stateCode,
