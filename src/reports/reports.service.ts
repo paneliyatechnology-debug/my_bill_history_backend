@@ -199,7 +199,7 @@ export class ReportsService {
         where.category = query.category;
       } else {
         where.category = {
-          notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION],
+          notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION, InvoiceCategory.SALES_ORDER],
         };
       }
       if (query.status) {
@@ -725,7 +725,7 @@ export class ReportsService {
       const invoices = await tx.salesInvoice.findMany({
         where: {
           companyId: tenant.companyId,
-          category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] },
+          category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION, InvoiceCategory.SALES_ORDER] },
           status: {
             notIn: [
               InvoiceStatus.CANCELLED,
@@ -1343,7 +1343,7 @@ export class ReportsService {
                   InvoiceStatus.CONVERTED,
                 ],
               },
-              category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] },
+              category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION, InvoiceCategory.SALES_ORDER] },
               balanceAmount: { not: 0 },
             },
             select: {
@@ -3902,7 +3902,7 @@ export class ReportsService {
       const toDate = query.toDate || query.endDate;
       const where: any = {
         companyId: tenant.companyId,
-        category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] },
+        category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION, InvoiceCategory.SALES_ORDER] },
         status: {
           notIn: [
             InvoiceStatus.CANCELLED,
@@ -4123,7 +4123,7 @@ export class ReportsService {
       const toDate = query.toDate || query.endDate;
       const where: any = {
         companyId: tenant.companyId,
-        category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] },
+        category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION, InvoiceCategory.SALES_ORDER] },
         status: {
           notIn: [
             InvoiceStatus.CANCELLED,
@@ -5196,6 +5196,291 @@ export class ReportsService {
         },
         records: list,
       };
+    });
+  }
+
+  async getInvoiceProfitAndLoss(
+    query: { fromDate?: string; toDate?: string; startDate?: string; endDate?: string },
+    tenant: TenantContext,
+  ) {
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const start = query.fromDate || query.startDate ? new Date(query.fromDate || query.startDate!) : undefined;
+      const end = query.toDate || query.endDate ? new Date(query.toDate || query.endDate!) : undefined;
+      if (end) end.setHours(23, 59, 59, 999);
+
+      const invoices = await tx.salesInvoice.findMany({
+        where: {
+          companyId: tenant.companyId,
+          category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION, InvoiceCategory.SALES_ORDER] },
+          status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT, InvoiceStatus.CONVERTED] },
+          ...(start || end ? { invoiceDate: { ...(start ? { gte: start } : {}), ...(end ? { lte: end } : {}) } } : {}),
+        },
+        include: {
+          party: { select: { name: true } },
+          items: { include: { item: { select: { purchaseRate: true } } } },
+        },
+        orderBy: { invoiceDate: "desc" },
+        take: 500,
+      });
+
+      let totalRevenue = 0;
+      let totalCost = 0;
+
+      const records = invoices.map((inv) => {
+        const revenue = Number(inv.taxableAmount || inv.grandTotal || 0);
+        const cost = inv.items.reduce(
+          (sum, line) => sum + Number(line.quantity || 0) * Number(line.item?.purchaseRate || 0),
+          0,
+        );
+        const profit = revenue - cost;
+        const marginPct = revenue > 0 ? (profit / revenue) * 100 : 0;
+        totalRevenue += revenue;
+        totalCost += cost;
+        return {
+          id: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          invoiceDate: inv.invoiceDate,
+          partyName: inv.party?.name || "Walk-in Customer",
+          salespersonName: (inv.shippingAddress as any)?.salespersonName || "Unassigned",
+          revenue: Number(revenue.toFixed(2)),
+          cost: Number(cost.toFixed(2)),
+          profit: Number(profit.toFixed(2)),
+          marginPct: Number(marginPct.toFixed(2)),
+        };
+      });
+
+      const totalProfit = totalRevenue - totalCost;
+      const avgMarginPct = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
+      return {
+        summary: {
+          totalInvoices: records.length,
+          totalRevenue: Number(totalRevenue.toFixed(2)),
+          totalCost: Number(totalCost.toFixed(2)),
+          totalProfit: Number(totalProfit.toFixed(2)),
+          avgMarginPct: Number(avgMarginPct.toFixed(2)),
+        },
+        records,
+      };
+    });
+  }
+
+  async getSalespersonSummary(
+    query: { fromDate?: string; toDate?: string; startDate?: string; endDate?: string },
+    tenant: TenantContext,
+  ) {
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const start = query.fromDate || query.startDate ? new Date(query.fromDate || query.startDate!) : undefined;
+      const end = query.toDate || query.endDate ? new Date(query.toDate || query.endDate!) : undefined;
+      if (end) end.setHours(23, 59, 59, 999);
+
+      const invoices = await tx.salesInvoice.findMany({
+        where: {
+          companyId: tenant.companyId,
+          category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION, InvoiceCategory.SALES_ORDER] },
+          status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT, InvoiceStatus.CONVERTED] },
+          ...(start || end ? { invoiceDate: { ...(start ? { gte: start } : {}), ...(end ? { lte: end } : {}) } } : {}),
+        },
+        select: {
+          grandTotal: true,
+          paidAmount: true,
+          shippingAddress: true,
+        },
+      });
+
+      const map = new Map<string, { salespersonName: string; invoiceCount: number; totalSales: number; collectedAmount: number }>();
+      for (const inv of invoices) {
+        const name = String((inv.shippingAddress as any)?.salespersonName || "Unassigned").trim() || "Unassigned";
+        const cur = map.get(name) || { salespersonName: name, invoiceCount: 0, totalSales: 0, collectedAmount: 0 };
+        cur.invoiceCount += 1;
+        cur.totalSales += Number(inv.grandTotal || 0);
+        cur.collectedAmount += Number(inv.paidAmount || 0);
+        map.set(name, cur);
+      }
+
+      const records = Array.from(map.values()).sort((a, b) => b.totalSales - a.totalSales);
+      return {
+        summary: {
+          salespersonCount: records.length,
+          totalSales: records.reduce((s, r) => s + r.totalSales, 0),
+        },
+        records,
+      };
+    });
+  }
+
+  async getTdsTcsSummary(
+    query: { fromDate?: string; toDate?: string; startDate?: string; endDate?: string },
+    tenant: TenantContext,
+  ) {
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const [purchases, sales] = await Promise.all([
+        tx.purchaseInvoice.findMany({
+          where: { companyId: tenant.companyId },
+          include: { party: { select: { name: true, pan: true } } },
+          orderBy: { invoiceDate: "desc" },
+          take: 500,
+        }),
+        tx.salesInvoice.findMany({
+          where: {
+            companyId: tenant.companyId,
+            status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT] },
+          },
+          include: { party: { select: { name: true, pan: true } } },
+          orderBy: { invoiceDate: "desc" },
+          take: 500,
+        }),
+      ]);
+
+      const tdsRecords = purchases
+        .filter((p) => (p.shippingAddress as any)?.tdsSection)
+        .map((p) => {
+          const meta: any = p.shippingAddress || {};
+          return {
+            type: "TDS",
+            section: meta.tdsSection,
+            rate: Number(meta.tdsRate || 0),
+            amount: Number(meta.tdsAmount || 0),
+            documentNumber: p.vendorInvoiceNumber,
+            date: p.invoiceDate,
+            partyName: p.party?.name || "Vendor",
+            pan: p.party?.pan || "—",
+            grossAmount: Number(p.grandTotal || 0),
+          };
+        });
+
+      const tcsRecords = sales
+        .filter((s) => (s.shippingAddress as any)?.tcsSection)
+        .map((s) => {
+          const meta: any = s.shippingAddress || {};
+          return {
+            type: "TCS",
+            section: meta.tcsSection,
+            rate: Number(meta.tcsRate || 0),
+            amount: Number(meta.tcsAmount || 0),
+            documentNumber: s.invoiceNumber,
+            date: s.invoiceDate,
+            partyName: s.party?.name || "Customer",
+            pan: s.party?.pan || "—",
+            grossAmount: Number(s.grandTotal || 0),
+          };
+        });
+
+      return {
+        summary: {
+          totalTds: tdsRecords.reduce((s, r) => s + r.amount, 0),
+          totalTcs: tcsRecords.reduce((s, r) => s + r.amount, 0),
+        },
+        records: [...tdsRecords, ...tcsRecords],
+      };
+    });
+  }
+
+  async exportTallyXml(
+    query: { fromDate?: string; toDate?: string },
+    tenant: TenantContext,
+  ): Promise<string> {
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const [company, ledgers, vouchers] = await Promise.all([
+        tx.company.findUnique({ where: { id: tenant.companyId }, select: { tradeName: true, legalName: true } }),
+        tx.ledgerAccount.findMany({
+          where: { companyId: tenant.companyId, isActive: true },
+          include: { group: { select: { name: true } } },
+        }),
+        tx.voucher.findMany({
+          where: {
+            companyId: tenant.companyId,
+            ...(query.fromDate || query.toDate
+              ? {
+                  voucherDate: {
+                    ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
+                    ...(query.toDate ? { lte: new Date(query.toDate) } : {}),
+                  },
+                }
+              : {}),
+          },
+          include: {
+            journalEntries: { include: { account: { select: { name: true } } } },
+          },
+          orderBy: { voucherDate: "asc" },
+          take: 500,
+        }),
+      ]);
+
+      const esc = (s: string) =>
+        String(s || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+
+      const fmtDate = (d: Date) => {
+        const dt = new Date(d);
+        const y = dt.getFullYear();
+        const m = String(dt.getMonth() + 1).padStart(2, "0");
+        const day = String(dt.getDate()).padStart(2, "0");
+        return `${y}${m}${day}`;
+      };
+
+      const ledgerXml = ledgers
+        .map((l) => {
+          const opBal = Number(l.openingBalance || 0) * (l.openingType === "DR" ? -1 : 1);
+          return `<TALLYMESSAGE xmlns:UDF="TallyUDF">
+  <LEDGER NAME="${esc(l.name)}" ACTION="Create">
+    <NAME>${esc(l.name)}</NAME>
+    <PARENT>${esc(l.group?.name || "Sundry Debtors")}</PARENT>
+    <OPENINGBALANCE>${opBal.toFixed(2)}</OPENINGBALANCE>
+  </LEDGER>
+</TALLYMESSAGE>`;
+        })
+        .join("\n");
+
+      const voucherXml = vouchers
+        .map((v) => {
+          const entriesXml = v.journalEntries
+            .map((e) => {
+              const isDr = Number(e.debitAmount || 0) > 0;
+              const amt = isDr ? -Number(e.debitAmount) : Number(e.creditAmount);
+              return `    <ALLLEDGERENTRIES.LIST>
+      <LEDGERNAME>${esc(e.account?.name || "Cash")}</LEDGERNAME>
+      <ISDEEMEDPOSITIVE>${isDr ? "Yes" : "No"}</ISDEEMEDPOSITIVE>
+      <AMOUNT>${amt.toFixed(2)}</AMOUNT>
+    </ALLLEDGERENTRIES.LIST>`;
+            })
+            .join("\n");
+
+          return `<TALLYMESSAGE xmlns:UDF="TallyUDF">
+  <VOUCHER VCHTYPE="${esc(v.voucherType)}" ACTION="Create">
+    <DATE>${fmtDate(v.voucherDate)}</DATE>
+    <VOUCHERTYPENAME>${esc(v.voucherType)}</VOUCHERTYPENAME>
+    <VOUCHERNUMBER>${esc(v.voucherNumber)}</VOUCHERNUMBER>
+    <NARRATION>${esc(v.narration || "")}</NARRATION>
+${entriesXml}
+  </VOUCHER>
+</TALLYMESSAGE>`;
+        })
+        .join("\n");
+
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<ENVELOPE>
+  <HEADER>
+    <TALLYREQUEST>Import Data</TALLYREQUEST>
+  </HEADER>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDESC>
+        <REPORTNAME>All Masters &amp; Vouchers</REPORTNAME>
+        <STATICVARIABLES>
+          <SVCURRENTCOMPANY>${esc(company?.tradeName || company?.legalName || "Company")}</SVCURRENTCOMPANY>
+        </STATICVARIABLES>
+      </REQUESTDESC>
+      <REQUESTDATA>
+${ledgerXml}
+${voucherXml}
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`;
     });
   }
 }

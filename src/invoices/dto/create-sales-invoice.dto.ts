@@ -42,7 +42,9 @@ export interface CreateSalesInvoiceDto {
   discountType?: "BEFORE_TAX" | "AFTER_TAX";
   discountPercent?: number | string;
   discountAmount?: number | string;
-  additionalCharges?: Array<{ name?: string; amount: number | string }>;
+  freightAmount?: number | string;
+  freightTaxRate?: number | string;
+  additionalCharges?: Array<{ name?: string; amount: number | string; taxRate?: number | string }>;
   receivedAmount?: number;
   tenderedSplit?: {
     cash?: number;

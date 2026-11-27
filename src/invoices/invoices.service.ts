@@ -317,7 +317,8 @@ export class InvoicesService {
           dto.isDraft === true ||
           dto.status === InvoiceStatus.DRAFT ||
           dto.category === InvoiceCategory.PROFORMA_INVOICE ||
-          dto.category === InvoiceCategory.QUOTATION;
+          dto.category === InvoiceCategory.QUOTATION ||
+          dto.category === InvoiceCategory.SALES_ORDER;
 
         // 7. Resolve Warehouse for physical items
         const hasPhysicalItems = dto.items.some(
@@ -387,7 +388,8 @@ export class InvoicesService {
         const category = dto.category || InvoiceCategory.TAX_INVOICE;
         const isCommercialQuoteOrProforma =
           category === InvoiceCategory.QUOTATION ||
-          category === InvoiceCategory.PROFORMA_INVOICE;
+          category === InvoiceCategory.PROFORMA_INVOICE ||
+          category === InvoiceCategory.SALES_ORDER;
         let invoiceNumber: string;
 
         if (isDraft && !isCommercialQuoteOrProforma) {
@@ -409,9 +411,11 @@ export class InvoicesService {
               ? `QTN/${fyCode}/`
               : category === InvoiceCategory.PROFORMA_INVOICE
                 ? `PI/${fyCode}/`
-                : category === InvoiceCategory.DELIVERY_CHALLAN
-                  ? `DC/${fyCode}/`
-                  : `INV/${fyCode}/`;
+                : category === InvoiceCategory.SALES_ORDER
+                  ? `SO/${fyCode}/`
+                  : category === InvoiceCategory.DELIVERY_CHALLAN
+                    ? `DC/${fyCode}/`
+                    : `INV/${fyCode}/`;
 
           // Acquire exclusive transaction advisory lock for this company and FY
           const lockKey = `seq_${tenant.companyId}_${fy.id}_${category}`;
@@ -482,15 +486,35 @@ export class InvoicesService {
           party.stateCode?.trim() ||
           company.stateCode;
 
+        const freightTaxRate =
+          Number(
+            (dto as any).freightTaxRate ??
+              (dto as any).freightGstRate ??
+              (dto as any).shippingAddress?.freightTaxRate ??
+              0,
+          ) || 0;
         const normalizedAddCharges: any[] = [];
         if (Array.isArray(dto.additionalCharges)) {
-          normalizedAddCharges.push(...dto.additionalCharges);
+          normalizedAddCharges.push(
+            ...dto.additionalCharges.map((c: any) => ({
+              ...c,
+              taxRate: c?.taxRate ?? (c?.name === "Freight" ? freightTaxRate : 0),
+            })),
+          );
         } else if (dto.additionalCharges && Number(dto.additionalCharges) > 0) {
-          normalizedAddCharges.push({ name: "Freight", amount: Number(dto.additionalCharges) });
+          normalizedAddCharges.push({
+            name: "Freight",
+            amount: Number(dto.additionalCharges),
+            taxRate: freightTaxRate,
+          });
         }
         if ((dto as any).freightAmount && Number((dto as any).freightAmount) > 0) {
           if (!normalizedAddCharges.some((c) => c.name === "Freight")) {
-            normalizedAddCharges.push({ name: "Freight", amount: Number((dto as any).freightAmount) });
+            normalizedAddCharges.push({
+              name: "Freight",
+              amount: Number((dto as any).freightAmount),
+              taxRate: freightTaxRate,
+            });
           }
         }
 
@@ -1302,6 +1326,7 @@ export class InvoicesService {
           notIn: [
             InvoiceCategory.PROFORMA_INVOICE,
             InvoiceCategory.QUOTATION,
+            InvoiceCategory.SALES_ORDER,
           ],
         };
       }
@@ -1727,11 +1752,32 @@ export class InvoicesService {
       const diffFreight = Math.max(0, Number(invoice.grandTotal || 0) - (Number(invoice.taxableAmount || 0) + invoiceTaxTotal + Number(invoice.roundOff || 0)));
       const finalFreight = explicitFreight > 0 ? explicitFreight : (diffFreight > 0.01 ? Math.round(diffFreight * 100) / 100 : 0);
 
+      const returns = await tx.salesReturn.findMany({
+        where: {
+          companyId: tenant.companyId,
+          salesInvoiceId: invoice.id,
+          status: { not: "CANCELLED" },
+        },
+        select: {
+          id: true,
+          returnNumber: true,
+          returnDate: true,
+          items: {
+            select: {
+              id: true,
+              salesItemId: true,
+              quantity: true,
+            },
+          },
+        },
+      });
+
       const urls = buildInvoiceUrls(invoice.id);
       return mapSalesInvoiceDetail(invoice, {
         finalFreight,
         sourceQuotation,
         voucher,
+        returns,
         ...urls,
       });
     });
@@ -1773,7 +1819,8 @@ export class InvoicesService {
 
       if (
         invoice.category === InvoiceCategory.PROFORMA_INVOICE ||
-        invoice.category === InvoiceCategory.QUOTATION
+        invoice.category === InvoiceCategory.QUOTATION ||
+        invoice.category === InvoiceCategory.SALES_ORDER
       ) {
         return await this.convertQuotationToInvoiceTx(
           tx,
@@ -2446,6 +2493,7 @@ export class InvoicesService {
               notIn: [
                 InvoiceCategory.PROFORMA_INVOICE,
                 InvoiceCategory.QUOTATION,
+                InvoiceCategory.SALES_ORDER,
               ],
             },
             createdAt: {
@@ -4730,10 +4778,11 @@ export class InvoicesService {
         },
       });
 
-      // 9. Stock Restoration (SALES_RETURN) if accepted and warehouse available
-      // Note: Credit Note must NEVER modify physical stock!
+      // 9. Stock Restoration (SALES_RETURN or direct ITEM_BASED CREDIT_NOTE without linkedReturnId)
       const shouldRestore =
-        docType !== "CREDIT_NOTE" && dto.restoreStock !== false;
+        !dto.linkedReturnId &&
+        dto.creditNoteType !== "AMOUNT_BASED" &&
+        dto.restoreStock !== false;
       if (shouldRestore && warehouseId) {
         for (const line of returnItemsData) {
           if (!line.itemId) continue;
@@ -5970,15 +6019,35 @@ export class InvoicesService {
         party?.stateCode?.trim() ||
         company.stateCode;
 
+      const freightTaxRate =
+        Number(
+          (dto as any).freightTaxRate ??
+            (dto as any).freightGstRate ??
+            (dto as any).shippingAddress?.freightTaxRate ??
+            0,
+        ) || 0;
       const normalizedAddCharges: any[] = [];
       if (Array.isArray(dto.additionalCharges)) {
-        normalizedAddCharges.push(...dto.additionalCharges);
+        normalizedAddCharges.push(
+          ...dto.additionalCharges.map((c: any) => ({
+            ...c,
+            taxRate: c?.taxRate ?? (c?.name === "Freight" ? freightTaxRate : 0),
+          })),
+        );
       } else if (dto.additionalCharges && Number(dto.additionalCharges) > 0) {
-        normalizedAddCharges.push({ name: "Freight", amount: Number(dto.additionalCharges) });
+        normalizedAddCharges.push({
+          name: "Freight",
+          amount: Number(dto.additionalCharges),
+          taxRate: freightTaxRate,
+        });
       }
       if ((dto as any).freightAmount && Number((dto as any).freightAmount) > 0) {
         if (!normalizedAddCharges.some((c) => c.name === "Freight")) {
-          normalizedAddCharges.push({ name: "Freight", amount: Number((dto as any).freightAmount) });
+          normalizedAddCharges.push({
+            name: "Freight",
+            amount: Number((dto as any).freightAmount),
+            taxRate: freightTaxRate,
+          });
         }
       }
 
@@ -6122,7 +6191,8 @@ export class InvoicesService {
           it.type !== "SERVICE" &&
           updatedStatus !== InvoiceStatus.DRAFT &&
           existing.category !== InvoiceCategory.PROFORMA_INVOICE &&
-          existing.category !== InvoiceCategory.QUOTATION
+          existing.category !== InvoiceCategory.QUOTATION &&
+          existing.category !== InvoiceCategory.SALES_ORDER
         ) {
           const warehouse = await tx.warehouse.findFirst({
             where: { companyId: tenant.companyId },
@@ -6156,7 +6226,8 @@ export class InvoicesService {
       if (
         updatedStatus !== InvoiceStatus.DRAFT &&
         existing.category !== InvoiceCategory.PROFORMA_INVOICE &&
-        existing.category !== InvoiceCategory.QUOTATION
+        existing.category !== InvoiceCategory.QUOTATION &&
+        existing.category !== InvoiceCategory.SALES_ORDER
       ) {
         const existingVouchers = await tx.voucher.findMany({
           where: {
@@ -6471,9 +6542,11 @@ export class InvoicesService {
         ? `QTN/${fyCode}/`
         : cat === InvoiceCategory.PROFORMA_INVOICE
           ? `PI/${fyCode}/`
-          : cat === InvoiceCategory.DELIVERY_CHALLAN
-            ? `DC/${fyCode}/`
-            : `INV/${fyCode}/`;
+          : cat === InvoiceCategory.SALES_ORDER
+            ? `SO/${fyCode}/`
+            : cat === InvoiceCategory.DELIVERY_CHALLAN
+              ? `DC/${fyCode}/`
+              : `INV/${fyCode}/`;
     const seq = fy
       ? await this.prisma.invoiceSequence.findFirst({
           where: {

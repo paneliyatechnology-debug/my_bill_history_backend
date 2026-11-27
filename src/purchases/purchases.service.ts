@@ -410,6 +410,29 @@ export class PurchasesService implements OnModuleInit {
           : 0)
       ) || 0;
 
+      const freightTaxRate = Number(
+        (dto as any).freightTaxRate ??
+        (dto as any).freightGstRate ??
+        (dto as any).shippingAddress?.freightTaxRate ??
+        (Array.isArray(dto.additionalCharges)
+          ? dto.additionalCharges.find((c: any) => Number(c?.taxRate) > 0)?.taxRate
+          : 0) ??
+        0
+      ) || 0;
+
+      if (freightAmt > 0 && freightTaxRate > 0) {
+        const freightSplit = splitInwardLineTax({
+          taxableAmount: new Decimal(freightAmt),
+          taxRate: toDecimal(freightTaxRate),
+          supplyCategory: "TAXABLE",
+          taxKind: supplyDecision.taxKind,
+        });
+        sumCgst = sumCgst.plus(freightSplit.cgst);
+        sumSgst = sumSgst.plus(freightSplit.sgst);
+        sumUtgst = sumUtgst.plus(freightSplit.utgst);
+        sumIgst = sumIgst.plus(freightSplit.igst);
+      }
+
       const rawGrandTotal = sumTaxable.plus(sumCgst).plus(sumSgst).plus(sumUtgst).plus(sumIgst).plus(freightAmt);
       const roundedGrandTotal = new Decimal(Math.round(rawGrandTotal.toNumber()));
       const roundOff = roundedGrandTotal.minus(rawGrandTotal);
@@ -480,6 +503,7 @@ export class PurchasesService implements OnModuleInit {
             const shipObj = typeof baseShip === "object" && baseShip !== null ? { ...baseShip } : (baseShip ? { address: baseShip } : {});
             shipObj.freight = freightAmt;
             shipObj.freightAmount = freightAmt;
+            shipObj.freightTaxRate = freightTaxRate;
             if ((dto as any).vehicleNumber) shipObj.vehicleNo = (dto as any).vehicleNumber;
             if ((dto as any).transportMode) shipObj.transportMode = (dto as any).transportMode;
             return shipObj;
@@ -3523,6 +3547,28 @@ export class PurchasesService implements OnModuleInit {
           : 0)
       ) || 0;
 
+      const freightTaxRate = Number(
+        (dto as any).freightTaxRate ??
+        (dto as any).freightGstRate ??
+        (dto as any).shippingAddress?.freightTaxRate ??
+        (Array.isArray(dto.additionalCharges)
+          ? dto.additionalCharges.find((c: any) => Number(c?.taxRate) > 0)?.taxRate
+          : 0) ??
+        0
+      ) || 0;
+
+      if (freightAmt > 0 && freightTaxRate > 0) {
+        const freightTax = new Decimal(freightAmt).times(freightTaxRate).dividedBy(100).toDecimalPlaces(2);
+        const isInterStateFreight = sumIgst.gt(0) || (company?.stateCode && placeOfSupply && company.stateCode !== placeOfSupply);
+        if (isInterStateFreight) {
+          sumIgst = sumIgst.plus(freightTax);
+        } else {
+          const half = freightTax.dividedBy(2).toDecimalPlaces(2);
+          sumCgst = sumCgst.plus(half);
+          sumSgst = sumSgst.plus(freightTax.minus(half));
+        }
+      }
+
       const rawGrand = sumTaxable.plus(sumCgst).plus(sumSgst).plus(sumIgst).plus(freightAmt);
       const roundedGrand = new Decimal(Math.round(rawGrand.toNumber()));
       const roundOff = roundedGrand.minus(rawGrand);
@@ -3550,6 +3596,7 @@ export class PurchasesService implements OnModuleInit {
             const shipObj = typeof baseShip === "object" && baseShip !== null ? { ...baseShip } : (baseShip ? { address: baseShip } : {});
             shipObj.freight = freightAmt;
             shipObj.freightAmount = freightAmt;
+            shipObj.freightTaxRate = freightTaxRate;
             if ((dto as any).vehicleNumber !== undefined) shipObj.vehicleNo = (dto as any).vehicleNumber;
             if ((dto as any).transportMode !== undefined) shipObj.transportMode = (dto as any).transportMode;
             return shipObj;

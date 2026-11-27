@@ -99,6 +99,136 @@ export class BankAccountsController {
     });
   }
 
+  @Get(":id/reconciliation")
+  async getBankReconciliation(
+    @Param("id") id: string,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const account = await tx.ledgerAccount.findFirst({
+        where: { id, companyId: tenant.companyId },
+      });
+      if (!account) {
+        return { account: null, entries: [], summary: { bookBalance: 0, reconciledBalance: 0, unreconciledAmount: 0 } };
+      }
+
+      const entries = await tx.journalEntry.findMany({
+        where: {
+          accountId: id,
+          voucher: { companyId: tenant.companyId },
+        },
+        include: {
+          voucher: {
+            select: {
+              id: true,
+              voucherNumber: true,
+              voucherType: true,
+              voucherDate: true,
+              narration: true,
+            },
+          },
+        },
+        orderBy: { voucher: { voucherDate: "desc" } },
+        take: 250,
+      });
+
+      const entryIds = entries.map((e) => e.id);
+      const logs = entryIds.length
+        ? await tx.auditLog.findMany({
+            where: {
+              companyId: tenant.companyId,
+              entityName: "BankReconciliation",
+              entityId: { in: entryIds },
+            },
+            orderBy: { createdAt: "desc" },
+          })
+        : [];
+
+      const clearanceMap = new Map<string, { cleared: boolean; clearanceDate: string | null }>();
+      for (const log of logs) {
+        if (!clearanceMap.has(log.entityId)) {
+          const state: any = log.newState || {};
+          clearanceMap.set(log.entityId, {
+            cleared: Boolean(state.cleared),
+            clearanceDate: state.clearanceDate || null,
+          });
+        }
+      }
+
+      const mapped = entries.map((e) => {
+        const brs = clearanceMap.get(e.id);
+        const net = Number(e.debitAmount || 0) - Number(e.creditAmount || 0);
+        return {
+          id: e.id,
+          voucherId: e.voucherId,
+          voucherNumber: e.voucher.voucherNumber,
+          voucherType: e.voucher.voucherType,
+          voucherDate: e.voucher.voucherDate,
+          narration: e.voucher.narration || "",
+          debitAmount: Number(e.debitAmount || 0),
+          creditAmount: Number(e.creditAmount || 0),
+          netAmount: net,
+          cleared: brs?.cleared ?? false,
+          clearanceDate: brs?.clearanceDate ?? null,
+        };
+      });
+
+      const bookBalance = Number(account.currentBalance || 0);
+      const unreconciledAmount = mapped
+        .filter((m) => !m.cleared)
+        .reduce((sum, m) => sum + m.netAmount, 0);
+      const reconciledBalance = bookBalance - unreconciledAmount;
+
+      return {
+        account: {
+          id: account.id,
+          name: account.name,
+          bookBalance,
+        },
+        entries: mapped,
+        summary: {
+          bookBalance,
+          reconciledBalance,
+          unreconciledAmount,
+        },
+      };
+    });
+  }
+
+  @Post(":id/reconciliation")
+  @HttpCode(HttpStatus.OK)
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+  )
+  async markBankReconciliation(
+    @Param("id") id: string,
+    @Body() body: { entryId: string; cleared: boolean; clearanceDate?: string },
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      await tx.auditLog.create({
+        data: {
+          organizationId: tenant.organizationId,
+          companyId: tenant.companyId,
+          userId: tenant.userId || "00000000-0000-0000-0000-000000000000",
+          action: body.cleared ? "BRS_CLEAR" : "BRS_UNCLEAR",
+          entityName: "BankReconciliation",
+          entityId: body.entryId,
+          recordHash: `BRS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          newState: {
+            bankLedgerId: id,
+            cleared: Boolean(body.cleared),
+            clearanceDate: body.cleared ? body.clearanceDate || new Date().toISOString().split("T")[0] : null,
+          },
+        },
+      });
+      return { success: true };
+    });
+  }
+
   @Get(":id")
   async getBankAccount(
     @Param("id") id: string,

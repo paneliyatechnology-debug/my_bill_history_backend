@@ -20,7 +20,8 @@ export interface CreatePurchaseInvoiceDto {
   paymentDate?: string;
   paymentReference?: string;
   freightAmount?: number | string;
-  additionalCharges?: number | string | Array<{ name?: string; amount: number | string }>;
+  freightTaxRate?: number | string;
+  additionalCharges?: number | string | Array<{ name?: string; amount: number | string; taxRate?: number | string }>;
   shippingAddress?: any;
   vehicleNumber?: string;
   transportMode?: string;

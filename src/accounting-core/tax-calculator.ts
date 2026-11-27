@@ -58,6 +58,7 @@ export interface CalculatedInvoiceItem {
 export interface InvoiceAdditionalChargeInput {
   name?: string;
   amount: DecimalLike;
+  taxRate?: DecimalLike;
 }
 
 export interface InvoiceTaxCalculationOptions {
@@ -281,25 +282,41 @@ export function calculateSalesInvoiceTaxes(
     }
   }
 
-  // Additional charges
+  // Additional charges (with optional GST per charge)
   let chargesTotal = new Decimal(0);
+  let chargesTaxTotal = new Decimal(0);
   if (options?.additionalCharges && options.additionalCharges.length > 0) {
     for (const ch of options.additionalCharges) {
-      chargesTotal = chargesTotal.plus(toMoney(ch.amount ?? 0));
+      const amt = toMoney(ch.amount ?? 0);
+      chargesTotal = chargesTotal.plus(amt);
+      const chRate = toDecimal(ch.taxRate ?? 0);
+      if (amt.greaterThan(0) && chRate.greaterThan(0)) {
+        const chTax = toMoney(amt.times(chRate).dividedBy(100));
+        if (isIntraState) {
+          const half = toMoney(chTax.dividedBy(2));
+          const otherHalf = toMoney(chTax.minus(half));
+          invoiceCgstAmount = invoiceCgstAmount.plus(half);
+          invoiceSgstAmount = invoiceSgstAmount.plus(otherHalf);
+        } else {
+          invoiceIgstAmount = invoiceIgstAmount.plus(chTax);
+        }
+        chargesTaxTotal = chargesTaxTotal.plus(chTax);
+      }
     }
   }
+  const taxesTotalWithCharges = taxesTotal.plus(chargesTaxTotal);
 
   // Raw grand total
   let rawGrandTotal: Decimal;
   if (discountType === "BEFORE_TAX") {
     rawGrandTotal = Decimal.max(
       0,
-      invoiceTaxableAmount.plus(taxesTotal).plus(chargesTotal),
+      invoiceTaxableAmount.plus(taxesTotalWithCharges).plus(chargesTotal),
     );
   } else {
     rawGrandTotal = Decimal.max(
       0,
-      invoiceTaxableAmount.plus(taxesTotal).minus(billDiscount).plus(chargesTotal),
+      invoiceTaxableAmount.plus(taxesTotalWithCharges).minus(billDiscount).plus(chargesTotal),
     );
   }
 

@@ -503,4 +503,38 @@ export class LedgersService {
   async deactivateAccount(id: string, tenant: TenantContext): Promise<any> {
     return await this.updateAccount(id, { isActive: false }, tenant);
   }
+
+  async bulkUpdateOpeningBalances(
+    items: Array<{ id: string; openingBalance: number; openingType: "DR" | "CR" }>,
+    tenant: TenantContext,
+  ): Promise<{ updated: number }> {
+    return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      let updated = 0;
+      for (const row of items) {
+        if (!row.id) continue;
+        const acc = await tx.ledgerAccount.findFirst({
+          where: { id: row.id, companyId: tenant.companyId },
+        });
+        if (!acc) continue;
+        const oldSigned =
+          Number(acc.openingBalance || 0) * (acc.openingType === "CR" ? -1 : 1);
+        const newBal = Math.max(0, Number(row.openingBalance) || 0);
+        const newType = row.openingType === "CR" ? "CR" : "DR";
+        const newSigned = newBal * (newType === "CR" ? -1 : 1);
+        const delta = newSigned - oldSigned;
+        const nextCurrent = Number(acc.currentBalance || 0) + delta;
+
+        await tx.ledgerAccount.update({
+          where: { id: acc.id },
+          data: {
+            openingBalance: newBal,
+            openingType: newType,
+            currentBalance: nextCurrent,
+          },
+        });
+        updated++;
+      }
+      return { updated };
+    });
+  }
 }

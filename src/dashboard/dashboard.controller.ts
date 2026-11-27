@@ -95,6 +95,14 @@ export class DashboardController {
     return await this.dashboardService.getAllTransactions(tenant, query);
   }
 
+  @Get("audit-alerts")
+  async getAuditAlerts(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("limit") limit?: number,
+  ) {
+    return await this.dashboardService.getAuditAlerts(tenant, limit);
+  }
+
   @Get(["transactions/:id", "all-transactions/:id", "transaction/:id"])
   async getTransactionById(
     @CurrentTenant() tenant: TenantContext,

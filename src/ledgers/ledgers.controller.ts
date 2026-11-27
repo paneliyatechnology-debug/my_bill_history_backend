@@ -75,6 +75,20 @@ export class LedgersController {
     return await this.ledgersService.getAccountById(id, tenant);
   }
 
+  @Patch(["ledgers/opening-balances/bulk", "accounting/opening-balances/bulk"])
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ACCOUNTANT,
+  )
+  async bulkUpdateOpeningBalances(
+    @Body() body: { items: Array<{ id: string; openingBalance: number; openingType: "DR" | "CR" }> },
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.ledgersService.bulkUpdateOpeningBalances(body.items || [], tenant);
+  }
+
   @Patch(["ledgers/:id", "accounts/:id", "accounting/ledgers/:id"])
   @Roles(
     UserRole.SUPER_ADMIN,

@@ -387,5 +387,48 @@ export class ReportsController {
   ) {
     return await this.reportsService.getHsnWiseSalesReport(query, tenant);
   }
+
+  // 29. Invoice-wise Profit & Loss
+  @Get("invoice-pnl")
+  async getInvoicePnl(
+    @Query() query: { fromDate?: string; toDate?: string; startDate?: string; endDate?: string },
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.reportsService.getInvoiceProfitAndLoss(query, tenant);
+  }
+
+  // 30. Sales by Salesperson
+  @Get("salesperson-summary")
+  async getSalespersonSummary(
+    @Query() query: { fromDate?: string; toDate?: string; startDate?: string; endDate?: string },
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.reportsService.getSalespersonSummary(query, tenant);
+  }
+
+  // 31. TDS & TCS Summary
+  @Get("tds-tcs-summary")
+  async getTdsTcsSummary(
+    @Query() query: { fromDate?: string; toDate?: string; startDate?: string; endDate?: string },
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return await this.reportsService.getTdsTcsSummary(query, tenant);
+  }
+
+  // 32. TallyPrime XML Export (Masters & Vouchers)
+  @Get("tally-xml")
+  async exportTallyXml(
+    @Query() query: { fromDate?: string; toDate?: string },
+    @CurrentTenant() tenant: TenantContext,
+    @Res() res: FastifyReply,
+  ) {
+    const xml = await this.reportsService.exportTallyXml(query, tenant);
+    res.header("Content-Type", "application/xml; charset=utf-8");
+    res.header(
+      "Content-Disposition",
+      'attachment; filename="tally-export.xml"',
+    );
+    return res.send(xml);
+  }
 }
 

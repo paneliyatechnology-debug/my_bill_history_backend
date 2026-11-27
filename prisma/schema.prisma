@@ -251,6 +251,7 @@ model CompanyInvoicePrintSettings {
   themeId                   String   @default("advanced_gst_tally") @map("theme_id") @db.VarChar(40)
   accentColor               String   @default("#111111") @map("accent_color") @db.VarChar(16)
   paperSize                 String   @default("A4") @map("paper_size") @db.VarChar(20)
+  orientation               String   @default("portrait") @map("orientation") @db.VarChar(20)
   printCopies               Json     @default("[\"ORIGINAL_FOR_RECIPIENT\"]") @map("print_copies")
   logoUrl                   String?  @map("logo_url") @db.Text
   watermarkUrl              String?  @map("watermark_url") @db.Text
@@ -849,6 +850,9 @@ model Item {
   trackBatches     Boolean         @default(false) @map("track_batches")
   trackSerialNo    Boolean         @default(false) @map("track_serial_no")
   valuationMethod  ValuationMethod @default(FIFO) @map("valuation_method")
+  imageUrl         String?         @map("image_url") @db.Text
+  tags             String[]        @default([])
+  customFields     Json?           @map("custom_fields")
   isActive         Boolean         @default(true) @map("is_active")
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")
@@ -975,6 +979,7 @@ enum InvoiceCategory {
   EXPORT_INVOICE // With or without payment of tax
   PROFORMA_INVOICE // Proforma Invoice (PI)
   QUOTATION // Quotation / Estimate (QTN / EST)
+  SALES_ORDER // Sales Order (SO)
   DELIVERY_CHALLAN // Section 55 delivery challan
 }
 

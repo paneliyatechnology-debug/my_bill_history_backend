@@ -59,10 +59,9 @@ export class GeminiOcrProvider implements IOcrProvider {
     const candidateModels = [
       configuredModel,
       "gemini-2.5-flash",
-      "gemini-3.8-flash",
-      "gemini-3.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-2.0-flash",
       "gemini-flash-latest",
-      "gemini-3-flash-preview",
     ].filter((m, idx, arr): m is string => Boolean(m && m.length > 0) && arr.indexOf(m) === idx);
 
     const base64Data = fileBuffer.toString("base64");
@@ -257,10 +256,13 @@ Respond with ONLY a raw JSON object (no markdown code blocks, no backticks, no e
             const isQuotaOrUnavailable =
               status === 429 ||
               status === 404 ||
+              status === 502 ||
               status === 503 ||
+              status === 504 ||
               errMsg.includes("resource_exhausted") ||
               errMsg.includes("quota") ||
-              errMsg.includes("not found");
+              errMsg.includes("not found") ||
+              errMsg.includes("timed out");
 
             if (isQuotaOrUnavailable) {
               this.logger.warn(`Model '${model}' unavailable (status: ${status || "unknown"}, ${err?.message}). Failing over to next model...`);
@@ -269,7 +271,8 @@ Respond with ONLY a raw JSON object (no markdown code blocks, no backticks, no e
 
             const isRetryable =
               status === 500 ||
-              /econnreset|network|econnrefused/i.test(errMsg);
+              status === 408 ||
+              /econnreset|network|econnrefused|bad gateway|gateway/i.test(errMsg);
 
             if (!isRetryable || attempt === this.maxRetries) {
               this.logger.warn(`Model '${model}' failed on attempt ${attempt + 1}: ${err?.message || err}`);

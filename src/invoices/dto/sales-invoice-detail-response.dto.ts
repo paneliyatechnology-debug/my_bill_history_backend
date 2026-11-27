@@ -69,6 +69,12 @@ export interface SalesInvoiceDetailResponseDto {
   shippingAddress: any;
   party: PartyDetailRefDto | null;
   items: SalesInvoiceDetailItemDto[];
+  returns?: Array<{
+    id: string;
+    returnNumber: string;
+    returnDate: string | Date;
+    items: Array<{ id: string; salesItemId: string | null; quantity: number }>;
+  }>;
   convertedInvoice: DocumentRefSummaryDto | null;
   convertedInvoiceId: string | null;
   sourceQuotation: DocumentRefSummaryDto | null;
@@ -99,6 +105,7 @@ export function mapSalesInvoiceDetail(
     finalFreight: number;
     sourceQuotation: any;
     voucher: any;
+    returns?: any[];
     printUrl: string;
     pdfUrl: string;
   },
@@ -181,6 +188,16 @@ export function mapSalesInvoiceDetail(
     shippingAddress: invoice.shippingAddress ?? null,
     party: serializePartyDetailRef(invoice.party),
     items: mappedItems,
+    returns: (extras.returns || []).map((r: any) => ({
+      id: r.id,
+      returnNumber: r.returnNumber,
+      returnDate: r.returnDate,
+      items: (r.items || []).map((ri: any) => ({
+        id: ri.id,
+        salesItemId: ri.salesItemId ?? null,
+        quantity: toNumber(ri.quantity),
+      })),
+    })),
     convertedInvoice: serializeDocumentRef(invoice.convertedInvoice),
     convertedInvoiceId: invoice.convertedInvoice?.id ?? invoice.convertedInvoiceId ?? null,
     sourceQuotation: serializeDocumentRef(extras.sourceQuotation),

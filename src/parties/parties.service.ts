@@ -323,6 +323,7 @@ export class PartiesService {
                 notIn: [
                   InvoiceCategory.PROFORMA_INVOICE,
                   InvoiceCategory.QUOTATION,
+                  InvoiceCategory.SALES_ORDER,
                 ],
               },
             },
@@ -535,6 +536,7 @@ export class PartiesService {
                 notIn: [
                   InvoiceCategory.PROFORMA_INVOICE,
                   InvoiceCategory.QUOTATION,
+                  InvoiceCategory.SALES_ORDER,
                 ],
               },
             },

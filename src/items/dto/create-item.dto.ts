@@ -33,4 +33,7 @@ export interface CreateItemDto {
   trackBatches?: boolean;
   trackSerialNo?: boolean;
   valuationMethod?: ValuationMethod;
+  imageUrl?: string;
+  tags?: string[];
+  customFields?: Record<string, any>;
 }

@@ -65,7 +65,7 @@ export class DashboardService {
       const salesWhere: any = {
         companyId: tenant.companyId,
         balanceAmount: { gt: 0 },
-        category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] as any },
+        category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION, InvoiceCategory.SALES_ORDER] as any },
         status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT, InvoiceStatus.PAID, InvoiceStatus.CONVERTED] },
         dueDate: { not: null, lte: horizonDate },
       };
@@ -247,7 +247,7 @@ export class DashboardService {
       const invoices = await tx.salesInvoice.findMany({
         where: {
           companyId: tenant.companyId,
-          category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] as any },
+          category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION, InvoiceCategory.SALES_ORDER] as any },
           status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT, InvoiceStatus.CONVERTED] },
           invoiceDate: { gte: startDate, lte: endDate },
           ...(fyRecord
@@ -510,7 +510,7 @@ export class DashboardService {
       // 1. Sales Invoices
       const salesWhere: any = {
         companyId: tenant.companyId,
-        category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION] as any },
+        category: { notIn: [InvoiceCategory.PROFORMA_INVOICE, InvoiceCategory.QUOTATION, InvoiceCategory.SALES_ORDER] as any },
         status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.DRAFT, InvoiceStatus.CONVERTED] },
       };
       if (hasDateFilter) salesWhere.invoiceDate = dateFilter;
@@ -2131,6 +2131,47 @@ export class DashboardService {
         purchaseInvoices: formattedPurchaseInvoices,
         items: formattedItems,
         vouchers: formattedVouchers,
+      };
+    });
+  }
+
+  async getAuditAlerts(tenant: TenantContext, limit = 15) {
+    return this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const logs = await tx.auditLog.findMany({
+        where: {
+          companyId: tenant.companyId,
+          entityName: { in: ["SalesInvoice", "PurchaseInvoice", "Voucher", "SalesReturn", "PurchaseReturn"] },
+          action: { in: ["DELETE", "CANCEL", "UPDATE", "VOID"] },
+        },
+        include: {
+          user: { select: { fullName: true, email: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: Math.min(Number(limit) || 15, 50),
+      });
+
+      const alerts = logs.map((l) => {
+        const prev: any = l.previousState || {};
+        const next: any = l.newState || {};
+        const docNumber = next.invoiceNumber || prev.invoiceNumber || next.vendorInvoiceNumber || prev.vendorInvoiceNumber || next.voucherNumber || prev.voucherNumber || l.entityId.slice(0, 8);
+        const amount = Number(next.grandTotal ?? prev.grandTotal ?? next.totalAmount ?? prev.totalAmount ?? 0);
+        return {
+          id: l.id,
+          action: l.action,
+          entityName: l.entityName,
+          entityId: l.entityId,
+          docNumber,
+          amount,
+          userName: l.user?.fullName || l.user?.email || "System",
+          createdAt: l.createdAt,
+          severity: l.action === "DELETE" || l.action === "CANCEL" || l.action === "VOID" ? "HIGH" : "MEDIUM",
+        };
+      });
+
+      return {
+        totalAlerts: alerts.length,
+        highRiskCount: alerts.filter((a) => a.severity === "HIGH").length,
+        alerts,
       };
     });
   }

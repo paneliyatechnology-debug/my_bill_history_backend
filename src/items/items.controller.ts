@@ -52,6 +52,22 @@ export class ItemsController {
   }
 
   @RequirePermissions({ module: "items", action: "view" })
+  @Get("stock-journal")
+  async listStockJournals(@CurrentTenant() ctx: TenantContext) {
+    return this.itemsService.listStockJournals(ctx);
+  }
+
+  @RequirePermissions({ module: "items", action: "adjust_stock" })
+  @Post("stock-journal")
+  @HttpCode(HttpStatus.CREATED)
+  async createStockJournal(
+    @CurrentTenant() ctx: TenantContext,
+    @Body() body: any,
+  ) {
+    return this.itemsService.createStockJournal(ctx, body);
+  }
+
+  @RequirePermissions({ module: "items", action: "view" })
   @Get(":id/stock-details")
   async getStockDetails(
     @CurrentTenant() ctx: TenantContext,

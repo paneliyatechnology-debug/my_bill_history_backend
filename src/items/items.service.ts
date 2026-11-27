@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import {
   Injectable,
   ConflictException,
@@ -272,6 +273,9 @@ export class ItemsService {
           trackBatches,
           trackSerialNo,
           valuationMethod,
+          imageUrl: dto.imageUrl?.trim() || null,
+          tags: Array.isArray(dto.tags) ? dto.tags.map((t) => String(t).trim()).filter(Boolean) : [],
+          customFields: dto.customFields ?? undefined,
           isActive: true,
         },
         include: {
@@ -816,7 +820,9 @@ export class ItemsService {
         });
 
         const valRate = Number(dto.purchaseRate ?? updated.purchaseRate ?? updated.retailPrice ?? 0);
-        const txDate = dto.openingStockDate ? new Date(dto.openingStockDate) : new Date();
+        const txDate = dto.openingStockDate
+          ? new Date(dto.openingStockDate)
+          : existingOpening?.transactionDate || updated.createdAt || new Date();
 
         if (openingQty > 0) {
           if (existingOpening) {
@@ -1312,7 +1318,21 @@ export class ItemsService {
           itemId: id,
           companyId: ctx.companyId,
         },
-        orderBy: { transactionDate: "asc" },
+        orderBy: [
+          { transactionDate: "asc" },
+          { createdAt: "asc" },
+        ],
+      });
+
+      // Ensure OPENING stock always precedes same-day movements
+      allTransactions.sort((a, b) => {
+        const da = new Date(a.transactionDate).getTime();
+        const db = new Date(b.transactionDate).getTime();
+        if (da !== db) return da - db;
+        const aOpen = a.transactionType === StockTransactionType.OPENING ? 0 : 1;
+        const bOpen = b.transactionType === StockTransactionType.OPENING ? 0 : 1;
+        if (aOpen !== bOpen) return aOpen - bOpen;
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
       });
 
       const allDocIds = Array.from(
@@ -1614,6 +1634,146 @@ export class ItemsService {
         },
         parties: Array.from(partyMap.values()),
       };
+    });
+  }
+
+  async listStockJournals(ctx: TenantContext) {
+    return this.prisma.executeInTenantContext(ctx, async (tx) => {
+      const txns = await tx.stockTransaction.findMany({
+        where: {
+          companyId: ctx.companyId,
+          referenceDocType: { startsWith: "STOCK_JOURNAL" },
+        },
+        include: {
+          item: { select: { id: true, name: true, sku: true, primaryUom: { select: { symbol: true, uqcCode: true } } } },
+          warehouse: { select: { id: true, name: true } },
+        },
+        orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
+        take: 200,
+      });
+
+      const grouped = new Map<string, any>();
+      for (const t of txns) {
+        const refId = t.referenceDocId || t.id;
+        const parsedNo = t.referenceDocType.startsWith("STOCK_JOURNAL:")
+          ? t.referenceDocType.slice("STOCK_JOURNAL:".length)
+          : `SJ-${refId.slice(0, 8).toUpperCase()}`;
+        if (!grouped.has(refId)) {
+          grouped.set(refId, {
+            id: refId,
+            journalNumber: parsedNo,
+            date: t.transactionDate,
+            warehouseName: t.warehouse?.name || "Main Warehouse",
+            sources: [],
+            destinations: [],
+          });
+        }
+        const entry = grouped.get(refId);
+        const qty = Number(t.quantity);
+        const row = {
+          id: t.id,
+          itemId: t.itemId,
+          itemName: t.item?.name || "Unknown Item",
+          uom: t.item?.primaryUom?.uqcCode || t.item?.primaryUom?.symbol || "PCS",
+          quantity: Math.abs(qty),
+          rate: Number(t.valuationRate || 0),
+          totalValuation: Number(t.totalValuation || 0),
+        };
+        if (qty < 0) {
+          entry.sources.push(row);
+        } else {
+          entry.destinations.push(row);
+        }
+      }
+
+      return { data: Array.from(grouped.values()) };
+    });
+  }
+
+  async createStockJournal(
+    ctx: TenantContext,
+    dto: {
+      journalNumber?: string;
+      date?: string;
+      warehouseId?: string;
+      sources: Array<{ itemId: string; quantity: number; rate?: number }>;
+      destinations: Array<{ itemId: string; quantity: number; rate?: number }>;
+    },
+  ) {
+    if ((!dto.sources || dto.sources.length === 0) && (!dto.destinations || dto.destinations.length === 0)) {
+      throw new BadRequestException("At least one source or destination item is required.");
+    }
+
+    return this.prisma.executeInTenantContext(ctx, async (tx) => {
+      let warehouse = dto.warehouseId
+        ? await tx.warehouse.findFirst({ where: { id: dto.warehouseId, companyId: ctx.companyId } })
+        : null;
+      if (!warehouse) {
+        warehouse = await tx.warehouse.findFirst({ where: { companyId: ctx.companyId } });
+      }
+      if (!warehouse) {
+        throw new BadRequestException("No warehouse found for this company.");
+      }
+
+      const journalNo = dto.journalNumber?.trim() || `SJ-${Date.now().toString(36).toUpperCase()}`;
+      const journalUuid = randomUUID();
+      const refDocType = `STOCK_JOURNAL:${journalNo}`.slice(0, 50);
+      const txnDate = dto.date ? new Date(dto.date) : new Date();
+      const created: any[] = [];
+
+      for (const s of dto.sources || []) {
+        const qty = Math.abs(Number(s.quantity) || 0);
+        if (!s.itemId || qty <= 0) continue;
+        const item = await tx.item.findFirst({ where: { id: s.itemId, companyId: ctx.companyId } });
+        if (!item) throw new BadRequestException(`Source item ${s.itemId} not found.`);
+        const rate = Number(s.rate ?? item.purchaseRate ?? 0);
+        const rec = await tx.stockTransaction.create({
+          data: {
+            organizationId: ctx.organizationId,
+            companyId: ctx.companyId,
+            warehouseId: warehouse.id,
+            itemId: item.id,
+            transactionType: StockTransactionType.STOCK_ADJUSTMENT_MINUS,
+            transactionDate: txnDate,
+            quantity: -qty,
+            valuationRate: rate,
+            totalValuation: qty * rate,
+            isProvisionalCost: false,
+            costVariance: 0,
+            referenceDocType: refDocType,
+            referenceDocId: journalUuid,
+          },
+        });
+        created.push(rec);
+      }
+
+      for (const d of dto.destinations || []) {
+        const qty = Math.abs(Number(d.quantity) || 0);
+        if (!d.itemId || qty <= 0) continue;
+        const item = await tx.item.findFirst({ where: { id: d.itemId, companyId: ctx.companyId } });
+        if (!item) throw new BadRequestException(`Destination item ${d.itemId} not found.`);
+        const rate = Number(d.rate ?? item.purchaseRate ?? 0);
+        const rec = await tx.stockTransaction.create({
+          data: {
+            organizationId: ctx.organizationId,
+            companyId: ctx.companyId,
+            warehouseId: warehouse.id,
+            itemId: item.id,
+            transactionType: StockTransactionType.STOCK_ADJUSTMENT_PLUS,
+            transactionDate: txnDate,
+            quantity: qty,
+            valuationRate: rate,
+            totalValuation: qty * rate,
+            isProvisionalCost: false,
+            costVariance: 0,
+            referenceDocType: refDocType,
+            referenceDocId: journalUuid,
+          },
+        });
+        created.push(rec);
+      }
+
+      return { id: journalUuid, journalNumber: journalNo, date: txnDate, count: created.length };
     });
   }
 }

@@ -1135,6 +1135,21 @@ export class VouchersService {
         );
       }
 
+      // Distribute any unallocated headerDiscount across allocated invoices
+      if (headerDiscount.greaterThan(totalRowDiscount) && invoiceUpdates.length > 0) {
+        let remainingDisc = headerDiscount.minus(totalRowDiscount);
+        for (const item of invoiceUpdates) {
+          if (remainingDisc.lessThanOrEqualTo(0)) break;
+          const invBalance = toMoney(item.invoice.balanceAmount);
+          const room = Decimal.max(0, invBalance.minus(item.settled).minus(item.discount));
+          if (room.greaterThan(0)) {
+            const addDisc = Decimal.min(remainingDisc, room);
+            item.discount = item.discount.plus(addDisc);
+            remainingDisc = remainingDisc.minus(addDisc);
+          }
+        }
+      }
+
       const totalDiscount = headerDiscount.greaterThan(totalRowDiscount)
         ? headerDiscount
         : totalRowDiscount;
@@ -1702,6 +1717,21 @@ export class VouchersService {
         throw new BadRequestException(
           `Sum of allocated invoice amounts (₹${totalSettled.toString()}) cannot exceed amount paid (₹${amountPaid.toString()}).`,
         );
+      }
+
+      // Distribute any unallocated headerDiscount across allocated invoices
+      if (headerDiscount.greaterThan(totalRowDiscount) && invoiceUpdates.length > 0) {
+        let remainingDisc = headerDiscount.minus(totalRowDiscount);
+        for (const item of invoiceUpdates) {
+          if (remainingDisc.lessThanOrEqualTo(0)) break;
+          const invBalance = toMoney(item.invoice.balanceAmount);
+          const room = Decimal.max(0, invBalance.minus(item.settled).minus(item.discount));
+          if (room.greaterThan(0)) {
+            const addDisc = Decimal.min(remainingDisc, room);
+            item.discount = item.discount.plus(addDisc);
+            remainingDisc = remainingDisc.minus(addDisc);
+          }
+        }
       }
 
       const totalDiscount = headerDiscount.greaterThan(totalRowDiscount)
@@ -2481,6 +2511,21 @@ export class VouchersService {
         throw new BadRequestException(
           `Sum of allocated invoice amounts (₹${totalSettled.toString()}) cannot exceed amount received (₹${amountReceived.toString()}).`,
         );
+      }
+
+      // Distribute any unallocated headerDiscount across allocated invoices
+      if (headerDiscount.greaterThan(totalRowDiscount) && invoiceUpdates.length > 0) {
+        let remainingDisc = headerDiscount.minus(totalRowDiscount);
+        for (const item of invoiceUpdates) {
+          if (remainingDisc.lessThanOrEqualTo(0)) break;
+          const invBalance = toMoney(item.invoice.balanceAmount);
+          const room = Decimal.max(0, invBalance.minus(item.settled).minus(item.discount));
+          if (room.greaterThan(0)) {
+            const addDisc = Decimal.min(remainingDisc, room);
+            item.discount = item.discount.plus(addDisc);
+            remainingDisc = remainingDisc.minus(addDisc);
+          }
+        }
       }
 
       const totalDiscount = headerDiscount.greaterThan(totalRowDiscount)
