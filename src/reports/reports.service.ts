@@ -2943,13 +2943,16 @@ export class ReportsService {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
       if (!query.itemId || query.itemId === "all" || query.itemId.trim() === "") {
         const fromDate = parseStartOfDay(query.fromDate) || new Date("2020-01-01T00:00:00.000Z");
-        const toDate = parseEndOfDay(query.toDate) || new Date();
+        const toDate = query.toDate ? parseEndOfDay(query.toDate) : undefined;
 
         const periodTx = await tx.stockTransaction.findMany({
           where: {
             companyId: tenant.companyId,
             ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
-            transactionDate: { gte: fromDate, lte: toDate },
+            transactionDate: {
+              gte: fromDate,
+              ...(toDate ? { lte: toDate } : {}),
+            },
           },
           include: {
             item: {
@@ -2958,7 +2961,7 @@ export class ReportsService {
             warehouse: { select: { name: true } },
           },
           orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
-          take: 100,
+          take: 250,
         });
 
         let totalInward = new Decimal(0);
@@ -2978,10 +2981,14 @@ export class ReportsService {
           transactions: periodTx.map((t) => ({
             id: t.id,
             date: t.transactionDate,
+            transactionType: t.transactionType,
             docType: t.referenceDocType,
             docId: t.referenceDocId,
             warehouse: t.warehouse?.name || "Main Godown",
+            itemId: t.item?.id,
             item: t.item?.name || "Item",
+            sku: t.item?.sku || "",
+            uom: t.item?.primaryUom?.symbol || "",
             quantity: Number(t.quantity),
             rate: Number(t.valuationRate),
             valuation: Number(t.totalValuation),
