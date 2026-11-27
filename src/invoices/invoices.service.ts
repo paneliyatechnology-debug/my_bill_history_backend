@@ -6534,7 +6534,7 @@ export class InvoicesService {
       const cat = category || InvoiceCategory.TAX_INVOICE;
       const fy = await tx.financialYear.findFirst({
         where: { companyId: tenant.companyId, isLocked: false },
-        orderBy: { startDate: "desc" },
+        orderBy: [{ isCurrent: "desc" }, { startDate: "desc" }],
       });
       const fyStart = fy ? new Date(fy.startDate) : new Date();
       const fyEnd = fy ? new Date(fy.endDate) : new Date();
@@ -6561,7 +6561,26 @@ export class InvoicesService {
             },
           })
         : null;
-      let nextNum = seq ? seq.currentNumber + 1 : 1;
+
+      // Also check highest existing invoice number with this prefix so deleted gaps (e.g. 0001..0003) never reset to 0001
+      const existingWithPrefix = await tx.salesInvoice.findMany({
+        where: {
+          companyId: tenant.companyId,
+          ...(fy ? { financialYearId: fy.id } : {}),
+          invoiceNumber: { startsWith: prefix },
+        },
+        select: { invoiceNumber: true },
+      });
+      let maxExistingNum = 0;
+      for (const row of existingWithPrefix) {
+        const suffix = row.invoiceNumber.slice(prefix.length);
+        if (/^\d+$/.test(suffix)) {
+          const parsed = parseInt(suffix, 10);
+          if (parsed > maxExistingNum) maxExistingNum = parsed;
+        }
+      }
+
+      let nextNum = Math.max(seq?.currentNumber || 0, maxExistingNum) + 1;
       let candidate = `${prefix}${String(nextNum).padStart(seq?.padding || 4, "0")}`;
       if (fy) {
         while (
