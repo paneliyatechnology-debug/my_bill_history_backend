@@ -1233,7 +1233,7 @@ export class InvoicesService {
             itemId: st.itemId,
             batchId: st.batchId,
             transactionType: StockTransactionType.SALES_CANCELLATION as any,
-            transactionDate: new Date(),
+            transactionDate: st.transactionDate || invoice.invoiceDate,
             quantity: Math.abs(Number(st.quantity)), // Positive quantity restoring stock
             valuationRate: st.valuationRate,
             totalValuation: st.totalValuation,

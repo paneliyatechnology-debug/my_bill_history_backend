@@ -2310,40 +2310,77 @@ export class ReportsService {
 
       // Calculate Physical Closing Stock Valuation & SME Trading Account metrics
       const stockSummary = await this.getStockSummary(
-        { asOfDate: query.toDate },
+        { asOfDate: query.toDate || query.asOfDate },
         tenant,
       );
       const closingStockValuation = toMoney(
         stockSummary.totals.grandStockValuation,
       );
 
-      // Opening Stock Valuation:
-      // Includes stock transactions with transactionType = OPENING or referenceDocType IN ['OPENING_STOCK', 'OPENING_BALANCE'],
-      // or prior to fromDate
+      // Opening Stock Valuation (per-item moving-average valuation clamped at 0 if <= 0, matching getStockSummary):
+      // - When fromDate is given: all movements strictly before fromDate + OPENING entries within [fromDate, toDate]
+      // - When fromDate is omitted: OPENING entries up to toDate
+      const openingWhere: any = {
+        companyId: tenant.companyId,
+      };
+      if (fromDate) {
+        openingWhere.OR = [
+          { transactionDate: { lt: fromDate } },
+          {
+            transactionType: StockTransactionType.OPENING,
+            transactionDate: {
+              gte: fromDate,
+              ...(toDate ? { lte: toDate } : {}),
+            },
+          },
+          {
+            referenceDocType: { in: ["OPENING_STOCK", "OPENING_BALANCE"] },
+            transactionDate: {
+              gte: fromDate,
+              ...(toDate ? { lte: toDate } : {}),
+            },
+          },
+        ];
+      } else {
+        openingWhere.OR = [
+          { transactionType: StockTransactionType.OPENING },
+          { referenceDocType: { in: ["OPENING_STOCK", "OPENING_BALANCE"] } },
+        ];
+        if (toDate) {
+          openingWhere.transactionDate = { lte: toDate };
+        }
+      }
+
       const openingTx = await tx.stockTransaction.findMany({
-        where: {
-          companyId: tenant.companyId,
-          OR: [
-            { transactionType: StockTransactionType.OPENING },
-            { referenceDocType: { in: ["OPENING_STOCK", "OPENING_BALANCE"] } },
-            ...(fromDate ? [{ transactionDate: { lt: fromDate } }] : []),
-          ],
-        },
+        where: openingWhere,
         select: {
+          itemId: true,
           quantity: true,
           totalValuation: true,
         },
       });
 
-      let openingStockValuation = new Decimal(0);
+      const openingByItem = new Map<string, { qty: Decimal; val: Decimal }>();
       for (const st of openingTx) {
-        const val = toMoney(st.totalValuation).abs();
-        openingStockValuation = openingStockValuation.plus(
-          toDecimal(st.quantity).isNegative() ? val.negated() : val,
-        );
+        const entry = openingByItem.get(st.itemId) || {
+          qty: new Decimal(0),
+          val: new Decimal(0),
+        };
+        const q = toDecimal(st.quantity);
+        const v = toMoney(st.totalValuation).abs();
+        entry.qty = entry.qty.plus(q);
+        entry.val = entry.val.plus(q.isNegative() ? v.negated() : v);
+        openingByItem.set(st.itemId, entry);
       }
 
-      // Check for negative inventory warning
+      let openingStockValuation = new Decimal(0);
+      for (const entry of openingByItem.values()) {
+        if (entry.qty.gt(0) && entry.val.gt(0)) {
+          openingStockValuation = openingStockValuation.plus(entry.val);
+        }
+      }
+
+      // Check for negative inventory or provisional cost dispatches in the period
       let negativeStockUnits = new Decimal(0);
       let hasNegativeInventoryWarning = false;
       if (stockSummary.items && Array.isArray(stockSummary.items)) {
@@ -2358,18 +2395,78 @@ export class ReportsService {
         }
       }
 
-      // Periodic SME Cost of Goods Sold = Opening Stock + Direct Expenses (Purchases) - Closing Stock
-      const cogs = Decimal.max(
-        0,
-        openingStockValuation.plus(directExpenses).minus(closingStockValuation),
+      const periodDateFilter =
+        fromDate || toDate
+          ? {
+              transactionDate: {
+                ...(fromDate ? { gte: fromDate } : {}),
+                ...(toDate ? { lte: toDate } : {}),
+              },
+            }
+          : {};
+
+      const [provisionalCount, dispatchAgg, returnAgg] = await Promise.all([
+        tx.stockTransaction.count({
+          where: {
+            companyId: tenant.companyId,
+            isProvisionalCost: true,
+            ...periodDateFilter,
+          },
+        }),
+        tx.stockTransaction.aggregate({
+          where: {
+            companyId: tenant.companyId,
+            transactionType: StockTransactionType.SALES_DISPATCH as any,
+            ...periodDateFilter,
+          },
+          _sum: { totalValuation: true },
+        }),
+        tx.stockTransaction.aggregate({
+          where: {
+            companyId: tenant.companyId,
+            transactionType: StockTransactionType.SALES_RETURN as any,
+            ...periodDateFilter,
+          },
+          _sum: { totalValuation: true },
+        }),
+      ]);
+
+      const hasProvisionalCost = provisionalCount > 0;
+      const subledgerCogs = toMoney(dispatchAgg._sum.totalValuation || 0).minus(
+        toMoney(returnAgg._sum.totalValuation || 0),
       );
+
+      // Periodic Trading COGS = Opening Stock + Net Purchases & Direct Expenses - Closing Stock
+      const rawCogs = openingStockValuation
+        .plus(directExpenses)
+        .minus(closingStockValuation);
+      const hasNegativeCogsAnomaly = rawCogs.isNegative();
+      const cogs = Decimal.max(0, rawCogs);
+
       const tradingGrossProfit = directIncome.minus(cogs);
+      const grossMarginPct = directIncome.gt(0)
+        ? tradingGrossProfit.div(directIncome).mul(100)
+        : new Decimal(0);
       const tradingNetProfit = tradingGrossProfit
         .plus(indirectIncome)
         .minus(indirectExpenses);
 
+      const requiresReconciliation =
+        hasNegativeInventoryWarning || hasProvisionalCost || hasNegativeCogsAnomaly;
+      const valuationStatus = requiresReconciliation
+        ? "REQUIRES_RECONCILIATION"
+        : "VERIFIED";
+
       return {
-        summary: pnl,
+        summary: {
+          ...pnl,
+          grossProfit: tradingGrossProfit.toFixed(2),
+          isGrossLoss: tradingGrossProfit.isNegative(),
+          grossMarginPct: grossMarginPct.toFixed(2),
+          netProfit: tradingNetProfit.toFixed(2),
+          isNetLoss: tradingNetProfit.isNegative(),
+          rawLedgerGrossProfit: pnl.grossProfit,
+        },
         directIncome: {
           total: pnl.directIncome,
           accounts: incomeDetails.filter((i) => i.isDirect),
@@ -2378,8 +2475,9 @@ export class ReportsService {
           total: pnl.directExpenses,
           accounts: expenseDetails.filter((e) => e.isDirect),
         },
-        grossProfit: pnl.grossProfit,
-        isGrossLoss: pnl.isGrossLoss,
+        grossProfit: tradingGrossProfit.toFixed(2),
+        isGrossLoss: tradingGrossProfit.isNegative(),
+        grossMarginPct: grossMarginPct.toFixed(2),
         indirectIncome: {
           total: pnl.indirectIncome,
           accounts: incomeDetails.filter((i) => !i.isDirect),
@@ -2388,19 +2486,27 @@ export class ReportsService {
           total: pnl.indirectExpenses,
           accounts: expenseDetails.filter((e) => !e.isDirect),
         },
-        netProfit: pnl.netProfit,
-        isNetLoss: pnl.isNetLoss,
+        netProfit: tradingNetProfit.toFixed(2),
+        isNetLoss: tradingNetProfit.isNegative(),
         costOfGoodsSold: cogs.toFixed(2),
+        openingStockValuation: openingStockValuation.toFixed(2),
         closingStockValuation: closingStockValuation.toFixed(2),
+        valuationStatus,
+        requiresReconciliation,
         tradingAccount: {
           openingStockValuation: openingStockValuation.toFixed(2),
           closingStockValuation: closingStockValuation.toFixed(2),
           costOfGoodsSold: cogs.toFixed(2),
+          subledgerCogs: subledgerCogs.toFixed(2),
           tradingGrossProfit: tradingGrossProfit.toFixed(2),
+          grossMarginPct: grossMarginPct.toFixed(2),
           tradingNetProfit: tradingNetProfit.toFixed(2),
           hasNegativeInventoryWarning,
+          hasProvisionalCost,
+          requiresReconciliation,
+          valuationStatus,
           negativeInventoryQuantity: negativeStockUnits.toFixed(4),
-          isProvisional: hasNegativeInventoryWarning,
+          isProvisional: requiresReconciliation,
         },
       };
     });
@@ -2414,9 +2520,13 @@ export class ReportsService {
     tenant: TenantContext,
   ): Promise<any> {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
-      // 1. Get Net Profit/Loss from P&L
-      const pnl = await this.getProfitAndLoss(query, tenant);
+      // 1. Get Net Profit/Loss & Closing Stock from P&L (Single Source of Truth)
+      const pnl = await this.getProfitAndLoss(
+        { ...query, toDate: query.toDate || query.asOfDate },
+        tenant,
+      );
       const netProfitOrLoss = pnl.summary.netProfit;
+      const closingStockValuation = toMoney(pnl.closingStockValuation || 0);
 
       const asOfDate = parseEndOfDay(query.asOfDate);
 
@@ -2507,6 +2617,28 @@ export class ReportsService {
         }
       }
 
+      // Periodic Inventory Balance Sheet alignment:
+      // If no Stock-in-Hand / Inventory GL asset account already carries a balance,
+      // include physical Closing Stock Valuation as a Current Asset so Balance Sheet matches P&L Trading Account.
+      const hasGlInventoryBalance = assetAccounts.some((a) => {
+        const g = (a.groupName || "").toLowerCase();
+        const n = (a.name || "").toLowerCase();
+        return (
+          (g.includes("stock") || n.includes("stock-in-hand") || n.includes("inventory")) &&
+          !toMoney(a.amount).isZero()
+        );
+      });
+
+      if (!hasGlInventoryBalance && closingStockValuation.gt(0)) {
+        totalAssets = totalAssets.plus(closingStockValuation);
+        assetAccounts.push({
+          id: "closing-stock-in-hand",
+          name: "Closing Stock (Stock-in-Hand)",
+          groupName: "Current Assets",
+          amount: closingStockValuation.toFixed(2),
+        });
+      }
+
       const bs = calculateBalanceSheetTotals({
         totalAssets,
         totalLiabilities,
@@ -2518,6 +2650,7 @@ export class ReportsService {
         asOfDate: query.asOfDate || new Date().toISOString().split("T")[0],
         isBalanced: bs.isBalanced,
         difference: bs.difference,
+        closingStockValuation: closingStockValuation.toFixed(2),
         assets: {
           total: bs.totalAssets,
           accounts: assetAccounts,
