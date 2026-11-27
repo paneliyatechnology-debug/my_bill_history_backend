@@ -2,13 +2,14 @@ import { Injectable, Logger, ServiceUnavailableException } from "@nestjs/common"
 import { ConfigService } from "@nestjs/config";
 import * as nodemailer from "nodemailer";
 import { safeSubject } from "./email.util";
-import { EmailDetail, renderBrandedEmail, structurePlainText } from "./email-template";
+import { EmailCategory, EmailDetail, renderBrandedEmail, structurePlainText } from "./email-template";
 
 export interface OutboundEmail {
   to: string | string[];
   cc?: string | string[];
   subject: string;
   text: string;
+  category?: EmailCategory;
   heading?: string;
   intro?: string;
   details?: EmailDetail[];
@@ -49,6 +50,7 @@ export class MailService {
     const structured = structurePlainText(text);
     const rendered = renderBrandedEmail({
       appName: this.appName(),
+      category: message.category,
       heading: message.heading || subject,
       preheader: message.intro || structured.paragraphs[0] || subject,
       intro: message.intro,
@@ -154,6 +156,7 @@ export class MailService {
 
     const rendered = renderBrandedEmail({
       appName,
+      category: "otp",
       heading: "Verification Code",
       preheader: `Your ${appName} verification code is ${code}. It expires in 10 minutes.`,
       intro: purpose.en,

@@ -11,11 +11,14 @@ import { Throttle } from "@nestjs/throttler";
 import { MailService } from "./mail.service";
 import { isDeliverableEmail, normalizeEmail } from "./email.util";
 
+import { EmailCategory } from "./email-template";
+
 interface SendMailDto {
   to: string;
   cc?: string;
   subject: string;
   text: string;
+  category?: EmailCategory;
   heading?: string;
   intro?: string;
   note?: string;
@@ -89,6 +92,7 @@ export class MailController {
       cc: cc || undefined,
       replyTo: replyTo || undefined,
       subject,
+      category: dto.category,
       heading: String(dto.heading || "").trim() || undefined,
       intro: String(dto.intro || "").trim() || undefined,
       note: String(dto.note || "").trim() || undefined,
@@ -139,12 +143,17 @@ export class MailController {
       to: supportMissing ? replyTo : support,
       cc: supportMissing ? undefined : replyTo,
       replyTo,
+      category: "support",
+      companyName: "myownbillbook Support",
       subject,
       heading: subject,
       intro: supportMissing
-        ? "This is a copy of your request. The support inbox is not configured yet."
-        : "A new request was sent from myownbillbook.",
+        ? "This is a copy of your support request. Our support inbox is currently being configured."
+        : "A new support request has been submitted from myownbillbook.",
       details,
+      note: supportMissing
+        ? "Please keep this confirmation for your records."
+        : "Our support team typically responds within 2–4 business hours.",
       text,
     });
   }
