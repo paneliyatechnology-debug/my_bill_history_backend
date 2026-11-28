@@ -32,6 +32,7 @@ export interface EmailContent {
   paragraphs?: string[];
   note?: string;
   gujaratiNote?: string;
+  attachmentNames?: string[];
 }
 
 interface CategoryTheme {
@@ -226,11 +227,18 @@ export function renderBrandedEmail(content: EmailContent): { html: string; text:
     ? details.filter((d) => d !== grandTotalRow && d !== balanceRow)
     : details;
 
-  // Remove redundant raw URL from paragraphs if we're already showing the CTA button for that URL
-  const cleanedParagraphs = actionUrl
-    ? paragraphs.filter((p) => p.trim() !== actionUrl.trim())
-    : paragraphs;
+  // Remove redundant raw URL or duplicate intro/note text from paragraphs
+  const introNorm = (content.intro || "").trim().toLowerCase();
+  const noteNorm = (content.note || "").trim().toLowerCase();
+  const cleanedParagraphs = paragraphs.filter((p) => {
+    const pNorm = p.trim().toLowerCase();
+    if (actionUrl && pNorm === actionUrl.trim().toLowerCase()) return false;
+    if (introNorm && pNorm === introNorm) return false;
+    if (noteNorm && pNorm === noteNorm) return false;
+    return true;
+  });
 
+  const attachmentNames = (content.attachmentNames || []).filter(Boolean);
   const year = new Date().getFullYear();
 
   const html = `<!DOCTYPE html>
@@ -241,18 +249,18 @@ export function renderBrandedEmail(content: EmailContent): { html: string; text:
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <title>${escapeHtml(heading)}</title>
 </head>
-<body style="margin:0;padding:0;background-color:#F1F5F9;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<body style="margin:0;padding:0;background-color:#EEF2F6;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:transparent;">${escapeHtml(preheader)}&#847;&#847;&#847;&#847;&#847;&#847;&#847;&#847;&#847;&#847;</div>
 
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F1F5F9;margin:0;padding:32px 12px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EEF2F6;margin:0;padding:32px 12px;">
     <tr>
       <td align="center">
         <!-- Main Card Container -->
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#FFFFFF;border-radius:12px;border:1px solid #E2E8F0;box-shadow:0 4px 16px rgba(15,23,42,0.06);overflow:hidden;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#FFFFFF;border-radius:14px;border:1px solid #E2E8F0;border-collapse:separate;border-spacing:0;overflow:hidden;">
 
           <!-- Top Accent Bar -->
           <tr>
-            <td style="height:4px;background-color:${theme.accent};font-size:0;line-height:0;">&nbsp;</td>
+            <td style="height:5px;background-color:${theme.accent};font-size:0;line-height:0;">&nbsp;</td>
           </tr>
 
           <!-- Corporate Brand Header Bar -->
@@ -264,13 +272,13 @@ export function renderBrandedEmail(content: EmailContent): { html: string; text:
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                       <tr>
                         <td valign="middle" style="padding-right:12px;">
-                          <div style="width:36px;height:36px;border-radius:8px;background-color:#1E3A8A;color:#FFFFFF;font-size:18px;font-weight:800;line-height:36px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+                          <div style="width:38px;height:38px;border-radius:10px;background-color:#1677E8;color:#FFFFFF;font-size:18px;font-weight:800;line-height:38px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
                             M
                           </div>
                         </td>
                         <td valign="middle">
                           <div style="font-size:18px;font-weight:800;letter-spacing:-0.4px;color:#0F172A;line-height:1.15;">
-                            <span style="color:#0F172A;">myown</span><span style="color:#2563EB;">billbook</span>
+                            <span style="color:#0F172A;">myown</span><span style="color:#1677E8;">billbook</span>
                           </div>
                           <div style="font-size:11px;color:#64748B;font-weight:500;margin-top:2px;">
                             GST Invoicing, Inventory &amp; Accounting
@@ -280,7 +288,7 @@ export function renderBrandedEmail(content: EmailContent): { html: string; text:
                     </table>
                   </td>
                   <td align="right" valign="middle">
-                    <span style="display:inline-block;padding:4px 10px;border-radius:999px;background-color:${theme.badgeBg};border:1px solid ${theme.badgeBorder};color:${theme.badgeText};font-size:10px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;">
+                    <span style="display:inline-block;padding:4px 11px;border-radius:999px;background-color:${theme.badgeBg};border:1px solid ${theme.badgeBorder};color:${theme.badgeText};font-size:10px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;">
                       ${escapeHtml(theme.badge)}
                     </span>
                     ${
@@ -296,7 +304,7 @@ export function renderBrandedEmail(content: EmailContent): { html: string; text:
 
           <!-- Main Body Content -->
           <tr>
-            <td style="padding:28px 28px 20px;color:#0F172A;">
+            <td style="padding:28px 28px 22px;color:#0F172A;">
 
               <!-- Document Title & Intro -->
               <h1 style="margin:0 0 8px;font-size:21px;line-height:1.35;font-weight:700;color:#0F172A;letter-spacing:-0.3px;">
@@ -317,6 +325,19 @@ export function renderBrandedEmail(content: EmailContent): { html: string; text:
               <!-- Structured Details Table -->
               ${renderDetails(filteredDetails)}
 
+              <!-- Attached PDF / Files Badge -->
+              ${
+                attachmentNames.length > 0
+                  ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;background-color:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;border-collapse:separate;border-spacing:0;">
+                      <tr>
+                        <td style="padding:11px 16px;font-size:12px;font-weight:600;color:#1D4ED8;">
+                          &#128206; Attached Document: ${attachmentNames.map((n) => `<span style="color:#0F172A;">${escapeHtml(n)}</span>`).join(", ")}
+                        </td>
+                      </tr>
+                    </table>`
+                  : ""
+              }
+
               <!-- Primary Action CTA Button (if actionUrl is available and no OTP block already handled it) -->
               ${!content.code && actionUrl ? renderActionButton(actionUrl, actionLabel, theme.accent) : ""}
 
@@ -331,7 +352,7 @@ export function renderBrandedEmail(content: EmailContent): { html: string; text:
               <!-- Alert Callout Note -->
               ${
                 content.note
-                  ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:18px 0 6px;">
+                  ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:18px 0 4px;border-collapse:separate;border-spacing:0;">
                       <tr>
                         <td style="background-color:#F8FAFC;border:1px solid #E2E8F0;border-left:4px solid ${theme.accent};border-radius:8px;padding:13px 16px;font-size:13px;line-height:1.55;color:#1E293B;font-weight:500;">
                           ${escapeHtml(content.note)}
@@ -558,7 +579,7 @@ function renderDetails(details: EmailDetail[]): string {
     .join("");
 
   return `
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;border:1px solid #E2E8F0;border-radius:8px;overflow:hidden;border-collapse:collapse;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;border-collapse:separate;border-spacing:0;">
     <tbody>
       ${rows}
     </tbody>

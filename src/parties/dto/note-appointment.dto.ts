@@ -14,3 +14,12 @@ export interface CreateAppointmentDto {
   time: string;
   status?: string;
 }
+
+export interface UpdateAppointmentDto {
+  title?: string;
+  description?: string;
+  descriptions?: string;
+  date?: string | Date;
+  time?: string;
+  status?: string;
+}

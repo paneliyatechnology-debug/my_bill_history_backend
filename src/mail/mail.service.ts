@@ -67,6 +67,7 @@ export class MailService {
       actionUrl: message.actionUrl,
       actionLabel: message.actionLabel,
       companyName: message.companyName,
+      attachmentNames: message.attachments?.map((a) => a.filename).filter(Boolean),
     });
     const html = rendered.html;
     const plain = rendered.text || text;

@@ -19,6 +19,7 @@ import { UpdatePartyDto, QueryPartiesDto } from "./dto/update-party.dto";
 import {
   CreateNoteDto,
   CreateAppointmentDto,
+  UpdateAppointmentDto,
 } from "./dto/note-appointment.dto";
 import {
   validatePartyGstin,
@@ -560,7 +561,9 @@ export class PartiesService {
               title: true,
               description: true,
               date: true,
+              time: true,
               status: true,
+              createdAt: true,
             },
             orderBy: { date: "asc" },
           },
@@ -1640,22 +1643,93 @@ export class PartiesService {
     });
   }
 
-  async getAppointments(ctx: TenantContext, partyId?: string) {
+  async getAppointments(ctx: TenantContext, partyId?: string, upcoming?: boolean) {
     return this.prisma.executeInTenantContext(ctx, async (tx) => {
       const where: any = { companyId: ctx.companyId };
       if (partyId) {
         where.partyId = partyId;
       }
+      if (upcoming) {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        where.status = "SCHEDULED";
+        where.date = { gte: todayStart };
+      }
 
       const appointments = await tx.partyAppointment.findMany({
         where,
+        include: {
+          party: {
+            select: { id: true, name: true, phone: true },
+          },
+        },
         orderBy: { date: "asc" },
+        ...(upcoming ? { take: 10 } : {}),
       });
 
       return appointments.map((a: any) => ({
         ...a,
         descriptions: a.description,
       }));
+    });
+  }
+
+  async updateAppointment(
+    ctx: TenantContext,
+    appointmentId: string,
+    dto: UpdateAppointmentDto,
+  ) {
+    return this.prisma.executeInTenantContext(ctx, async (tx) => {
+      const existing = await tx.partyAppointment.findFirst({
+        where: { id: appointmentId, companyId: ctx.companyId },
+      });
+      if (!existing) {
+        throw new NotFoundException({
+          statusCode: 404,
+          message: "Appointment not found.",
+          messageGujarati: "મુલાકાત મળેલ નથી.",
+        });
+      }
+
+      const dataToUpdate: any = {};
+      if (dto.title !== undefined) {
+        const t = dto.title.trim();
+        if (!t) throw new BadRequestException("Appointment title cannot be empty.");
+        dataToUpdate.title = t;
+      }
+      if (dto.description !== undefined || dto.descriptions !== undefined) {
+        dataToUpdate.description = String(dto.description ?? dto.descriptions ?? "").trim();
+      }
+      if (dto.date !== undefined) {
+        const parsedDate = new Date(dto.date);
+        if (isNaN(parsedDate.getTime())) {
+          throw new BadRequestException("Invalid appointment date.");
+        }
+        dataToUpdate.date = parsedDate;
+      }
+      if (dto.time !== undefined) {
+        const tm = dto.time.trim();
+        if (!tm) throw new BadRequestException("Appointment time cannot be empty.");
+        dataToUpdate.time = tm;
+      }
+      if (dto.status !== undefined) {
+        const allowed = ["SCHEDULED", "COMPLETED", "CANCELLED", "MISSED"];
+        const upper = String(dto.status).trim().toUpperCase();
+        if (!allowed.includes(upper)) {
+          throw new BadRequestException(`Status must be one of: ${allowed.join(", ")}`);
+        }
+        dataToUpdate.status = upper;
+      }
+
+      const updated = await tx.partyAppointment.update({
+        where: { id: appointmentId },
+        data: dataToUpdate,
+      });
+
+      return {
+        ...updated,
+        descriptions: updated.description,
+      };
     });
   }
 

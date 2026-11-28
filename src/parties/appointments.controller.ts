@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -10,7 +11,7 @@ import {
   HttpStatus,
 } from "@nestjs/common";
 import { PartiesService } from "./parties.service";
-import { CreateAppointmentDto } from "./dto/note-appointment.dto";
+import { CreateAppointmentDto, UpdateAppointmentDto } from "./dto/note-appointment.dto";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { TenantContext } from "@billing/shared-types";
 
@@ -31,8 +32,22 @@ export class AppointmentsController {
   async findAll(
     @CurrentTenant() ctx: TenantContext,
     @Query("partyId") partyId?: string,
+    @Query("upcoming") upcoming?: string,
   ) {
-    return this.partiesService.getAppointments(ctx, partyId);
+    return this.partiesService.getAppointments(
+      ctx,
+      partyId,
+      upcoming === "true" || upcoming === "1",
+    );
+  }
+
+  @Patch(":id")
+  async update(
+    @CurrentTenant() ctx: TenantContext,
+    @Param("id") id: string,
+    @Body() dto: UpdateAppointmentDto,
+  ) {
+    return this.partiesService.updateAppointment(ctx, id, dto);
   }
 
   @Delete(":id")
