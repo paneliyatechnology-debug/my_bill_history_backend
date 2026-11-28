@@ -327,4 +327,75 @@ export class SuperAdminController {
   ) {
     return this.superAdminService.updatePlatformSettings(dto, superAdminUserId);
   }
+
+  // 7. Global Default HSN / SAC Master
+  @Get("hsn")
+  async getGlobalHsnCodes(
+    @Query("search") search?: string,
+    @Query("type") type?: string,
+    @Query("isActive") isActive?: string,
+    @Query("page") page?: number,
+    @Query("limit") limit?: number,
+  ) {
+    return this.superAdminService.getGlobalHsnCodes({
+      search,
+      type,
+      isActive,
+      page,
+      limit,
+    });
+  }
+
+  @Post("hsn")
+  @HttpCode(HttpStatus.CREATED)
+  async createGlobalHsnCode(
+    @Body() dto: any,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.createGlobalHsnCode(dto, superAdminUserId);
+  }
+
+  @Patch("hsn/:id")
+  async updateGlobalHsnCode(
+    @Param("id") id: string,
+    @Body() dto: any,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.updateGlobalHsnCode(id, dto, superAdminUserId);
+  }
+
+  @Patch("hsn/:id/status")
+  async toggleGlobalHsnStatus(
+    @Param("id") id: string,
+    @Body("isActive") isActive: boolean,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.toggleGlobalHsnStatus(id, Boolean(isActive), superAdminUserId);
+  }
+
+  @Delete("hsn/:id")
+  async deleteGlobalHsnCode(
+    @Param("id") id: string,
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.deleteGlobalHsnCode(id, superAdminUserId);
+  }
+
+  @Post("hsn/bulk-delete")
+  @HttpCode(HttpStatus.OK)
+  async bulkDeleteGlobalHsnCodes(
+    @Body("ids") ids: string[],
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.bulkDeleteGlobalHsnCodes(ids, superAdminUserId);
+  }
+
+  @Post("hsn/bulk-import")
+  @HttpCode(HttpStatus.OK)
+  async bulkImportGlobalHsnCodes(
+    @Body("items") items: any[],
+    @CurrentUser("id") superAdminUserId: string,
+  ) {
+    return this.superAdminService.bulkImportGlobalHsnCodes(items, superAdminUserId);
+  }
 }

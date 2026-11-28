@@ -27,7 +27,11 @@ export class HsnService {
     const skip = (page - 1) * limit;
 
     const where: Prisma.HsnMasterWhereInput = {
-      OR: [{ companyId: ctx.companyId }, { companyId: null }],
+      OR: [
+        { companyId: ctx.companyId },
+        { organizationId: ctx.organizationId, companyId: null },
+        { organizationId: null, companyId: null },
+      ],
     };
 
     if (query.type) {
@@ -102,7 +106,11 @@ export class HsnService {
 
     const where: Prisma.HsnMasterWhereInput = {
       isActive: true,
-      OR: [{ companyId: ctx.companyId }, { companyId: null }],
+      OR: [
+        { companyId: ctx.companyId },
+        { organizationId: ctx.organizationId, companyId: null },
+        { organizationId: null, companyId: null },
+      ],
     };
 
     if (term) {
@@ -144,7 +152,11 @@ export class HsnService {
       const record = await tx.hsnMaster.findFirst({
         where: {
           id,
-          OR: [{ companyId: ctx.companyId }, { companyId: null }],
+          OR: [
+            { companyId: ctx.companyId },
+            { organizationId: ctx.organizationId, companyId: null },
+            { organizationId: null, companyId: null },
+          ],
         },
         include: {
           _count: { select: { items: true } },
@@ -468,7 +480,11 @@ export class HsnService {
       }
 
       const res = await tx.hsnMaster.deleteMany({
-        where: { id: { in: deletableIds } },
+        where: {
+          id: { in: deletableIds },
+          companyId: ctx.companyId,
+          isSystem: false,
+        },
       });
 
       return {

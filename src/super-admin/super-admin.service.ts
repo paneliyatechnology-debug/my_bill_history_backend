@@ -2387,4 +2387,417 @@ export class SuperAdminService {
       return updated;
     });
   }
+
+  /**
+   * ==========================================
+   * 7. GLOBAL DEFAULT HSN / SAC MASTER
+   * ==========================================
+   */
+  async getGlobalHsnCodes(query: {
+    search?: string;
+    type?: string;
+    isActive?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(200, Math.max(1, Number(query.limit) || 50));
+    const skip = (page - 1) * limit;
+
+    const where: any = {
+      companyId: null,
+      organizationId: null,
+    };
+
+    if (query.type === "HSN" || query.type === "SAC") {
+      where.type = query.type;
+    }
+    if (query.isActive === "true") {
+      where.isActive = true;
+    } else if (query.isActive === "false") {
+      where.isActive = false;
+    }
+
+    if (query.search && query.search.trim()) {
+      const term = query.search.trim();
+      where.AND = [
+        {
+          OR: [
+            { code: { contains: term, mode: "insensitive" } },
+            { description: { contains: term, mode: "insensitive" } },
+            { descriptionGujarati: { contains: term, mode: "insensitive" } },
+            { chapter: { contains: term, mode: "insensitive" } },
+          ],
+        },
+      ];
+    }
+
+    return this.prisma.executeBypassRls(async (tx) => {
+      const baseWhere: any = {
+        companyId: null,
+        organizationId: null,
+      };
+      const [total, items, allTotal, hsnCount, sacCount, activeCount] = await Promise.all([
+        tx.hsnMaster.count({ where }),
+        tx.hsnMaster.findMany({
+          where,
+          orderBy: [{ code: "asc" }],
+          skip,
+          take: limit,
+        }),
+        tx.hsnMaster.count({ where: baseWhere }),
+        tx.hsnMaster.count({ where: { ...baseWhere, type: "HSN" } }),
+        tx.hsnMaster.count({ where: { ...baseWhere, type: "SAC" } }),
+        tx.hsnMaster.count({ where: { ...baseWhere, isActive: true } }),
+      ]);
+
+      return {
+        items,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        counts: {
+          total: allTotal,
+          hsn: hsnCount,
+          sac: sacCount,
+          active: activeCount,
+        },
+      };
+    });
+  }
+
+  async createGlobalHsnCode(dto: any, _superAdminUserId: string) {
+    const VALID_GST_SLABS = [0, 0.1, 0.25, 3, 5, 12, 18, 28];
+    const code = String(dto?.code || "").trim();
+    if (!/^[0-9]{2,8}$/.test(code)) {
+      throw new BadRequestException("HSN/SAC code must be between 2 and 8 digits (e.g. 1006, 7214, 998311).");
+    }
+
+    const description = String(dto?.description || "").trim();
+    if (!description) {
+      throw new BadRequestException("Description is required.");
+    }
+
+    const type = dto?.type === "SAC" || dto?.type === "HSN"
+      ? dto.type
+      : code.startsWith("99")
+        ? "SAC"
+        : "HSN";
+
+    const gstRate = dto?.gstRate !== undefined ? Number(dto.gstRate) : 18;
+    if (!VALID_GST_SLABS.includes(gstRate)) {
+      throw new BadRequestException(`GST rate must be one of: ${VALID_GST_SLABS.join(", ")}%`);
+    }
+
+    const cessRate = dto?.cessRate !== undefined ? Math.max(0, Number(dto.cessRate) || 0) : 0;
+    const chapter = dto?.chapter?.trim() || code.slice(0, 2);
+
+    return this.prisma.executeBypassRls(async (tx) => {
+      const existing = await tx.hsnMaster.findFirst({
+        where: {
+          companyId: null,
+          organizationId: null,
+          code,
+        },
+      });
+      if (existing) {
+        throw new BadRequestException(`Global HSN/SAC code '${code}' already exists.`);
+      }
+
+      return tx.hsnMaster.create({
+        data: {
+          organizationId: null,
+          companyId: null,
+          code,
+          description,
+          descriptionGujarati: dto?.descriptionGujarati?.trim() || null,
+          type,
+          gstRate,
+          cessRate,
+          chapter,
+          notes: dto?.notes?.trim() || null,
+          isSystem: true,
+          isActive: dto?.isActive !== undefined ? Boolean(dto.isActive) : true,
+        },
+      });
+    });
+  }
+
+  async updateGlobalHsnCode(id: string, dto: any, _superAdminUserId: string) {
+    const VALID_GST_SLABS = [0, 0.1, 0.25, 3, 5, 12, 18, 28];
+    return this.prisma.executeBypassRls(async (tx) => {
+      const existing = await tx.hsnMaster.findFirst({
+        where: { id, companyId: null, organizationId: null },
+      });
+      if (!existing) {
+        throw new NotFoundException("Global HSN/SAC record not found.");
+      }
+
+      const dataToUpdate: any = {};
+      if (dto?.code !== undefined) {
+        const nextCode = String(dto.code).trim();
+        if (!/^[0-9]{2,8}$/.test(nextCode)) {
+          throw new BadRequestException("HSN/SAC code must be between 2 and 8 digits.");
+        }
+        if (nextCode !== existing.code) {
+          const dup = await tx.hsnMaster.findFirst({
+            where: { companyId: null, organizationId: null, code: nextCode, id: { not: id } },
+          });
+          if (dup) {
+            throw new BadRequestException(`Global HSN/SAC code '${nextCode}' already exists.`);
+          }
+          dataToUpdate.code = nextCode;
+        }
+      }
+      if (dto?.description !== undefined) {
+        const desc = String(dto.description).trim();
+        if (!desc) throw new BadRequestException("Description cannot be empty.");
+        dataToUpdate.description = desc;
+      }
+      if (dto?.descriptionGujarati !== undefined) {
+        dataToUpdate.descriptionGujarati = dto.descriptionGujarati?.trim() || null;
+      }
+      if (dto?.type === "HSN" || dto?.type === "SAC") {
+        dataToUpdate.type = dto.type;
+      }
+      if (dto?.gstRate !== undefined) {
+        const rate = Number(dto.gstRate);
+        if (!VALID_GST_SLABS.includes(rate)) {
+          throw new BadRequestException(`GST rate must be one of: ${VALID_GST_SLABS.join(", ")}%`);
+        }
+        dataToUpdate.gstRate = rate;
+      }
+      if (dto?.cessRate !== undefined) {
+        dataToUpdate.cessRate = Math.max(0, Number(dto.cessRate) || 0);
+      }
+      if (dto?.chapter !== undefined) {
+        dataToUpdate.chapter = dto.chapter?.trim() || null;
+      }
+      if (dto?.notes !== undefined) {
+        dataToUpdate.notes = dto.notes?.trim() || null;
+      }
+      if (dto?.isActive !== undefined) {
+        dataToUpdate.isActive = Boolean(dto.isActive);
+      }
+
+      return tx.hsnMaster.update({
+        where: { id },
+        data: dataToUpdate,
+      });
+    });
+  }
+
+  async toggleGlobalHsnStatus(id: string, isActive: boolean, _superAdminUserId: string) {
+    return this.prisma.executeBypassRls(async (tx) => {
+      const existing = await tx.hsnMaster.findFirst({
+        where: { id, companyId: null, organizationId: null },
+      });
+      if (!existing) {
+        throw new NotFoundException("Global HSN/SAC record not found.");
+      }
+      return tx.hsnMaster.update({
+        where: { id },
+        data: { isActive },
+      });
+    });
+  }
+
+  async deleteGlobalHsnCode(id: string, _superAdminUserId: string) {
+    return this.prisma.executeBypassRls(async (tx) => {
+      const existing = await tx.hsnMaster.findFirst({
+        where: { id, companyId: null, organizationId: null },
+        include: { _count: { select: { items: true } } },
+      });
+      if (!existing) {
+        throw new NotFoundException("Global HSN/SAC record not found.");
+      }
+      if ((existing._count?.items || 0) > 0) {
+        throw new BadRequestException(
+          `Cannot delete HSN/SAC '${existing.code}' because it is linked to ${existing._count.items} item(s). Deactivate it instead.`,
+        );
+      }
+      await tx.hsnMaster.delete({ where: { id } });
+      return { success: true, message: `Global HSN/SAC '${existing.code}' deleted.` };
+    });
+  }
+
+  async bulkDeleteGlobalHsnCodes(ids: string[], _superAdminUserId: string) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException("No HSN/SAC IDs provided for deletion.");
+    }
+
+    return this.prisma.executeBypassRls(async (tx) => {
+      const linked = await tx.item.findMany({
+        where: { hsnMasterId: { in: ids } },
+        select: { hsnMasterId: true },
+      });
+      const linkedIds = new Set(linked.map((l) => l.hsnMasterId).filter(Boolean));
+      const deletableIds = ids.filter((id) => !linkedIds.has(id));
+
+      if (deletableIds.length === 0) {
+        throw new BadRequestException(
+          "All selected HSN/SAC codes are linked to items and cannot be deleted.",
+        );
+      }
+
+      const res = await tx.hsnMaster.deleteMany({
+        where: {
+          id: { in: deletableIds },
+          organizationId: null,
+          companyId: null,
+        },
+      });
+
+      return {
+        success: true,
+        deletedCount: res.count,
+        skippedCount: linkedIds.size,
+      };
+    });
+  }
+
+  async bulkImportGlobalHsnCodes(items: any[], _superAdminUserId: string) {
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new BadRequestException("No HSN/SAC rows provided for import.");
+    }
+
+    const validSlabs = [0, 0.1, 0.25, 3, 5, 12, 18, 28];
+    let skippedCount = 0;
+    const errors: Array<{ row: number; code: string; reason: string }> = [];
+    const normalizedMap = new Map<
+      string,
+      {
+        code: string;
+        description: string;
+        descriptionGujarati: string | null;
+        type: "HSN" | "SAC";
+        gstRate: number;
+        cessRate: number;
+        chapter: string;
+        notes: string | null;
+      }
+    >();
+
+    for (let i = 0; i < items.length; i++) {
+      const raw = items[i] || {};
+      const code = String(raw.code || "").replace(/[^0-9]/g, "").trim();
+      const description = String(raw.description || "").trim();
+
+      if (!/^[0-9]{2,8}$/.test(code)) {
+        skippedCount++;
+        if (errors.length < 20) {
+          errors.push({ row: i + 1, code: String(raw.code || ""), reason: "Code must be 2–8 digits" });
+        }
+        continue;
+      }
+      if (!description) {
+        skippedCount++;
+        if (errors.length < 20) {
+          errors.push({ row: i + 1, code, reason: "Description is required" });
+        }
+        continue;
+      }
+
+      const rawRateStr = String(raw.gstRate ?? "").replace(/%/g, "").trim();
+      const rawRate = rawRateStr !== "" ? Number(rawRateStr) : 18;
+      const gstRate = validSlabs.includes(rawRate) ? rawRate : 18;
+      const cessRate = raw.cessRate !== undefined && raw.cessRate !== "" ? Math.max(0, Number(raw.cessRate) || 0) : 0;
+      const type: "HSN" | "SAC" =
+        raw.type === "HSN" || raw.type === "SAC"
+          ? raw.type
+          : code.startsWith("99")
+            ? "SAC"
+            : "HSN";
+      const chapter = raw.chapter ? String(raw.chapter).trim().slice(0, 50) : code.slice(0, 2);
+
+      normalizedMap.set(code, {
+        code,
+        description: description.slice(0, 255),
+        descriptionGujarati: raw.descriptionGujarati
+          ? String(raw.descriptionGujarati).trim().slice(0, 255)
+          : null,
+        type,
+        gstRate,
+        cessRate,
+        chapter,
+        notes: raw.notes ? String(raw.notes).trim().slice(0, 255) : null,
+      });
+    }
+
+    const deduped = Array.from(normalizedMap.values());
+    if (deduped.length === 0) {
+      return {
+        success: true,
+        createdCount: 0,
+        updatedCount: 0,
+        skippedCount,
+        errors,
+      };
+    }
+
+    return this.prisma.executeBypassRls(async (tx) => {
+      const codes = deduped.map((d) => d.code);
+      const existingRows = await tx.hsnMaster.findMany({
+        where: { organizationId: null, companyId: null, code: { in: codes } },
+        select: { id: true, code: true, descriptionGujarati: true, notes: true },
+      });
+      const existingByCode = new Map(existingRows.map((r) => [r.code, r]));
+
+      const toCreate = deduped
+        .filter((d) => !existingByCode.has(d.code))
+        .map((d) => ({
+          organizationId: null,
+          companyId: null,
+          code: d.code,
+          description: d.description,
+          descriptionGujarati: d.descriptionGujarati,
+          type: d.type,
+          gstRate: d.gstRate,
+          cessRate: d.cessRate,
+          chapter: d.chapter,
+          notes: d.notes,
+          isSystem: true,
+          isActive: true,
+        }));
+
+      const toUpdate = deduped.filter((d) => existingByCode.has(d.code));
+
+      let createdCount = 0;
+      if (toCreate.length > 0) {
+        const res = await tx.hsnMaster.createMany({
+          data: toCreate,
+          skipDuplicates: true,
+        });
+        createdCount = res.count;
+      }
+
+      let updatedCount = 0;
+      for (const d of toUpdate) {
+        const ex = existingByCode.get(d.code)!;
+        await tx.hsnMaster.update({
+          where: { id: ex.id },
+          data: {
+            description: d.description,
+            descriptionGujarati: d.descriptionGujarati ?? ex.descriptionGujarati,
+            type: d.type,
+            gstRate: d.gstRate,
+            cessRate: d.cessRate,
+            chapter: d.chapter,
+            notes: d.notes ?? ex.notes,
+            isActive: true,
+          },
+        });
+        updatedCount++;
+      }
+
+      return {
+        success: true,
+        createdCount,
+        updatedCount,
+        skippedCount,
+        errors,
+      };
+    });
+  }
 }
