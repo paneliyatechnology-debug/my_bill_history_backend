@@ -62,7 +62,11 @@ export class InvoicesController {
     @Body() dto: CreateSalesInvoiceDto,
     @CurrentTenant() tenant: TenantContext,
     @Headers("idempotency-key") idempotencyKey?: string,
+    @Query("isDraft") isDraftQuery?: string,
   ) {
+    if (isDraftQuery === "true" || isDraftQuery === "1") {
+      dto.isDraft = true;
+    }
     return await this.invoicesService.createSalesInvoice(
       dto,
       tenant,

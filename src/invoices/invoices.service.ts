@@ -393,11 +393,30 @@ export class InvoicesService {
         let invoiceNumber: string;
 
         if (isDraft && !isCommercialQuoteOrProforma) {
-          invoiceNumber = `DFT-${Date.now().toString(36).toUpperCase()}-${Math.floor(
-            Math.random() * 1000,
-          )}
-            .toString()
-            .padStart(3, "0")}`;
+          const fyStart = new Date(fy.startDate);
+          const fyEnd = new Date(fy.endDate);
+          const fyCode = `${fyStart.getFullYear().toString().slice(-2)}-${fyEnd.getFullYear().toString().slice(-2)}`;
+          const draftCount = await tx.salesInvoice.count({
+            where: {
+              companyId: tenant.companyId,
+              status: InvoiceStatus.DRAFT,
+            },
+          });
+          let nextDraftNum = draftCount + 1;
+          let draftCandidate = `DRAFT/${fyCode}/${String(nextDraftNum).padStart(4, "0")}`;
+          while (
+            await tx.salesInvoice.findFirst({
+              where: {
+                companyId: tenant.companyId,
+                invoiceNumber: draftCandidate,
+              },
+              select: { id: true },
+            })
+          ) {
+            nextDraftNum += 1;
+            draftCandidate = `DRAFT/${fyCode}/${String(nextDraftNum).padStart(4, "0")}`;
+          }
+          invoiceNumber = draftCandidate;
         } else if (isCommercialQuoteOrProforma && dto.invoiceNumber && dto.invoiceNumber.trim() !== "") {
           invoiceNumber = dto.invoiceNumber.trim();
         } else {
