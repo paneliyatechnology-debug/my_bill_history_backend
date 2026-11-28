@@ -90,14 +90,19 @@ export class AuthController {
     return this.authService.getMe(userId);
   }
 
+  @Post("sse-ticket")
+  @HttpCode(HttpStatus.OK)
+  issueSseTicket(@CurrentUser() user: any) {
+    return this.authService.issueSseTicket(user);
+  }
+
   @Public()
   @Sse("session-stream")
   sessionStream(
-    @Query("token") token?: string,
-    @Query("tenantId") tenantId?: string,
+    @Query("ticket") ticket?: string,
     @Query("organizationId") organizationId?: string,
   ): Observable<{ data: SessionEventPayload }> {
-    return this.authService.getSessionStream(token, tenantId, organizationId);
+    return this.authService.getSessionStream(ticket, organizationId);
   }
 
   @Get("live-status")

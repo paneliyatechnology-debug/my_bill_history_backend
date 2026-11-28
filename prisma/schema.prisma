@@ -203,6 +203,7 @@ model Company {
   outwardDebitNotes          OutwardDebitNote[]
   advanceReceipts            AdvanceReceipt[]
   purchaseInvoices           PurchaseInvoice[]
+  purchaseOrders             PurchaseOrder[]
   purchaseReturns            PurchaseReturn[]
   invoiceSequences           InvoiceSequence[]
   boms                       BillOfMaterial[]
@@ -343,6 +344,7 @@ model Branch {
   salesInvoices     SalesInvoice[]
   salesReturns      SalesReturn[]
   purchaseInvoices  PurchaseInvoice[]
+  purchaseOrders    PurchaseOrder[]
   purchaseReturns   PurchaseReturn[]
   posSessions       PosSession[]
   userAssignments   UserBranchAssignment[]
@@ -371,6 +373,7 @@ model FinancialYear {
   salesInvoices    SalesInvoice[]
   salesReturns     SalesReturn[]
   purchaseInvoices PurchaseInvoice[]
+  purchaseOrders   PurchaseOrder[]
   purchaseReturns  PurchaseReturn[]
   invoiceSequences InvoiceSequence[]
   stockTransfers   StockTransfer[]
@@ -727,6 +730,7 @@ model Party {
   outwardDebitNotes         OutwardDebitNote[]
   advanceReceipts           AdvanceReceipt[]
   purchaseInvoices          PurchaseInvoice[]
+  purchaseOrders            PurchaseOrder[]
   purchaseReturns           PurchaseReturn[]
   deliveryChallans          DeliveryChallan[]
   purchaseBillScans         PurchaseBillScan[]
@@ -867,6 +871,7 @@ model Item {
   salesReturnItems      SalesReturnItem[]
   outwardDebitNoteItems OutwardDebitNoteItem[]
   purchaseInvoiceItems  PurchaseInvoiceItem[]
+  purchaseOrderItems    PurchaseOrderItem[]
   purchaseReturnItems   PurchaseReturnItem[]
   stockTransactions     StockTransaction[]
   bomOutputs            BillOfMaterial[]
@@ -1261,6 +1266,66 @@ model PurchaseInvoice {
   @@index([organizationId, companyId, invoiceDate])
   @@index([financialYearId])
   @@map("purchase_invoices")
+}
+
+model PurchaseOrder {
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @map("organization_id") @db.Uuid
+  companyId          String    @map("company_id") @db.Uuid
+  branchId           String?   @map("branch_id") @db.Uuid
+  financialYearId    String?   @map("financial_year_id") @db.Uuid
+  partyId            String    @map("party_id") @db.Uuid
+  orderNumber        String    @map("order_number") @db.VarChar(100)
+  orderDate          DateTime  @map("order_date") @db.Date
+  validTill          DateTime? @map("valid_till") @db.Date
+  status             String    @default("OPEN") @db.VarChar(30)
+  placeOfSupply      String?   @map("place_of_supply") @db.VarChar(10)
+  taxableAmount      Decimal   @default(0.00) @map("taxable_amount") @db.Decimal(15, 2)
+  cgstAmount         Decimal   @default(0.00) @map("cgst_amount") @db.Decimal(15, 2)
+  sgstAmount         Decimal   @default(0.00) @map("sgst_amount") @db.Decimal(15, 2)
+  igstAmount         Decimal   @default(0.00) @map("igst_amount") @db.Decimal(15, 2)
+  freightAmount      Decimal   @default(0.00) @map("freight_amount") @db.Decimal(15, 2)
+  overallDiscount    Decimal   @default(0.00) @map("overall_discount") @db.Decimal(15, 2)
+  additionalCharges  Json?     @map("additional_charges")
+  grandTotal         Decimal   @default(0.00) @map("grand_total") @db.Decimal(15, 2)
+  notes              String?   @db.Text
+  termsAndConditions String?   @map("terms_and_conditions") @db.Text
+  convertedInvoiceId String?   @map("converted_invoice_id") @db.Uuid
+  createdBy          String?   @map("created_by") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branch        Branch?             @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  financialYear FinancialYear?      @relation(fields: [financialYearId], references: [id], onDelete: SetNull)
+  party         Party               @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  items         PurchaseOrderItem[]
+
+  @@unique([companyId, orderNumber])
+  @@index([organizationId, companyId, orderDate])
+  @@index([companyId, status])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String   @id @default(uuid()) @db.Uuid
+  purchaseOrderId String   @map("purchase_order_id") @db.Uuid
+  itemId          String?  @map("item_id") @db.Uuid
+  name            String   @db.VarChar(255)
+  hsnCode         String?  @map("hsn_code") @db.VarChar(20)
+  unit            String?  @db.VarChar(30)
+  quantity        Decimal  @db.Decimal(15, 4)
+  rate            Decimal  @db.Decimal(15, 4)
+  discountPercent Decimal  @default(0.00) @map("discount_percent") @db.Decimal(8, 2)
+  taxRate         Decimal  @default(0.00) @map("tax_rate") @db.Decimal(8, 2)
+  taxableAmount   Decimal  @default(0.00) @map("taxable_amount") @db.Decimal(15, 2)
+  totalAmount     Decimal  @default(0.00) @map("total_amount") @db.Decimal(15, 2)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  item          Item?         @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([purchaseOrderId])
+  @@map("purchase_order_items")
 }
 
 model PurchaseInvoiceItem {

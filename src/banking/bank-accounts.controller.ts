@@ -8,9 +8,11 @@ import {
   Param,
   HttpCode,
   HttpStatus,
+  NotFoundException,
 } from "@nestjs/common";
 import { TenantContext, UserRole } from "@billing/shared-types";
 import { Roles } from "../common/decorators/roles.decorator";
+import { RequirePermissions } from "../common/decorators/permissions.decorator";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { DatabaseService } from "../database/database.service";
 import { LedgersService } from "../ledgers/ledgers.service";
@@ -23,6 +25,7 @@ export class BankAccountsController {
   ) {}
 
   @Get()
+  @RequirePermissions({ module: "accounting", action: "view" })
   async listBankAccounts(@CurrentTenant() tenant: TenantContext) {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
       // 1. Fetch bank/cash ledger accounts
@@ -100,6 +103,7 @@ export class BankAccountsController {
   }
 
   @Get(":id/reconciliation")
+  @RequirePermissions({ module: "accounting", action: "view" })
   async getBankReconciliation(
     @Param("id") id: string,
     @CurrentTenant() tenant: TenantContext,
@@ -203,12 +207,33 @@ export class BankAccountsController {
     UserRole.COMPANY_ADMIN,
     UserRole.ACCOUNTANT,
   )
+  @RequirePermissions({ module: "accounting", action: "edit" })
   async markBankReconciliation(
     @Param("id") id: string,
     @Body() body: { entryId: string; cleared: boolean; clearanceDate?: string },
     @CurrentTenant() tenant: TenantContext,
   ) {
     return await this.prisma.executeInTenantContext(tenant, async (tx) => {
+      const account = await tx.ledgerAccount.findFirst({
+        where: { id, companyId: tenant.companyId },
+        select: { id: true },
+      });
+      if (!account) {
+        throw new NotFoundException("Bank ledger account not found.");
+      }
+      const entry = await tx.journalEntry.findFirst({
+        where: {
+          id: body.entryId,
+          accountId: id,
+          voucher: { companyId: tenant.companyId },
+        },
+        select: { id: true },
+      });
+      if (!entry) {
+        throw new NotFoundException("Journal entry not found for this bank account.");
+      }
+      const now = new Date();
+      const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       await tx.auditLog.create({
         data: {
           organizationId: tenant.organizationId,
@@ -221,7 +246,7 @@ export class BankAccountsController {
           newState: {
             bankLedgerId: id,
             cleared: Boolean(body.cleared),
-            clearanceDate: body.cleared ? body.clearanceDate || new Date().toISOString().split("T")[0] : null,
+            clearanceDate: body.cleared ? body.clearanceDate || localToday : null,
           },
         },
       });
@@ -230,6 +255,7 @@ export class BankAccountsController {
   }
 
   @Get(":id")
+  @RequirePermissions({ module: "accounting", action: "view" })
   async getBankAccount(
     @Param("id") id: string,
     @CurrentTenant() tenant: TenantContext,

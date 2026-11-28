@@ -1142,7 +1142,7 @@ export class InvoicesService {
             financialYearId: voucher.financialYearId,
             voucherType: voucher.voucherType,
             voucherNumber: revVoucherNumber,
-            voucherDate: new Date(),
+            voucherDate: voucher.voucherDate,
             referenceNo: voucher.voucherNumber,
             narration: reversalPlan.narration,
             narrationGujarati: `રદ્દીકરણ બિલ નં. ${invoice.invoiceNumber}`,
@@ -1184,11 +1184,9 @@ export class InvoicesService {
           }
         }
 
-        // Mark original voucher as cancelled
-        await tx.voucher.update({
-          where: { id: voucher.id },
-          data: { isCancelled: true },
-        });
+        // Keep original voucher isCancelled: false so the original entry and
+        // its REV/... contra-reversal voucher net to zero in financial reports
+        // while preserving the immutable double-entry audit trail.
       }
 
       // 3. Append-Only Stock Restoration

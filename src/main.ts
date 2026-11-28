@@ -77,6 +77,16 @@ async function bootstrap() {
   // 3. Graceful Shutdown Hooks
   app.enableShutdownHooks();
 
+  // 4. Production Security Headers
+  const fastifyInstance = app.getHttpAdapter().getInstance();
+  fastifyInstance.addHook("onSend", async (_request: any, reply: any, payload: any) => {
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("X-Frame-Options", "SAMEORIGIN");
+    reply.header("Referrer-Policy", "strict-origin-when-cross-origin");
+    reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    return payload;
+  });
+
   app.setGlobalPrefix("api/v1");
 
   const rawEnvOrigins = process.env.CORS_ORIGIN || process.env.FRONTEND_URL;
@@ -97,18 +107,20 @@ async function bootstrap() {
       return true;
     }
 
-    // 3. Vercel deployments (production and preview branches)
-    if (/^https?:\/\/([a-zA-Z0-9-]+\.)*vercel\.app$/.test(cleanOrigin)) {
+    const allowPreviewOrigins = !isProd || process.env.ALLOW_PREVIEW_CORS === "true";
+
+    // 3. Vercel deployments (non-production or explicit ALLOW_PREVIEW_CORS=true)
+    if (allowPreviewOrigins && /^https?:\/\/([a-zA-Z0-9-]+\.)*vercel\.app$/.test(cleanOrigin)) {
       return true;
     }
 
-    // 4. Render deployment domains
-    if (/^https?:\/\/([a-zA-Z0-9-]+\.)*onrender\.com$/.test(cleanOrigin)) {
+    // 4. Render deployment domains (non-production or explicit ALLOW_PREVIEW_CORS=true)
+    if (allowPreviewOrigins && /^https?:\/\/([a-zA-Z0-9-]+\.)*onrender\.com$/.test(cleanOrigin)) {
       return true;
     }
 
-    // 5. Localhost and loopback development/testing origins
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(cleanOrigin)) {
+    // 5. Localhost and loopback development/testing origins (non-production or explicit ALLOW_PREVIEW_CORS=true)
+    if (allowPreviewOrigins && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(cleanOrigin)) {
       return true;
     }
 

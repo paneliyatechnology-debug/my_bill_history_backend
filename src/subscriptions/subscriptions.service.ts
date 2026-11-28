@@ -5,6 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
   ConflictException,
+  InternalServerErrorException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as crypto from "crypto";
@@ -143,20 +144,16 @@ export class SubscriptionsService {
           orderBy: { monthlyPrice: "asc" },
         });
       });
-      if (dbPlans && dbPlans.length > 0) {
-        return dbPlans.map((p) => ({
-          ...p,
-          monthlyPrice: Number(p.monthlyPrice),
-          yearlyPrice: Number(p.yearlyPrice),
-          annualTotal: Number(p.annualTotal),
-        }));
-      }
+      return (dbPlans || []).map((p) => ({
+        ...p,
+        monthlyPrice: Number(p.monthlyPrice),
+        yearlyPrice: Number(p.yearlyPrice),
+        annualTotal: Number(p.annualTotal),
+      }));
     } catch (e: any) {
       this.logger.warn(`Failed reading subscription plans from database: ${e?.message}`);
+      return [];
     }
-    return Object.values(SUBSCRIPTION_PLANS).filter(
-      (p) => p.tier !== SubscriptionTier.TRIAL,
-    );
   }
 
   async getCoupons(): Promise<any[]> {
@@ -655,23 +652,44 @@ export class SubscriptionsService {
       throw new BadRequestException(`Invalid subscription tier: ${tier}`);
     }
 
-    // Cryptographic signature verification
+    // Cryptographic signature verification (fail-closed in production)
     const keySecret =
       this.configService.get<string>("RAZORPAY_KEY_SECRET") ||
       process.env.RAZORPAY_KEY_SECRET ||
       "";
+    const isProduction = process.env.NODE_ENV === "production";
+    const allowSimulated =
+      !isProduction &&
+      process.env.ALLOW_SIMULATED_SUBSCRIPTION_PAYMENTS === "true";
 
-    const isSimulatedOrder = orderId.startsWith("order_sim_") || paymentId.startsWith("pay_sim_");
+    const isSimulatedOrder =
+      allowSimulated &&
+      (orderId.startsWith("order_sim_") || paymentId.startsWith("pay_sim_"));
 
-    if (!isSimulatedOrder && keySecret) {
+    if (!isSimulatedOrder) {
+      if (!keySecret) {
+        this.logger.error(
+          "RAZORPAY_KEY_SECRET is not configured; refusing unverified subscription payment.",
+        );
+        throw new InternalServerErrorException(
+          "Payment gateway verification is not configured.",
+        );
+      }
+
       const generatedSignature = crypto
         .createHmac("sha256", keySecret)
         .update(`${orderId}|${paymentId}`)
         .digest("hex");
 
-      if (generatedSignature !== signature) {
-        this.logger.error(`Signature verification failed for order: ${orderId}, payment: ${paymentId}`);
-        throw new BadRequestException("Razorpay payment signature verification failed.");
+      const sigBuf = Buffer.from(String(signature || ""), "utf8");
+      const genBuf = Buffer.from(generatedSignature, "utf8");
+      if (sigBuf.length !== genBuf.length || !crypto.timingSafeEqual(sigBuf, genBuf)) {
+        this.logger.error(
+          `Signature verification failed for order: ${orderId}, payment: ${paymentId}`,
+        );
+        throw new BadRequestException(
+          "Razorpay payment signature verification failed.",
+        );
       }
     }
 
@@ -710,6 +728,11 @@ export class SubscriptionsService {
       });
 
       if (existingPayment) {
+        if (existingPayment.tenantId && existingPayment.tenantId !== tenant.id) {
+          throw new BadRequestException(
+            "Payment order belongs to a different tenant.",
+          );
+        }
         await tx.subscriptionPayment.update({
           where: { orderId },
           data: {
@@ -913,13 +936,23 @@ export class SubscriptionsService {
       process.env.RAZORPAY_WEBHOOK_SECRET ||
       "";
 
-    if (webhookSecret && signature) {
+    if (!webhookSecret) {
+      if (process.env.NODE_ENV === "production") {
+        this.logger.error("RAZORPAY_WEBHOOK_SECRET is not configured in production.");
+        throw new UnauthorizedException("Webhook signature verification is not configured.");
+      }
+    } else {
+      if (!signature) {
+        throw new UnauthorizedException("Missing webhook signature.");
+      }
       const expectedSignature = crypto
         .createHmac("sha256", webhookSecret)
         .update(JSON.stringify(body))
         .digest("hex");
 
-      if (expectedSignature !== signature) {
+      const sigBuf = Buffer.from(String(signature), "utf8");
+      const expBuf = Buffer.from(expectedSignature, "utf8");
+      if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
         throw new UnauthorizedException("Invalid webhook signature.");
       }
     }

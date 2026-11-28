@@ -21,19 +21,22 @@ import {
 } from "./dto/shared-ledger.dto";
 import { CurrentTenant } from "../common/decorators/current-tenant.decorator";
 import { Public } from "../common/decorators/public.decorator";
-import { TenantContext } from "@billing/shared-types";
+import { RequirePermissions } from "../common/decorators/permissions.decorator";
+import { Roles } from "../common/decorators/roles.decorator";
+import { TenantContext, UserRole } from "@billing/shared-types";
 
-@SkipThrottle()
 @Controller("shared-ledger")
 export class SharedLedgerController {
   constructor(private readonly sharedLedgerService: SharedLedgerService) {}
 
   @Get("summary")
+  @RequirePermissions({ module: "parties", action: "view" })
   async getSummary(@CurrentTenant() ctx: TenantContext) {
     return this.sharedLedgerService.getSummary(ctx);
   }
 
   @Get("parties")
+  @RequirePermissions({ module: "parties", action: "view" })
   async getConnectedParties(
     @CurrentTenant() ctx: TenantContext,
     @Query() query: QuerySharedLedgerDto,
@@ -42,12 +45,21 @@ export class SharedLedgerController {
   }
 
   @Get("settings")
+  @RequirePermissions({ module: "parties", action: "view" })
   async getSettings(@CurrentTenant() ctx: TenantContext) {
     return this.sharedLedgerService.getSettings(ctx);
   }
 
   @Post("settings")
   @HttpCode(HttpStatus.OK)
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.PARTNER,
+    UserRole.ACCOUNTANT,
+  )
+  @RequirePermissions({ module: "parties", action: "edit" })
   async updateSettings(
     @CurrentTenant() ctx: TenantContext,
     @Body() dto: SharedLedgerSettingsDto,
@@ -56,6 +68,7 @@ export class SharedLedgerController {
   }
 
   @Get("parties/:partyId/transactions")
+  @RequirePermissions({ module: "parties", action: "view" })
   async getPartyTransactions(
     @CurrentTenant() ctx: TenantContext,
     @Param("partyId") partyId: string,
@@ -66,6 +79,14 @@ export class SharedLedgerController {
 
   @Post("convert-to-purchase")
   @HttpCode(HttpStatus.OK)
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.PARTNER,
+    UserRole.ACCOUNTANT,
+  )
+  @RequirePermissions({ module: "purchases", action: "create" })
   async convertToPurchase(
     @CurrentTenant() ctx: TenantContext,
     @Body() dto: ConvertToPurchaseDto,
@@ -75,6 +96,7 @@ export class SharedLedgerController {
 
   @Post("invite")
   @HttpCode(HttpStatus.OK)
+  @RequirePermissions({ module: "parties", action: "edit" })
   async inviteParty(
     @CurrentTenant() ctx: TenantContext,
     @Body() dto: InvitePartyDto,
@@ -84,6 +106,7 @@ export class SharedLedgerController {
 
   @Post("toggle")
   @HttpCode(HttpStatus.OK)
+  @RequirePermissions({ module: "parties", action: "edit" })
   async toggleSharedLedger(
     @CurrentTenant() ctx: TenantContext,
     @Body() dto: ToggleSharedLedgerDto,
@@ -93,6 +116,14 @@ export class SharedLedgerController {
 
   @Post("settle")
   @HttpCode(HttpStatus.OK)
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ORG_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.PARTNER,
+    UserRole.ACCOUNTANT,
+  )
+  @RequirePermissions({ module: "accounting", action: "create" })
   async settleBalance(
     @CurrentTenant() ctx: TenantContext,
     @Body() dto: SettleBalanceDto,

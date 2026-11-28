@@ -28,7 +28,11 @@ export class SharedLedgerService {
    */
   generatePartyToken(partyId: string, companyId: string): string {
     const secret =
-      process.env.JWT_SECRET || "billing_shared_ledger_secret_salt_2026";
+      process.env.JWT_SECRET ||
+      (process.env.NODE_ENV === "production" ? "" : "billing_shared_ledger_secret_salt_2026");
+    if (!secret) {
+      throw new Error("JWT_SECRET must be configured in production for shared ledger token generation.");
+    }
     return crypto
       .createHash("sha256")
       .update(`${partyId}:${companyId}:${secret}`)

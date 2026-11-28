@@ -24,7 +24,10 @@ export function decodeCredentialKey(value: string | undefined, id: string): Cred
 export function loadCredentialKeyRing(env: NodeJS.ProcessEnv = process.env): CredentialKeyRing {
   let currentRaw = env.GST_CREDENTIALS_ENCRYPTION_KEY;
   if (!currentRaw || !currentRaw.trim()) {
-    const seed = env.JWT_SECRET || "billing-production-gst-encryption-key-seed-salt";
+    const seed = env.JWT_SECRET || (env.NODE_ENV === "production" ? "" : "billing-production-gst-encryption-key-seed-salt");
+    if (!seed) {
+      return { error: "GST_CREDENTIALS_ENCRYPTION_KEY or JWT_SECRET must be configured in production." };
+    }
     currentRaw = createHash("sha256").update(seed).digest("base64");
   }
   const current = decodeCredentialKey(currentRaw, env.GST_CREDENTIALS_KEY_ID || "primary");

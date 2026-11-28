@@ -110,8 +110,8 @@ export const PLAN_ENTITLEMENTS: Record<SubscriptionTier, PlanEntitlements> = {
   },
   [SubscriptionTier.RETAIL_BASIC]: {
     tier: SubscriptionTier.RETAIL_BASIC,
-    name: "Starter Plan",
-    nameGujarati: "સ્ટાર્ટર પ્લાન (Starter)",
+    name: "Starter POS & Retail",
+    nameGujarati: "સ્ટાર્ટર POS અને રિટેલ",
     maxCompanies: 1,
     maxBranchesPerCompany: 2,
     maxUsers: 3,
@@ -136,8 +136,8 @@ export const PLAN_ENTITLEMENTS: Record<SubscriptionTier, PlanEntitlements> = {
   },
   [SubscriptionTier.WHOLESALE_PRO]: {
     tier: SubscriptionTier.WHOLESALE_PRO,
-    name: "Professional Plan",
-    nameGujarati: "પ્રોફેશનલ પ્લાન (Professional)",
+    name: "Wholesale Pro",
+    nameGujarati: "હોલસેલ પ્રો",
     maxCompanies: 3,
     maxBranchesPerCompany: 10,
     maxUsers: 15,
@@ -162,8 +162,8 @@ export const PLAN_ENTITLEMENTS: Record<SubscriptionTier, PlanEntitlements> = {
   },
   [SubscriptionTier.DISTRIBUTION_ENTERPRISE]: {
     tier: SubscriptionTier.DISTRIBUTION_ENTERPRISE,
-    name: "Enterprise Plan",
-    nameGujarati: "એન્ટરપ્રાઇઝ પ્લાન (Enterprise)",
+    name: "Distribution Enterprise",
+    nameGujarati: "ડિસ્ટ્રિબ્યુશન એન્ટરપ્રાઇઝ",
     maxCompanies: 9999,
     maxBranchesPerCompany: 9999,
     maxUsers: 9999,

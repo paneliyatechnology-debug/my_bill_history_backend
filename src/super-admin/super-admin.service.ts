@@ -1517,10 +1517,7 @@ export class SuperAdminService {
       const dbPlans = await tx.subscriptionPlan.findMany({
         orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
       });
-      if (dbPlans && dbPlans.length > 0) {
-        return dbPlans;
-      }
-      return Object.values(SUBSCRIPTION_PLANS);
+      return dbPlans || [];
     });
   }
 

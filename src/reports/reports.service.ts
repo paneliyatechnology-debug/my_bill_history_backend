@@ -207,7 +207,6 @@ export class ReportsService {
       } else {
         where.status = {
           notIn: [
-            InvoiceStatus.CANCELLED,
             InvoiceStatus.DRAFT,
             InvoiceStatus.CONVERTED,
           ],
@@ -2443,7 +2442,9 @@ export class ReportsService {
       const hasNegativeCogsAnomaly = rawCogs.isNegative();
       const cogs = Decimal.max(0, rawCogs);
 
-      const tradingGrossProfit = directIncome.minus(cogs);
+      // Use exact un-clamped rawCogs for tradingGrossProfit so Trading Account & Balance Sheet
+      // stay mathematically reconciled even when Closing Stock exceeds Opening + Direct Expenses.
+      const tradingGrossProfit = directIncome.minus(rawCogs);
       const grossMarginPct = directIncome.gt(0)
         ? tradingGrossProfit.div(directIncome).mul(100)
         : new Decimal(0);
@@ -2636,6 +2637,26 @@ export class ReportsService {
           name: "Closing Stock (Stock-in-Hand)",
           groupName: "Current Assets",
           amount: closingStockValuation.toFixed(2),
+        });
+      } else if (!hasGlInventoryBalance && closingStockValuation.lt(0)) {
+        const negStockLiability = closingStockValuation.abs();
+        totalLiabilities = totalLiabilities.plus(negStockLiability);
+        liabilityAccounts.push({
+          id: "negative-stock-provision",
+          name: "Unbilled Inventory / Negative Stock",
+          groupName: "Current Liabilities",
+          amount: negStockLiability.toFixed(2),
+        });
+      }
+
+      const openingStockValuation = toMoney(pnl.openingStockValuation || 0);
+      if (!hasGlInventoryBalance && openingStockValuation.gt(0)) {
+        totalEquity = totalEquity.plus(openingStockValuation);
+        equityAccounts.push({
+          id: "opening-stock-equity",
+          name: "Opening Inventory Capital",
+          groupName: "Capital & Reserves",
+          amount: openingStockValuation.toFixed(2),
         });
       }
 

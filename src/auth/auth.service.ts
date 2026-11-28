@@ -33,6 +33,58 @@ import { resolveEffectivePermissions } from "./rbac/permissions.catalog";
 
 @Injectable()
 export class AuthService {
+  private readonly sseTickets = new Map<
+    string,
+    {
+      userId: string;
+      tenantId?: string;
+      organizationId?: string;
+      role?: string;
+      isSupportSession: boolean;
+      expiresAt: number;
+    }
+  >();
+
+  private pruneExpiredSseTickets(now = Date.now()) {
+    for (const [k, v] of this.sseTickets.entries()) {
+      if (v.expiresAt <= now) {
+        this.sseTickets.delete(k);
+      }
+    }
+  }
+
+  issueSseTicket(user: {
+    id: string;
+    tenantId?: string;
+    organizationId?: string;
+    role?: string;
+    isSupportSession?: boolean;
+  }) {
+    if (!user?.id) {
+      throw new UnauthorizedException("Authenticated user required for SSE ticket");
+    }
+    const now = Date.now();
+    this.pruneExpiredSseTickets(now);
+    const ticket = crypto.randomBytes(32).toString("hex");
+    this.sseTickets.set(ticket, {
+      userId: user.id,
+      tenantId: user.tenantId,
+      organizationId: user.organizationId,
+      role: user.role,
+      isSupportSession: Boolean(user.isSupportSession),
+      expiresAt: now + 30_000,
+    });
+    return { ticket, expiresIn: 30 };
+  }
+
+  revokeUserSseTickets(userId: string) {
+    for (const [k, v] of this.sseTickets.entries()) {
+      if (v.userId === userId) {
+        this.sseTickets.delete(k);
+      }
+    }
+  }
+
   private async resolveRolePermissionsForUser(tx: any, user: any) {
     const client = tx || this.prisma;
     let customRolePerms = user.customRole?.permissions || [];
@@ -67,10 +119,14 @@ export class AuthService {
   ) {}
 
   getRefreshSecret(): string {
-    return (
-      this.configService.get<string>("JWT_REFRESH_SECRET") ||
-      `${this.configService.get<string>("JWT_SECRET", "dev-super-secure-jwt-secret-key-at-least-32-chars-long-123456")}-refresh-key`
-    );
+    const explicit = this.configService.get<string>("JWT_REFRESH_SECRET");
+    if (explicit) return explicit;
+    const jwtSecret = this.configService.get<string>("JWT_SECRET");
+    if (jwtSecret) return `${jwtSecret}-refresh-key`;
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("JWT_REFRESH_SECRET or JWT_SECRET must be configured in production.");
+    }
+    return "dev-super-secure-jwt-secret-key-at-least-32-chars-long-123456-refresh-key";
   }
 
   async generateTokenPair(payload: {
@@ -130,29 +186,38 @@ export class AuthService {
     };
   }
 
-  getSessionStream(token?: string, tenantId?: string, organizationId?: string) {
-    let resolvedTenantId = tenantId;
-    let resolvedOrgId = organizationId;
-
-    let role: string | undefined;
-    let isSupportSession = false;
-
-    if (token) {
-      try {
-        const payload = this.jwtService.decode(token) as any;
-        if (payload?.organizationId) resolvedOrgId = payload.organizationId;
-        if (payload?.tenantId) resolvedTenantId = payload.tenantId;
-        role = payload?.role;
-        isSupportSession = Boolean(payload?.isSupportSession);
-      } catch {
-        // Safe fallback
-      }
+  getSessionStream(ticket?: string, organizationId?: string) {
+    if (!ticket) {
+      throw new UnauthorizedException("SSE ticket is required");
     }
 
-    return this.sessionEvents.subscribeForTenant(resolvedTenantId, resolvedOrgId, {
-      role,
-      isSupportSession,
-    });
+    // Atomic single-use consumption: delete immediately before validating
+    const entry = this.sseTickets.get(ticket);
+    this.sseTickets.delete(ticket);
+
+    const now = Date.now();
+    this.pruneExpiredSseTickets(now);
+
+    if (!entry || entry.expiresAt <= now) {
+      throw new UnauthorizedException("Invalid or expired SSE ticket");
+    }
+
+    if (
+      organizationId &&
+      entry.organizationId &&
+      organizationId !== entry.organizationId
+    ) {
+      throw new UnauthorizedException("SSE ticket tenant mismatch");
+    }
+
+    return this.sessionEvents.subscribeForTenant(
+      entry.tenantId,
+      entry.organizationId,
+      {
+        role: entry.role,
+        isSupportSession: entry.isSupportSession,
+      },
+    );
   }
 
   /**

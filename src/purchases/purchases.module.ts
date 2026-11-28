@@ -1,7 +1,9 @@
 import { Module } from "@nestjs/common";
 import { PurchasesController } from "./purchases.controller";
+import { PurchaseOrdersController } from "./purchase-orders.controller";
 import { PurchaseReturnsController } from "./purchase-returns.controller";
 import { PurchasesService } from "./purchases.service";
+import { PurchaseOrdersService } from "./purchase-orders.service";
 import { DatabaseModule } from "../database/database.module";
 import { AuditModule } from "../audit/audit.module";
 import { NotificationsModule } from "../notifications/notifications.module";
@@ -19,11 +21,13 @@ import { OcrProviderFactory } from "./scanner/providers/ocr-provider.factory";
   imports: [DatabaseModule, AuditModule, NotificationsModule],
   controllers: [
     PurchasesController,
+    PurchaseOrdersController,
     PurchaseReturnsController,
     PurchaseScansController,
   ],
   providers: [
     PurchasesService,
+    PurchaseOrdersService,
     PurchaseScannerService,
     BillStorageService,
     BillNormalizerService,
