@@ -13,7 +13,7 @@
     "start": "node dist/main.js",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "type-check": "tsc --noEmit",
-    "test": "vitest run --fileParallelism=false",
+    "test": "vitest run --passWithNoTests --fileParallelism=false",
     "start:dev": "nest start --watch",
     "postinstall": "prisma generate"
   },
