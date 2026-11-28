@@ -34,13 +34,20 @@ export function getThemeBase64Image(filename?: string): string {
 }
 
 export async function generateUpiQrDataUrl(c: any, inv: any): Promise<string> {
-  const vpa = c?.upiVpa || c?.upiId;
+  const cleanVpa = (c?.upiVpa || c?.upiId || "").trim();
+  const cleanAcc = String(c?.bankAccountNo || c?.accountNumber || "").replace(/\s+/g, "");
+  const cleanIfsc = String(c?.bankIfsc || c?.ifscCode || "").trim().toUpperCase();
+  const vpa =
+    cleanVpa ||
+    (cleanAcc && cleanIfsc ? `${cleanAcc}@${cleanIfsc}.ifsc.npci` : "");
   if (!vpa) return "";
   try {
     const companyName = c.tradeName || c.legalName || "Merchant";
-    const amount = Number(inv.balanceAmount ?? inv.grandTotal ?? 0).toFixed(2);
-    const upiUrl = `upi://pay?pa=${encodeURIComponent(vpa)}&pn=${encodeURIComponent(companyName)}&am=${amount}&cu=INR`;
-    return await QRCode.toDataURL(upiUrl, { width: 88, margin: 1 });
+    const rawAmt = Number(inv.balanceAmount ?? inv.grandTotal ?? 0);
+    const amtParam = Number.isFinite(rawAmt) && rawAmt > 0 ? `&am=${rawAmt.toFixed(2)}` : "";
+    const noteParam = encodeURIComponent(`Invoice ${inv.invoiceNumber || ""}`.trim());
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(vpa)}&pn=${encodeURIComponent(companyName)}${amtParam}&cu=INR&tn=${noteParam}`;
+    return await QRCode.toDataURL(upiUrl, { width: 96, margin: 2, errorCorrectionLevel: "M" });
   } catch {
     return "";
   }

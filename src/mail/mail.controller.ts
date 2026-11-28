@@ -13,6 +13,12 @@ import { isDeliverableEmail, normalizeEmail } from "./email.util";
 
 import { EmailCategory } from "./email-template";
 
+interface SendMailAttachmentDto {
+  filename?: string;
+  contentBase64?: string;
+  contentType?: string;
+}
+
 interface SendMailDto {
   to: string;
   cc?: string;
@@ -27,6 +33,7 @@ interface SendMailDto {
   actionUrl?: string;
   actionLabel?: string;
   companyName?: string;
+  attachments?: SendMailAttachmentDto[];
 }
 
 @Controller("mail")
@@ -87,6 +94,26 @@ export class MailController {
           .slice(0, 20)
       : undefined;
 
+    const attachments = Array.isArray(dto.attachments)
+      ? dto.attachments
+          .map((att) => {
+            const raw = String(att?.contentBase64 || "").replace(/^data:[^;]+;base64,/, "").trim();
+            if (!raw) return null;
+            const buf = Buffer.from(raw, "base64");
+            if (buf.length === 0 || buf.length > 10 * 1024 * 1024) return null;
+            const safeName = String(att?.filename || "document.pdf")
+              .replace(/[^\w.\-() ]+/g, "_")
+              .slice(0, 120);
+            return {
+              filename: safeName || "document.pdf",
+              content: buf,
+              contentType: String(att?.contentType || "application/pdf").slice(0, 100),
+            };
+          })
+          .filter((att): att is NonNullable<typeof att> => att !== null)
+          .slice(0, 5)
+      : undefined;
+
     return this.mail.send({
       to,
       cc: cc || undefined,
@@ -101,6 +128,7 @@ export class MailController {
       companyName: String(dto.companyName || "").trim() || undefined,
       details,
       text,
+      attachments,
     });
   }
 

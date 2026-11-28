@@ -4,6 +4,12 @@ import * as nodemailer from "nodemailer";
 import { safeSubject } from "./email.util";
 import { EmailCategory, EmailDetail, renderBrandedEmail, structurePlainText } from "./email-template";
 
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+}
+
 export interface OutboundEmail {
   to: string | string[];
   cc?: string | string[];
@@ -18,6 +24,7 @@ export interface OutboundEmail {
   actionUrl?: string;
   actionLabel?: string;
   companyName?: string;
+  attachments?: EmailAttachment[];
 }
 
 export interface MailDeliveryResult {
@@ -71,6 +78,7 @@ export class MailService {
       subject,
       text: plain,
       html,
+      attachments: message.attachments,
     });
   }
 
@@ -81,6 +89,7 @@ export class MailService {
     subject: string;
     text: string;
     html: string;
+    attachments?: EmailAttachment[];
   }): Promise<MailDeliveryResult> {
     const subject = safeSubject(input.subject);
     if (!this.isConfigured()) {
@@ -126,6 +135,15 @@ export class MailService {
         subject,
         text: input.text,
         html: input.html,
+        ...(input.attachments?.length
+          ? {
+              attachments: input.attachments.map((att) => ({
+                filename: att.filename,
+                content: att.content,
+                contentType: att.contentType || "application/pdf",
+              })),
+            }
+          : {}),
       });
     } catch (err) {
       this.logger.error(

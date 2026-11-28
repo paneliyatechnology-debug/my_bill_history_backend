@@ -10,12 +10,13 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Req,
   Res,
   BadRequestException,
   NotFoundException,
   ForbiddenException,
 } from "@nestjs/common";
-import { FastifyReply } from "fastify";
+import { FastifyReply, FastifyRequest } from "fastify";
 import { Throttle } from "@nestjs/throttler";
 import { TenantContext, UserRole } from "@billing/shared-types";
 import { Roles } from "../common/decorators/roles.decorator";
@@ -440,7 +441,9 @@ export class InvoicesController {
     @Query("share") share: string,
     @Query("themeId") themeId: string,
     @Query("accentColor") accentColor: string,
+    @Query("download") download: string,
     @CurrentTenant() tenant: TenantContext,
+    @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,
   ) {
     try {
@@ -453,9 +456,16 @@ export class InvoicesController {
         accentColor,
       );
       const safeInvNum = String(invoice.invoiceNumber || id).replace(/[\/\\]/g, "_");
+      const isAttachment =
+        download === "1" ||
+        download === "true" ||
+        String(req.url || "").includes("download-pdf");
       return reply
         .type("application/pdf")
-        .header("Content-Disposition", `inline; filename="Invoice-${safeInvNum}.pdf"`)
+        .header(
+          "Content-Disposition",
+          `${isAttachment ? "attachment" : "inline"}; filename="Invoice-${safeInvNum}.pdf"`,
+        )
         .send(pdfBuffer);
     } catch (err: any) {
       if (err?.message?.includes("CHROME_NOT_FOUND") || err?.message?.includes("ENOENT")) {
